@@ -1,0 +1,11 @@
+# StoreLens — install with: pip install -r requirements.txt
+# Latest stable versions; no pins.
+fastapi
+uvicorn[standard]
+numpy
+pillow
+requests
+mcp
+# Optional but recommended — needed for real camera snapshots and the CV examples.
+# Comment out if you only run the simulator / seeded demo.
+opencv-python

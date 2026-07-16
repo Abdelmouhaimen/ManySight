@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+data/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+*.egg-info/
+
+# Frontend dependencies and build output
+dashboard/node_modules/
+dashboard/dist/
+
+# Local tooling and operating-system files
+.coverage
+.pytest_cache/
+.ruff_cache/
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
