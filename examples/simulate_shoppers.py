@@ -1,8 +1,8 @@
 """Live shopper simulator — demo the whole platform with zero cameras.
 
-Registers a job and streams realistic synthetic events (detections, zone enter/exit/
-dwell, fridge state changes) in real time, so the Insights tab, live feed and alerts
-all light up.
+Registers a job and streams realistic raw observations (detections, zone enter/
+exit pairs, fridge state changes) in real time, so the Insights tab, live feed and
+alerts all light up. The platform derives dwell and state durations itself.
 
 Usage:
     python examples/simulate_shoppers.py --url http://localhost:8000 --shoppers 6 --minutes 10
@@ -73,8 +73,8 @@ def main():
     if not zones:
         raise SystemExit("No zones defined — run scripts/seed_demo.py or draw zones in the Store Map tab.")
     sl.register_job("Live shopper simulation", "synthetic shoppers walking waypoint paths",
-                    event_types=["detection", "zone_enter", "zone_exit", "zone_dwell", "state_change"])
-    fridge_state, fridge_since, fridge_next = "closed", time.time(), time.time() + random.uniform(20, 60)
+                    event_types=["detection", "zone_enter", "zone_exit", "state_change"])
+    fridge_state, fridge_next = "closed", time.time() + random.uniform(20, 60)
     shoppers = [Shopper(zones, store) for _ in range(args.shoppers)]
     t_end = time.time() + args.minutes * 60
     print(f"Simulating {args.shoppers} shoppers for {args.minutes} min → {args.url}")
@@ -84,9 +84,8 @@ def main():
         for s in list(shoppers):
             s.step(1.0, now)
             if s.done:
-                for zid, t0 in s.zone_state.items():
+                for zid in list(s.zone_state):
                     sl.add_event(event_type="zone_exit", track_id=s.id, zone_id=zid, attributes=s.attrs)
-                    sl.add_event(event_type="zone_dwell", track_id=s.id, zone_id=zid, value=now - t0, attributes=s.attrs)
                 shoppers.remove(s)
                 shoppers.append(Shopper(zones, store))
                 continue
@@ -98,15 +97,13 @@ def main():
                     s.zone_state[z["id"]] = now
                     sl.add_event(event_type="zone_enter", track_id=s.id, zone_id=z["id"], attributes=s.attrs)
                 elif not member and z["id"] in s.zone_state:
-                    t0 = s.zone_state.pop(z["id"])
+                    s.zone_state.pop(z["id"])
                     sl.add_event(event_type="zone_exit", track_id=s.id, zone_id=z["id"], attributes=s.attrs)
-                    sl.add_event(event_type="zone_dwell", track_id=s.id, zone_id=z["id"], value=now - t0, attributes=s.attrs)
         if now >= fridge_next:
             new = "open" if fridge_state == "closed" else "closed"
-            sl.add_event(event_type="state_change", label=new, value=now - fridge_since,
-                         attributes={"prev_label": fridge_state},
+            sl.add_event(event_type="state_change", label=new,
                          zone=next((z["name"] for z in zones if z["ztype"] == "fridge"), None))
-            fridge_state, fridge_since = new, now
+            fridge_state = new
             fridge_next = now + (random.uniform(15, 90) if new == "open" else random.uniform(60, 240))
         sl.flush()
         time.sleep(1.0)

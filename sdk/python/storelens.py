@@ -1,10 +1,14 @@
 """StoreLens worker SDK — a tiny client for analysis scripts (the ones Codex writes).
 
+Workers post raw observations (detections, zone_enter/zone_exit pairs, label-only
+state_change flips, per-frame counts) — the platform derives dwell, durations, and
+every insight. Never post computed aggregates (zone_dwell is deprecated/ignored).
+
 Typical worker loop:
     from storelens import StoreLens, CentroidTracker
     sl = StoreLens("http://localhost:8000")
     src = sl.source(1)
-    job = sl.register_job("Dwell at checkout", event_types=["detection", "zone_dwell"])
+    job = sl.register_job("Dwell at checkout", event_types=["detection", "zone_enter", "zone_exit"])
     cap = sl.open_capture(src)
     ...
     sl.add_event(source_id=src["id"], event_type="detection", track_id=tid, point_px={"x": u, "y": v})

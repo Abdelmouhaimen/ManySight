@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .routers import alerts, analytics, events, jobs, sources, store, zones
+from .routers import alerts, analytics, events, insights, jobs, sources, store, zones
 
 app = FastAPI(
     title="StoreLens",
@@ -43,7 +43,7 @@ def health():
     return {"ok": True, "service": "storelens", "ts": db.now(), "auth_required": bool(API_KEY)}
 
 
-for r in (sources, store, zones, jobs, events, analytics, alerts):
+for r in (sources, store, zones, jobs, events, analytics, alerts, insights):
     app.include_router(r.router, prefix="/api/v1")
 
 _server_dir = os.path.dirname(__file__)

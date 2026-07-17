@@ -6,24 +6,22 @@ import {
   Camera,
   Gauge,
   Menu,
+  ScanSearch,
   Settings2,
   X,
 } from "lucide-react";
 import { api, apiKey } from "./api.js";
 import { BrandMark, EnvironmentBadge, Toast } from "./components.jsx";
-import {
-  ConfigurePage,
-  EventsPage,
-  InsightsPage,
-  OverviewPage,
-  StreamsPage,
-} from "./pages.jsx";
+import { DetectionsPage } from "./detections.jsx";
+import { InsightsPage } from "./insights.jsx";
+import { ConfigurePage, OverviewPage, ReviewPage, StreamsPage } from "./pages.jsx";
 import "./styles.css";
 
 const NAV = [
   ["overview", "Overview", Gauge],
   ["insights", "Insights", Activity],
-  ["events", "Events", BellRing],
+  ["review", "Review", BellRing],
+  ["detections", "Detections", ScanSearch],
   ["streams", "Streams", Camera],
   ["configure", "Configure", Settings2],
 ];
@@ -39,6 +37,7 @@ const SPACE_LABELS = {
 
 function currentRoute() {
   const route = window.location.hash.replace("#", "");
+  if (route === "events") return "review"; // legacy bookmarks
   return NAV.some(([value]) => value === route) ? route : "overview";
 }
 
@@ -110,7 +109,7 @@ function App() {
 
   const openSignal = (signal) => {
     setInitialSignal(signal);
-    window.location.hash = "events";
+    window.location.hash = "review";
   };
   const openSignals = shell.alerts.filter((alert) =>
     ["new", "in_review"].includes(
@@ -125,11 +124,13 @@ function App() {
       ? OverviewPage
       : route === "insights"
         ? InsightsPage
-        : route === "events"
-          ? EventsPage
-          : route === "streams"
-            ? StreamsPage
-            : ConfigurePage;
+        : route === "review"
+          ? ReviewPage
+          : route === "detections"
+            ? DetectionsPage
+            : route === "streams"
+              ? StreamsPage
+              : ConfigurePage;
 
   return (
     <div className="app-shell">
@@ -178,7 +179,7 @@ function App() {
             >
               <Icon size={17} />
               <span>{label}</span>
-              {value === "events" && openSignals > 0 && <b>{openSignals}</b>}
+              {value === "review" && openSignals > 0 && <b>{openSignals}</b>}
             </a>
           ))}
         </nav>

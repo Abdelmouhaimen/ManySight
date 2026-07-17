@@ -15,3 +15,8 @@ They are discoverable two ways:
 | [dwell-time](dwell-time/SKILL.md) | time spent in zones, grouped by attributes |
 | [state-monitoring](state-monitoring/SKILL.md) | equipment states (fridge open/closed) + durations |
 | [alerts-workflows](alerts-workflows/SKILL.md) | threshold alerts, loitering, webhooks/n8n |
+| [insights](insights/SKILL.md) | publish results as registered dashboard insight cards |
+
+Contract reminder: workers post **raw observations** (detections, enter/exit pairs,
+label-only state changes, per-frame counts) — the platform derives dwell, durations,
+and every insight. Finish an analysis by registering it with `register_insight`.

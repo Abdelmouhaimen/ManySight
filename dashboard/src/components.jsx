@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef } from "react";
 import { AlertTriangle, ArrowRight, Check, X } from "lucide-react";
-import { formatTime } from "./api.js";
+import { formatDuration, formatTime } from "./api.js";
 
 export function BrandMark() {
   return (
@@ -431,6 +431,148 @@ export function ActivityMap({
         <span />
         <small>More activity</small>
       </div>
+    </div>
+  );
+}
+
+export const RANGE_OPTIONS = [
+  ["1 hour", 3600],
+  ["6 hours", 21600],
+  ["24 hours", 86400],
+  ["7 days", 604800],
+  ["30 days", 2592000],
+];
+
+export function RangeSelect({ value, onChange }) {
+  return (
+    <label className="select-control">
+      <span className="sr-only">Time range</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+      >
+        {RANGE_OPTIONS.map(([label, seconds]) => (
+          <option key={seconds} value={seconds}>
+            Last {label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+export function FlowTable({ data }) {
+  if (!data.links.length)
+    return (
+      <EmptyState title="No transitions yet">
+        Stable track IDs need zone-enter sequences or zoned detections.
+      </EmptyState>
+    );
+  const names = [
+    ...new Set(
+      data.links
+        .flatMap((link) => [link.from_name, link.to_name])
+        .filter(Boolean),
+    ),
+  ];
+  const max = Math.max(...data.links.map((link) => link.count), 1);
+  return (
+    <div className="table-scroll">
+      <table className="matrix-table">
+        <thead>
+          <tr>
+            <th>From / to</th>
+            {names.map((name) => (
+              <th key={name}>{name}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {names.map((from) => (
+            <tr key={from}>
+              <th>{from}</th>
+              {names.map((to) => {
+                const value =
+                  data.links.find(
+                    (link) => link.from_name === from && link.to_name === to,
+                  )?.count || 0;
+                return (
+                  <td
+                    key={to}
+                    style={{
+                      backgroundColor: value
+                        ? `rgba(112,89,255,${0.08 + (0.5 * value) / max})`
+                        : undefined,
+                    }}
+                  >
+                    {value || "—"}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function StateSummary({ series }) {
+  if (!series.length)
+    return (
+      <EmptyState title="No state history">
+        State-change events will create equipment or scene timelines.
+      </EmptyState>
+    );
+  return (
+    <div className="state-list">
+      {series.map((item) => (
+        <div key={item.source_id}>
+          <strong>{item.source_name}</strong>
+          <div>
+            {Object.entries(item.totals).map(([label, seconds]) => (
+              <Badge
+                key={label}
+                tone={
+                  label === "open" || label === "on" ? "warning" : "neutral"
+                }
+              >
+                {label} · {formatDuration(seconds)}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function DataTable({ columns, rows, empty = "No rows to display" }) {
+  if (!rows.length) return <EmptyState title="No table data">{empty}</EmptyState>;
+  return (
+    <div className="raw-event-table table-scroll">
+      <table>
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th key={column.key}>{column.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={index}>
+              {columns.map((column) => (
+                <td key={column.key}>
+                  {column.format
+                    ? column.format(row[column.key], row)
+                    : (row[column.key] ?? "—")}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

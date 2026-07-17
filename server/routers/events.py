@@ -2,7 +2,12 @@
 - bbox -> bottom-center pixel point if no explicit point given
 - pixel point -> map meters via the source's homography (if calibrated)
 - map point -> zone assignment via point-in-polygon (if no explicit zone)
-Then persists, evaluates alert rules, and publishes to the live SSE stream."""
+Then persists, evaluates alert rules, and publishes to the live SSE stream.
+
+Contract note: workers post raw observations, never computed aggregates.
+`zone_dwell` is deprecated — still accepted and stored for backward compatibility,
+but its value is ignored by analytics and alerts (dwell is derived from
+zone_enter/zone_exit pairs). Querying supports keyset pagination via `cursor`."""
 import asyncio
 import json
 from datetime import datetime
@@ -129,21 +134,34 @@ async def ingest(batch: EventBatch):
 def query_events(since: float | None = None, until: float | None = None,
                  event_type: str | None = None, zone_id: int | None = None,
                  source_id: int | None = None, job_id: int | None = None,
-                 track_id: str | None = None, limit: int = 200):
+                 track_id: str | None = None, label: str | None = None,
+                 cursor: str | None = None, limit: int = 200):
+    """Query stored events, newest first. Pass the returned `next_cursor` back as
+    `cursor` to fetch the next page; `total` counts all rows matching the filters."""
     limit = min(max(1, limit), 5000)
     where, args = ["1=1"], []
     for clause, val in (("ts>=?", since), ("ts<=?", until), ("event_type=?", event_type),
                         ("zone_id=?", zone_id), ("source_id=?", source_id),
-                        ("job_id=?", job_id), ("track_id=?", track_id)):
+                        ("job_id=?", job_id), ("track_id=?", track_id), ("label=?", label)):
         if val is not None:
             where.append(clause)
             args.append(val)
-    rows = db.q(f"SELECT * FROM events WHERE {' AND '.join(where)} ORDER BY ts DESC LIMIT {limit}", args)
+    total = db.q1(f"SELECT COUNT(*) n FROM events WHERE {' AND '.join(where)}", args)["n"]
+    if cursor is not None:
+        try:
+            ts_part, id_part = cursor.rsplit(":", 1)
+            cur_ts, cur_id = float(ts_part), int(id_part)
+        except (ValueError, TypeError):
+            raise HTTPException(422, "malformed cursor — pass a next_cursor value verbatim")
+        where.append("(ts<? OR (ts=? AND id<?))")
+        args.extend([cur_ts, cur_ts, cur_id])
+    rows = db.q(f"SELECT * FROM events WHERE {' AND '.join(where)} ORDER BY ts DESC, id DESC LIMIT {limit}", args)
     zone_names = {z["id"]: z["name"] for z in db.q("SELECT id, name FROM zones")}
     for r in rows:
         r["attributes"] = db.jload(r["attributes"], {})
         r["zone_name"] = zone_names.get(r["zone_id"])
-    return {"events": rows, "count": len(rows)}
+    next_cursor = f"{rows[-1]['ts']!r}:{rows[-1]['id']}" if len(rows) == limit else None
+    return {"events": rows, "count": len(rows), "total": total, "next_cursor": next_cursor}
 
 
 @router.get("/stream")

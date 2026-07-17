@@ -1,10 +1,18 @@
-"""Named zones (checkout, entrance, fridge, aisle, ...) as polygons in map meters."""
+"""Named zones (checkout, entrance, fridge, restricted, ...) as polygons in map meters.
+
+A zone is pure geometry plus a semantic label — it carries no behavior of its own.
+Alerts about a zone (e.g. "someone entered the restricted area") are separate
+alert_rules; workers posting zone_enter/zone_exit don't know or care what the zone
+means. Zones can be created from a camera-pixel polygon (`polygon_px` + `source_id`):
+the platform projects it to map meters through the source's calibrated homography —
+the path an agent uses after proposing a polygon from a snapshot."""
 import json
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import db
+from ..services import homography
 
 router = APIRouter(tags=["zones"])
 
@@ -19,7 +27,9 @@ class ZoneIn(BaseModel):
     name: str
     ztype: str = "area"
     color: str = ""
-    polygon: list[dict]  # [{x,y}, ...] >= 3
+    polygon: list[dict] | None = None     # [{x,y}, ...] in map meters, >= 3
+    polygon_px: list[dict] | None = None  # [{x,y}, ...] in camera pixels — projected server-side
+    source_id: int | None = None          # required with polygon_px (must be calibrated)
 
 
 class ZonePatch(BaseModel):
@@ -41,14 +51,29 @@ def list_zones():
 
 @router.post("/zones", status_code=201)
 def create_zone(body: ZoneIn):
-    if len(body.polygon) < 3:
+    polygon = body.polygon
+    if polygon is None and body.polygon_px is not None:
+        if body.source_id is None:
+            raise HTTPException(422, "polygon_px requires source_id (the camera the pixels are from)")
+        src = db.q1("SELECT calibration_json FROM sources WHERE id=?", (body.source_id,))
+        if not src:
+            raise HTTPException(404, f"source {body.source_id} not found")
+        cal = db.jload(src["calibration_json"], None)
+        if not cal or not cal.get("H"):
+            raise HTTPException(409, f"source {body.source_id} is not calibrated — calibrate it "
+                                     "in the Store Map tab, or pass a map-meter polygon instead")
+        projected = homography.project(cal["H"], body.polygon_px)
+        polygon = [{"x": round(x, 3), "y": round(y, 3)} for x, y in projected]
+    if polygon is None:
+        raise HTTPException(422, "provide polygon (map meters) or polygon_px + source_id")
+    if len(polygon) < 3:
         raise HTTPException(422, "polygon needs at least 3 points")
     if body.ztype not in ZTYPES:
         raise HTTPException(422, f"ztype must be one of {sorted(ZTYPES)}")
     color = body.color or ZONE_COLORS[db.q1("SELECT COUNT(*) n FROM zones")["n"] % len(ZONE_COLORS)]
     zid = db.ex(
         "INSERT INTO zones (name, ztype, color, polygon_json, created_at) VALUES (?,?,?,?,?)",
-        (body.name, body.ztype, color, json.dumps(body.polygon), db.now()),
+        (body.name, body.ztype, color, json.dumps(polygon), db.now()),
     )
     return serialize(db.q1("SELECT * FROM zones WHERE id=?", (zid,)))
 

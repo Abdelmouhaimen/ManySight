@@ -1,7 +1,8 @@
-"""Dwell worker — zone enter/exit/dwell events from a real video source.
+"""Dwell worker — zone enter/exit observations from a real video source.
 
-Tracks people, projects feet to floor meters locally, and emits zone bookkeeping
-events (enter/exit + dwell-with-duration on exit). Requires a calibrated source.
+Tracks people, projects feet to floor meters locally, and emits zone_enter/
+zone_exit pairs. The platform derives dwell durations from those pairs — do not
+post precomputed dwell values. Requires a calibrated source.
 
 Usage:
     python examples/dwell_zones.py --source 1 [--zones "Checkout,Fridge"]
@@ -31,7 +32,7 @@ def main():
     print(f"watching zones: {[z['name'] for z in zones]}")
 
     sl.register_job(f"Dwell – {src['name']}", f"dwell in {[z['name'] for z in zones]}",
-                    source_ids=[src["id"]], event_types=["zone_enter", "zone_exit", "zone_dwell"])
+                    source_ids=[src["id"]], event_types=["zone_enter", "zone_exit"])
     detect = motion_detector()
     cap = sl.open_capture(src)
     tracker = CentroidTracker(max_distance=90)
@@ -58,15 +59,12 @@ def main():
                     inside[key] = now
                     sl.add_event(source_id=src["id"], event_type="zone_enter", track_id=tid, zone_id=z["id"])
                 elif membership_hits[key] == 0 and key in inside:
-                    t0 = inside.pop(key)
+                    inside.pop(key)
                     sl.add_event(source_id=src["id"], event_type="zone_exit", track_id=tid, zone_id=z["id"])
-                    sl.add_event(source_id=src["id"], event_type="zone_dwell", track_id=tid,
-                                 zone_id=z["id"], value=now - t0)
         time.sleep(0.05)
-    # close out open visits
-    now = time.time()
-    for (tid, zid), t0 in inside.items():
-        sl.add_event(source_id=src["id"], event_type="zone_dwell", track_id=tid, zone_id=zid, value=now - t0)
+    # close out open visits with exits — the platform derives their dwell
+    for (tid, zid) in inside:
+        sl.add_event(source_id=src["id"], event_type="zone_exit", track_id=tid, zone_id=zid)
     sl.flush()
 
 

@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import {
-  Activity,
   ArrowRight,
   Check,
   Code2,
@@ -10,28 +9,11 @@ import {
   EyeOff,
   RefreshCw,
   Save,
+  ScanSearch,
   ShieldAlert,
 } from "lucide-react";
-import { api, apiKey, formatDateTime } from "./api.js";
-import {
-  Badge,
-  EmptyState,
-  LoadingState,
-  Modal,
-  Panel,
-} from "./components.jsx";
-
-const EVENT_TYPES = [
-  "all",
-  "detection",
-  "zone_enter",
-  "zone_exit",
-  "zone_dwell",
-  "transition",
-  "state_change",
-  "count",
-  "custom",
-];
+import { api, apiKey } from "./api.js";
+import { Badge, Modal, Panel } from "./components.jsx";
 
 export function ConnectionModal({ source, onClose, notify }) {
   const [details, setDetails] = useState(null),
@@ -149,47 +131,8 @@ export function ConnectionModal({ source, onClose, notify }) {
   );
 }
 
-export function TechnicalConfig({ notify, sources, zones, liveTick = 0 }) {
+export function TechnicalConfig({ notify }) {
   const [key, setKey] = useState(apiKey());
-  const [events, setEvents] = useState([]),
-    [loading, setLoading] = useState(true),
-    [error, setError] = useState("");
-  const [filters, setFilters] = useState({
-    event_type: "all",
-    source_id: "all",
-    zone_id: "all",
-  });
-  const [expanded, setExpanded] = useState(null),
-    [autoRefresh, setAutoRefresh] = useState(true);
-
-  const query = useMemo(() => {
-    const params = new URLSearchParams({ limit: "100" });
-    Object.entries(filters).forEach(([name, value]) => {
-      if (value !== "all") params.set(name, value);
-    });
-    return params.toString();
-  }, [filters]);
-
-  const load = async (quiet = false) => {
-    if (!quiet) setLoading(true);
-    setError("");
-    try {
-      const result = await api.get(`/events?${query}`);
-      setEvents(result.events);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-  useEffect(() => {
-    load();
-  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!autoRefresh || !liveTick) return;
-    const timer = window.setTimeout(() => load(true), 500);
-    return () => window.clearTimeout(timer);
-  }, [liveTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveKey = () => {
     key
@@ -215,7 +158,11 @@ export function TechnicalConfig({ notify, sources, zones, liveTick = 0 }) {
                 "Codex checks snapshots, zones, and calibration",
               ],
               ["3", "Run", "An external worker subscribes and runs a model"],
-              ["4", "Explain", "The worker posts events that become insights"],
+              [
+                "4",
+                "Explain",
+                "The worker posts raw observations that the platform turns into insights",
+              ],
             ].map(([number, title, detail], index) => (
               <div key={number}>
                 <span>{number}</span>
@@ -281,126 +228,19 @@ export function TechnicalConfig({ notify, sources, zones, liveTick = 0 }) {
 
       <Panel
         title="Raw event explorer"
-        subtitle="Inspect the evidence stream behind charts and reviewable signals"
-        action={
-          <div className="event-refresh">
-            <label>
-              <input
-                type="checkbox"
-                checked={autoRefresh}
-                onChange={(event) => setAutoRefresh(event.target.checked)}
-              />{" "}
-              Follow live events
-            </label>
-            <button
-              className="icon-button"
-              onClick={() => load()}
-              aria-label="Refresh raw events"
-            >
-              <RefreshCw size={15} />
-            </button>
-          </div>
-        }
+        subtitle="Moved to its own tab"
       >
-        <div className="event-filters">
-          <label className="field">
-            <span>Event type</span>
-            <select
-              value={filters.event_type}
-              onChange={(event) =>
-                setFilters({ ...filters, event_type: event.target.value })
-              }
-            >
-              {EVENT_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type.replaceAll("_", " ")}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Camera</span>
-            <select
-              value={filters.source_id}
-              onChange={(event) =>
-                setFilters({ ...filters, source_id: event.target.value })
-              }
-            >
-              <option value="all">All cameras</option>
-              {sources.map((source) => (
-                <option key={source.id} value={source.id}>
-                  {source.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Zone</span>
-            <select
-              value={filters.zone_id}
-              onChange={(event) =>
-                setFilters({ ...filters, zone_id: event.target.value })
-              }
-            >
-              <option value="all">All zones</option>
-              {zones.map((zone) => (
-                <option key={zone.id} value={zone.id}>
-                  {zone.name}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="technical-links">
+          <a href="#detections">
+            <ScanSearch />
+            Open the Detections tab
+            <span>Filterable, paginated, documented</span>
+            <ArrowRight />
+          </a>
         </div>
-        {error && (
-          <div className="form-error" role="alert">
-            {error}
-          </div>
-        )}
-        {loading ? (
-          <LoadingState label="Loading raw events…" />
-        ) : !events.length ? (
-          <EmptyState title="No matching events">
-            Change the filters or run an analysis worker that submits event
-            batches.
-          </EmptyState>
-        ) : (
-          <div className="raw-event-table table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Type</th>
-                  <th>Source</th>
-                  <th>Zone</th>
-                  <th>Track / label</th>
-                  <th>Value</th>
-                  <th>
-                    <span className="sr-only">Details</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((event) => (
-                  <EventRows
-                    key={event.id}
-                    event={event}
-                    source={sources.find(
-                      (source) => source.id === event.source_id,
-                    )}
-                    expanded={expanded === event.id}
-                    toggle={() =>
-                      setExpanded(expanded === event.id ? null : event.id)
-                    }
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
         <p className="definition-note">
-          Rows are raw worker outputs after server-side projection and zone
-          assignment. They are evidence for an insight, not automatically a
-          real-world conclusion.
+          Every event workers posted — with column and event-type documentation
+          — now lives in the Detections tab.
         </p>
       </Panel>
 
@@ -455,59 +295,3 @@ export function TechnicalConfig({ notify, sources, zones, liveTick = 0 }) {
   );
 }
 
-function EventRows({ event, source, expanded, toggle }) {
-  return (
-    <>
-      <tr>
-        <td>{formatDateTime(event.ts)}</td>
-        <td>
-          <Badge tone="violet">{event.event_type.replaceAll("_", " ")}</Badge>
-        </td>
-        <td>
-          {source?.name || (event.source_id ? `#${event.source_id}` : "—")}
-        </td>
-        <td>{event.zone_name || "—"}</td>
-        <td>{event.track_id || event.label || "—"}</td>
-        <td>{event.value ?? "—"}</td>
-        <td>
-          <button
-            className="icon-button"
-            onClick={toggle}
-            aria-expanded={expanded}
-            aria-label={`${expanded ? "Hide" : "Show"} event ${event.id} payload`}
-          >
-            <Activity size={14} />
-          </button>
-        </td>
-      </tr>
-      {expanded && (
-        <tr className="event-payload-row">
-          <td colSpan="7">
-            <div>
-              <span>
-                Event #{event.id} · job {event.job_id || "unregistered"}
-              </span>
-              <pre>
-                {JSON.stringify(
-                  {
-                    point_px:
-                      event.x_px == null
-                        ? null
-                        : { x: event.x_px, y: event.y_px },
-                    point_map:
-                      event.x_map == null
-                        ? null
-                        : { x: event.x_map, y: event.y_map },
-                    attributes: event.attributes,
-                  },
-                  null,
-                  2,
-                )}
-              </pre>
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}

@@ -24,8 +24,10 @@ projects pixels → floor meters and bins them; you don't do any geometry.
    - background subtraction blobs (always works, see template) — fine for heatmaps.
 5. Track with `storelens.CentroidTracker` so `track_id` is stable (enables flow/occupancy too).
 6. Post 1–2 detections per second per track (sample; don't post every frame at 30fps).
-7. Verify: `get_analytics("heatmap", {"since": <start_ts>})` — expect >0 points; then tell
-   the user to open Insights.
+7. Verify: `get_analytics("heatmap", {"since": <start_ts>})` — expect >0 points.
+8. Publish it: `register_insight("Activity heatmap – <scope>", block="heatmap_map",
+   dataset="heatmap", limitations="Only calibrated detections appear.")` — then tell
+   the user to open Insights (and pin it to Overview with `pinned=True` if asked).
 
 ## Worker template
 

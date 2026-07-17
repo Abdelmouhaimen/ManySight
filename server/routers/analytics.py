@@ -1,9 +1,16 @@
-"""Analytics over the event stream: heatmap, dwell, occupancy, transitions, states, summary."""
+"""Analytics over the event stream: heatmap, dwell, occupancy, transitions, states, summary.
+
+Everything here is derived from raw observations at read time. Worker-computed
+aggregates are never trusted: `zone_dwell` values and `state_change` durations are
+ignored — dwell comes from zone_enter/zone_exit pairs, state durations from
+consecutive state_change timestamps (see services/derive.py).
+"""
 from collections import defaultdict
 
 from fastapi import APIRouter
 
 from .. import db
+from ..services import derive
 
 router = APIRouter(tags=["analytics"])
 
@@ -59,38 +66,19 @@ def heatmap(since: float | None = None, until: float | None = None,
             "points": [{"x": r["cx"] * cell + half, "y": r["cy"] * cell + half, "w": r["w"]} for r in rows]}
 
 
-def _derive_dwells(since: float, until: float) -> list[dict]:
-    """Pair zone_enter/zone_exit per (track, zone) when no explicit zone_dwell events exist."""
-    rows = db.q(
-        "SELECT ts, event_type, track_id, zone_id, attributes FROM events"
-        " WHERE ts BETWEEN ? AND ? AND event_type IN ('zone_enter','zone_exit')"
-        " AND track_id IS NOT NULL AND zone_id IS NOT NULL ORDER BY ts", (since, until))
-    open_at: dict[tuple, tuple] = {}
-    dwells = []
-    for r in rows:
-        key = (r["track_id"], r["zone_id"])
-        if r["event_type"] == "zone_enter":
-            open_at[key] = (r["ts"], db.jload(r["attributes"], {}))
-        elif key in open_at:
-            t0, attrs = open_at.pop(key)
-            if r["ts"] > t0:
-                dwells.append({"zone_id": r["zone_id"], "value": r["ts"] - t0,
-                               "attributes": db.jload(r["attributes"], {}) or attrs})
-    return dwells
-
-
 @router.get("/analytics/dwell")
-def dwell(since: float | None = None, until: float | None = None, group_by: str | None = None):
+def dwell(since: float | None = None, until: float | None = None, group_by: str | None = None,
+          zone_id: int | None = None, max_dwell_s: float = derive.MAX_DWELL_S):
+    """Time spent in zones, always derived from zone_enter/zone_exit pairs.
+
+    Worker-posted `zone_dwell` events are stored as observations but never read here.
+    Still-open visits (enter without exit yet) are included clipped to `until` and
+    reported in `open_visits`; single visits are capped at `max_dwell_s`.
+    """
     since, until = _range(since, until)
-    rows = db.q(
-        "SELECT zone_id, value, attributes FROM events WHERE ts BETWEEN ? AND ?"
-        " AND event_type='zone_dwell' AND zone_id IS NOT NULL AND value IS NOT NULL", (since, until))
-    derived = False
-    dwells = [{"zone_id": r["zone_id"], "value": r["value"], "attributes": db.jload(r["attributes"], {})} for r in rows]
-    if not dwells:
-        dwells, derived = _derive_dwells(since, until), True
+    visits, open_count = derive.derive_dwells(since, until, zone_id, max_dwell_s)
     agg: dict[tuple, dict] = defaultdict(lambda: {"visits": 0, "total_s": 0.0})
-    for d in dwells:
+    for d in visits:
         group = str(d["attributes"].get(group_by, "all")) if group_by else "all"
         a = agg[(d["zone_id"], group)]
         a["visits"] += 1
@@ -100,12 +88,16 @@ def dwell(since: float | None = None, until: float | None = None, group_by: str 
             "visits": a["visits"], "total_s": round(a["total_s"], 1),
             "avg_s": round(a["total_s"] / a["visits"], 1)}
            for (zid, grp), a in sorted(agg.items())]
-    return {"rows": out, "derived": derived, "group_by": group_by, "since": since, "until": until}
+    return {"rows": out, "derived": True, "open_visits": open_count, "group_by": group_by,
+            "zone_id": zone_id, "since": since, "until": until}
 
 
 @router.get("/analytics/occupancy")
 def occupancy(since: float | None = None, until: float | None = None,
               bucket_s: float = 600, zone_id: int | None = None):
+    """Distinct tracks seen per time bucket, counted across any zone-assigned event
+    type (detections, zone_enter/exit, ...). DISTINCT dedupes, so mixed event types
+    for the same track do not inflate the count."""
     since, until = _range(since, until)
     bucket_s = max(bucket_s, (until - since) / 500, 10)  # cap at 500 buckets
     where, args = ["ts BETWEEN ? AND ?", "track_id IS NOT NULL", "zone_id IS NOT NULL"], [since, until]

@@ -100,6 +100,23 @@ CREATE TABLE IF NOT EXISTS alerts (
   resolved_at REAL,
   created_at REAL
 );
+CREATE TABLE IF NOT EXISTS insight_definitions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  question TEXT DEFAULT '',
+  block TEXT NOT NULL,                          -- metric|line|bar|table|heatmap_map|flow_matrix|state_timeline
+  dataset TEXT NOT NULL,                        -- summary|heatmap|dwell|occupancy|counts|transitions|states
+  params_json TEXT NOT NULL DEFAULT '{}',       -- dataset query params: zone_id, label, group_by, source_id, field...
+  unit TEXT DEFAULT '',
+  limitations TEXT DEFAULT '',
+  pinned INTEGER DEFAULT 0,
+  sort_order INTEGER DEFAULT 0,
+  visibility TEXT NOT NULL DEFAULT 'visible',   -- visible | hidden
+  created_by TEXT NOT NULL DEFAULT 'user',      -- user | agent
+  status TEXT NOT NULL DEFAULT 'ready',         -- draft|collecting|validating|ready|degraded|retired
+  created_at REAL,
+  updated_at REAL
+);
 """
 
 

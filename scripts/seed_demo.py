@@ -1,6 +1,7 @@
 """Seed StoreLens with a complete, realistic demo:
 store plan, zones, cameras (with a real computed homography), jobs, ~3 hours of
-synthetic shopper history, fridge open/close states, alert rules and fired alerts.
+synthetic shopper history (raw observations only — the platform derives dwell),
+fridge open/close states, alert rules, fired alerts, and an insight catalogue.
 
 Run once (server may be running or not — writes the same SQLite DB):
     python scripts/seed_demo.py
@@ -124,7 +125,7 @@ def simulate_history(zones: dict, source_ids: dict):
         "INSERT INTO jobs (name, description, source_ids, event_types, status, created_at) VALUES (?,?,?,?,?,?)",
         ("Seed: shopper history", "3h of synthetic shopper traffic (waypoint walks with zone bookkeeping)",
          json.dumps([source_ids["entrance"], source_ids["overhead"]]),
-         json.dumps(["detection", "zone_enter", "zone_exit", "zone_dwell"]), "active", NOW - HISTORY_S))
+         json.dumps(["detection", "zone_enter", "zone_exit"]), "active", NOW - HISTORY_S))
     job_fridge = db.ex(
         "INSERT INTO jobs (name, description, source_ids, event_types, status, created_at) VALUES (?,?,?,?,?,?)",
         ("Seed: fridge monitor", "door open/closed states via ROI diff (synthetic)",
@@ -155,15 +156,15 @@ def simulate_history(zones: dict, source_ids: dict):
         in_zone = {}
 
         def update_zones(ts, x, y):
+            # raw observations only: enter/exit pairs — the platform derives dwell
             for z in all_zones:
                 member = homography.point_in_polygon(x, y, z["polygon"])
                 if member and z["id"] not in in_zone:
                     in_zone[z["id"]] = ts
                     add(job_shoppers, src, ts, "zone_enter", tid, z["id"], x, y, attrs=attrs)
                 elif not member and z["id"] in in_zone:
-                    t0 = in_zone.pop(z["id"])
+                    in_zone.pop(z["id"])
                     add(job_shoppers, src, ts, "zone_exit", tid, z["id"], x, y, attrs=attrs)
-                    add(job_shoppers, src, ts, "zone_dwell", tid, z["id"], value=ts - t0, attrs=attrs)
 
         for wp in path[1:]:
             tx, ty = zone_centroid(wp)
@@ -190,25 +191,21 @@ def simulate_history(zones: dict, source_ids: dict):
                 jy = pos[1] + random.uniform(-0.3, 0.3)
                 add(job_shoppers, src, t, "detection", tid, None, jx, jy, attrs=attrs)
                 update_zones(t, jx, jy)
-        for zid, t0 in in_zone.items():  # close out
+        for zid in list(in_zone):  # close out open visits with exits
             add(job_shoppers, src, t, "zone_exit", tid, zid, pos[0], pos[1], attrs=attrs)
-            add(job_shoppers, src, t, "zone_dwell", tid, zid, value=t - t0, attrs=attrs)
 
-    # fridge open/close cycle over the whole window
+    # fridge open/close cycle: label-only flips, durations derived by the platform
     t = NOW - HISTORY_S
     state = "closed"
     fridge_zone = zones["Fridge"]["id"]
-    add(job_fridge, source_ids["fridge"], t, "state_change", zone=fridge_zone, value=0,
-        label=state, attrs={"prev_label": state})
+    add(job_fridge, source_ids["fridge"], t, "state_change", zone=fridge_zone, label=state)
     while t < NOW - 60:
         dur = random.uniform(300, 900) if state == "closed" else random.uniform(20, 200)
         t += dur
         if t >= NOW - 60:
             break
-        new = "open" if state == "closed" else "closed"
-        add(job_fridge, source_ids["fridge"], t, "state_change", zone=fridge_zone,
-            value=dur, label=new, attrs={"prev_label": state})
-        state = new
+        state = "open" if state == "closed" else "closed"
+        add(job_fridge, source_ids["fridge"], t, "state_change", zone=fridge_zone, label=state)
 
     db.exmany(
         "INSERT INTO events (job_id, source_id, ts, event_type, track_id, zone_id, x_px, y_px, x_map, y_map, value, label, attributes, created_at)"
@@ -242,6 +239,35 @@ def seed_alerts(zones: dict, source_ids: dict):
     print("alerts: 3 rules, 3 historical alerts")
 
 
+def seed_insights(zones: dict, source_ids: dict):
+    db.ex("DELETE FROM insight_definitions")
+    definitions = [
+        ("Visitor presence over time", "How many people are present over time?",
+         "line", "occupancy", {}, "people",
+         "Distinct track IDs per interval — re-identified people count twice.", 1, 0),
+        ("Activity heatmap", "Where does activity concentrate on the floor?",
+         "heatmap_map", "heatmap", {}, "",
+         "Only calibrated detections appear; uncalibrated cameras contribute nothing.", 1, 1),
+        ("Dwell by zone", "How long do visitors stay in each zone?",
+         "bar", "dwell", {}, "seconds",
+         "Derived from enter/exit pairs; in-progress visits are clipped to the window.", 0, 2),
+        ("Zone-to-zone flow", "How do people move between zones?",
+         "flow_matrix", "transitions", {}, "moves",
+         "Counts consecutive zone entries per track; gaps over 30 minutes break a path.", 0, 3),
+        ("Fridge door states", "How long does the fridge stay open?",
+         "state_timeline", "states", {"source_id": source_ids["fridge"]}, "",
+         "Durations derived from state_change timestamps; gaps read as the last known state.", 0, 4),
+    ]
+    for title, question, block, dataset, params, unit, limitations, pinned, order in definitions:
+        db.ex(
+            "INSERT INTO insight_definitions (title, question, block, dataset, params_json, unit,"
+            " limitations, pinned, sort_order, visibility, created_by, status, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,'visible','user','ready',?,?)",
+            (title, question, block, dataset, json.dumps(params), unit, limitations,
+             pinned, order, NOW, NOW))
+    print(f"insights: {len(definitions)} registered (2 pinned to Overview)")
+
+
 if __name__ == "__main__":
     db.init_db()
     clear_previous_seed()
@@ -250,6 +276,7 @@ if __name__ == "__main__":
     source_ids = seed_sources()
     simulate_history(zones, source_ids)
     seed_alerts(zones, source_ids)
+    seed_insights(zones, source_ids)
     print("\nSeed complete. Start the server and open http://localhost:8000")
     print("  uvicorn server.app:app --port 8000")
     print("For live streaming events on top: python examples/simulate_shoppers.py")

@@ -18,10 +18,12 @@ API docs are at <http://localhost:8000/docs>.
 With a fresh database, verify:
 
 - Header says **ManySight**, workspace identity, `Setup incomplete`, and event-stream status.
-- Sidebar contains Overview, Insights, Events, Streams, and Configure.
+- Sidebar contains Overview, Insights, Review, Detections, Streams, and Configure.
 - Overview defines `Tracked visits` as distinct anonymous track IDs.
 - Queue metric asks for a checkout or queue zone instead of inventing a number.
-- Events explains that signals require human review.
+- Insights is honestly empty: "No insights registered yet" with an Add button.
+- Detections shows an empty observation table plus its documentation panel.
+- Review explains that signals require human review.
 - Streams explains that snapshot status is not continuous health monitoring.
 - Configure shows the Streams → Zones → Calibration → Analysis setup sequence.
 
@@ -36,12 +38,25 @@ python scripts/seed_demo.py
 
 Reload the dashboard and choose **Last 24 hours**. Expected:
 
-- Overview metric cards and a visitor-traffic curve.
-- Populated activity map.
-- Dwell and anonymous flow under Insights.
-- Fridge state history under Custom analyses.
-- Reviewable example signals under Events.
+- Overview metric cards, a visitor-traffic curve, and two pinned insight cards
+  (presence over time and the activity heatmap).
+- Insights shows five registered example cards: presence line, activity heatmap,
+  dwell by zone, zone-to-zone flow, and the fridge state timeline. Each card states
+  its limitations.
+- Detections lists the seeded raw observations (detections, zone enter/exit pairs,
+  state changes) with working filters and a Load more button.
+- Reviewable example signals under Review.
 - Three example streams and setup state under Streams/Configure.
+
+Note: the seed posts **raw observations only** — no precomputed dwell. Every dwell
+number you see is derived by the platform from enter/exit pairs.
+
+With the server running on the seeded database, the API-level checks (pagination,
+derive-only dwell, derived alerts, insight registry) can be run in one go:
+
+```bash
+bash scripts/smoke_test.sh
+```
 
 Add live simulated traffic:
 
@@ -53,7 +68,7 @@ The event stream should remain green and the dashboard will refresh as batches a
 
 ## 4. Test the human-review workflow
 
-1. Open **Events**.
+1. Open **Review**.
 2. Select a new signal.
 3. Change status to **In review**.
 4. Add a note describing what was checked.
@@ -61,6 +76,25 @@ The event stream should remain green and the dashboard will refresh as batches a
 
 This workflow intentionally uses neutral signal language. It does not label a person
 or event as wrongdoing.
+
+## 4b. Inspect raw detections
+
+1. Open **Detections**.
+2. Filter by event type, camera, zone, analysis job, track ID, or label; change the
+   time range.
+3. Expand a row to see its pixel point, projected map point, and attributes.
+4. Pause **Follow live events**, then use **Load more** to page through history
+   (following live resets pagination by design).
+5. Open the "How to read this table" panel — it documents every column, every event
+   type, and the enrichment pipeline (bbox → feet point → homography → zone).
+
+## 4c. Curate the Insights catalogue
+
+1. Open **Insights → Add insight** — templates reflect the data actually present.
+2. Register one (e.g. a queue-presence metric), edit its title and limitations.
+3. Pin it: it appears on Overview. Reorder cards with the arrow buttons.
+4. Delete it or mark it hidden when done. An agent can do the same over MCP with
+   `register_insight`.
 
 ## 5. Connect a real camera
 
@@ -106,9 +140,10 @@ STORELENS_URL = "http://localhost:8000"
 Example bounded request:
 
 > Inspect the entrance camera and build anonymous traffic and occupancy insights for
-> the existing retail zones. Register the job, run the worker, post events, and verify
-> the resulting analytics. Explain limitations and do not infer identity or sensitive
-> traits.
+> the existing retail zones. Register the job, run the worker, post raw observations
+> (detections and zone enter/exit pairs — the platform derives dwell), verify the
+> resulting analytics, and register the insight cards so they appear on the dashboard.
+> Explain limitations and do not infer identity or sensitive traits.
 
 Codex can inspect snapshots and create workers, but registered job status does not yet
 prove the process is still running. Runtime heartbeat/restart management remains POC
@@ -129,7 +164,7 @@ it can reach the camera and continuously post events.
 ## 8. Test API authentication
 
 ```powershell
-$env:STORELENS_API_KEY = "test-secret"
+$env:STORELENS_API_KEY
 python -m uvicorn server.app:app --port 8000
 ```
 
@@ -152,9 +187,14 @@ signals, and live SSE reconnect states.
 ## 10. Known POC limitations
 
 - Distinct track IDs are not automatically validated visits.
-- Queue-zone dwell is not automatically validated wait time.
+- Queue-zone dwell is platform-derived from enter/exit pairs (worker-reported dwell
+  values are no longer trusted), but it is still not validated wait time.
+- Ongoing alerts (loitering without an exit, door still open) evaluate only when new
+  events are ingested; a silent zone re-alerts on the next batch.
 - Source health is based on snapshot checks, not continuous telemetry.
 - Job state is registration metadata, not worker process supervision.
+- Insight lifecycle states (collecting/validating/degraded) are displayed but not yet
+  automatically transitioned.
 - Demo and live records still share the same SQLite database.
 - Authentication, roles, tenants, retention policy, and audit controls are not
   production-ready.

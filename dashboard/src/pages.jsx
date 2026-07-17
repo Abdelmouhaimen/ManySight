@@ -6,10 +6,8 @@ import {
   BellRing,
   CheckCircle2,
   ChevronRight,
-  CircleDot,
   Code2,
   Eye,
-  Gauge,
   Map,
   Pause,
   Play,
@@ -18,14 +16,11 @@ import {
   Save,
   Settings2,
   Trash2,
-  UsersRound,
-  Wrench,
 } from "lucide-react";
 import { api, assetUrl, formatDateTime, formatDuration } from "./api.js";
 import {
   ActivityMap,
   Badge,
-  BarChart,
   EmptyState,
   ErrorState,
   LineChart,
@@ -34,36 +29,12 @@ import {
   Modal,
   PageHeader,
   Panel,
+  RangeSelect,
   SignalRow,
 } from "./components.jsx";
+import { InsightCard } from "./insights.jsx";
 import { SpaceWorkbench } from "./space-workbench.jsx";
 import { ConnectionModal, TechnicalConfig } from "./technical-config.jsx";
-
-const RANGE_OPTIONS = [
-  ["1 hour", 3600],
-  ["6 hours", 21600],
-  ["24 hours", 86400],
-  ["7 days", 604800],
-  ["30 days", 2592000],
-];
-
-function RangeSelect({ value, onChange }) {
-  return (
-    <label className="select-control">
-      <span className="sr-only">Time range</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-      >
-        {RANGE_OPTIONS.map(([label, seconds]) => (
-          <option key={seconds} value={seconds}>
-            Last {label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
 
 function useDashboardData(range, liveTick = 0) {
   const [state, setState] = useState({
@@ -81,33 +52,18 @@ function useDashboardData(range, liveTick = 0) {
       since = until - range,
       query = `since=${since}&until=${until}`;
     try {
-      const [
-        summary,
-        store,
-        zones,
-        sources,
-        heat,
-        dwell,
-        occupancy,
-        counts,
-        transitions,
-        states,
-        alerts,
-        jobs,
-      ] = await Promise.all([
-        api.get(`/analytics/summary?${query}`),
-        api.get("/store"),
-        api.get("/zones"),
-        api.get("/sources"),
-        api.get(`/analytics/heatmap?${query}`),
-        api.get(`/analytics/dwell?${query}`),
-        api.get(`/analytics/occupancy?${query}`),
-        api.get(`/analytics/counts?${query}`),
-        api.get(`/analytics/transitions?${query}`),
-        api.get(`/analytics/states?${query}`),
-        api.get("/alerts?limit=60"),
-        api.get("/jobs"),
-      ]);
+      const [summary, store, zones, sources, heat, dwell, occupancy, alerts, pinned] =
+        await Promise.all([
+          api.get(`/analytics/summary?${query}`),
+          api.get("/store"),
+          api.get("/zones"),
+          api.get("/sources"),
+          api.get(`/analytics/heatmap?${query}`),
+          api.get(`/analytics/dwell?${query}`),
+          api.get(`/analytics/occupancy?${query}`),
+          api.get("/alerts?limit=60"),
+          api.get("/insights?pinned=true"),
+        ]);
       setState({
         loading: false,
         data: {
@@ -118,11 +74,8 @@ function useDashboardData(range, liveTick = 0) {
           heat,
           dwell,
           occupancy,
-          counts,
-          transitions,
-          states,
           alerts,
-          jobs,
+          pinned,
           since,
           until,
         },
@@ -262,11 +215,25 @@ export function OverviewPage({ liveTick = 0, openSignal }) {
           />
         </Panel>
       </div>
+      {d.pinned.length > 0 && (
+        <div className="insight-grid">
+          {d.pinned.map((definition) => (
+            <InsightCard
+              key={definition.id}
+              definition={definition}
+              range={range}
+              context={{ store: d.store, zones: d.zones, sources: d.sources }}
+              liveTick={liveTick}
+              readOnly
+            />
+          ))}
+        </div>
+      )}
       <Panel
         title="Recent signals"
         subtitle="Model outputs remain reviewable and traceable"
         action={
-          <a className="text-link" href="#events">
+          <a className="text-link" href="#review">
             View all <ArrowRight size={14} />
           </a>
         }
@@ -294,287 +261,7 @@ export function OverviewPage({ liveTick = 0, openSignal }) {
   );
 }
 
-export function InsightsPage({ liveTick = 0 }) {
-  const [range, setRange] = useState(86400);
-  const [tab, setTab] = useState("traffic");
-  const remote = useDashboardData(range, liveTick);
-  if (remote.loading && !remote.data)
-    return <LoadingState label="Loading insights…" />;
-  if (remote.error && !remote.data)
-    return <ErrorState error={remote.error} retry={remote.refresh} />;
-  const d = remote.data;
-  const queueZoneIds = new Set(
-    d.zones
-      .filter((zone) => ["checkout", "queue"].includes(zone.ztype))
-      .map((zone) => zone.id),
-  );
-  const queueRows = d.dwell.rows
-    .filter((row) => queueZoneIds.has(row.zone_id))
-    .map((row) => ({
-      label: row.zone_name,
-      value: row.avg_s,
-      detail: `${row.visits} visits`,
-    }));
-  const dwellRows = d.dwell.rows.map((row) => ({
-    label: row.zone_name,
-    value: row.avg_s,
-    detail: `${row.visits} visits`,
-  }));
-  const countSeries = d.counts.series[0];
-  return (
-    <>
-      <PageHeader
-        eyebrow="Insights"
-        title="Understand the operating pattern"
-        description="Focused views for traffic, queues, anonymous flow, dwell, and spatial activity."
-        actions={<RangeSelect value={range} onChange={setRange} />}
-      />
-      <div
-        className="feature-tabs"
-        role="tablist"
-        aria-label="Insight categories"
-      >
-        {[
-          ["traffic", "Traffic & occupancy", UsersRound],
-          ["queue", "Queue intelligence", Gauge],
-          ["flow", "Flow & dwell", Activity],
-          ["map", "Activity map", Map],
-          ["experimental", "Custom analyses", Wrench],
-        ].map(([value, label, Icon]) => (
-          <button
-            key={value}
-            className={tab === value ? "active" : ""}
-            onClick={() => setTab(value)}
-            role="tab"
-            aria-selected={tab === value}
-          >
-            <Icon size={16} />
-            {label}
-          </button>
-        ))}
-      </div>
-      {tab === "traffic" && (
-        <div className="insight-layout">
-          <Panel
-            title="Occupancy over time"
-            subtitle="Distinct tracks observed in each bucket"
-          >
-            <LineChart points={d.occupancy.series} unit=" people" />
-          </Panel>
-          <Panel
-            title="Traffic definition"
-            subtitle="What this POC currently measures"
-          >
-            <div className="definition-card">
-              <CircleDot />
-              <h3>Anonymous track activity</h3>
-              <p>
-                The current curve counts distinct non-null track IDs with
-                assigned zones. It is useful for demonstrating trends, but it is
-                not yet a validated entry/exit counter.
-              </p>
-              <Badge tone="warning">Needs pilot validation</Badge>
-            </div>
-          </Panel>
-        </div>
-      )}
-      {tab === "queue" && (
-        <div className="insight-layout">
-          <Panel
-            title="Queue-zone presence"
-            subtitle="Average dwell in checkout or queue zones"
-          >
-            <BarChart
-              rows={queueRows}
-              unit=" sec"
-              empty="Create a checkout or queue zone, then post zone_dwell events."
-            />
-          </Panel>
-          <Panel
-            title="Operational interpretation"
-            subtitle="A signal, not an automatic staffing decision"
-          >
-            <div className="definition-card">
-              <Gauge />
-              <h3>Pressure indicator</h3>
-              <p>
-                People inside a queue polygon may not all be queuing. Calibrate
-                the zone and validate against peak and off-peak samples before
-                using a threshold.
-              </p>
-              <a className="text-link" href="#configure">
-                Review zone setup <ArrowRight size={14} />
-              </a>
-            </div>
-          </Panel>
-        </div>
-      )}
-      {tab === "flow" && (
-        <div className="stack">
-          <Panel
-            title="Dwell by zone"
-            subtitle="Average seconds per observed visit"
-          >
-            <BarChart
-              rows={dwellRows}
-              unit=" sec"
-              empty="Post zone_dwell events or paired zone_enter and zone_exit events."
-            />
-          </Panel>
-          <Panel
-            title="Zone-to-zone flow"
-            subtitle="Anonymous transitions for stable track IDs"
-          >
-            <FlowTable data={d.transitions} />
-          </Panel>
-        </div>
-      )}
-      {tab === "map" && (
-        <Panel
-          title="Activity map"
-          subtitle={`${d.heat.points.length.toLocaleString()} populated cells · calibrated detections`}
-        >
-          <ActivityMap
-            store={d.store}
-            zones={d.zones}
-            sources={d.sources}
-            points={d.heat.points}
-          />
-          {!d.heat.points.length && (
-            <EmptyState title="No positioned detections">
-              Calibrate a camera and post detection events with pixel or map
-              points.
-            </EmptyState>
-          )}
-        </Panel>
-      )}
-      {tab === "experimental" && (
-        <div className="stack">
-          <div className="experimental-note">
-            <Wrench size={17} />
-            <div>
-              <strong>Agent-defined classifier views</strong>
-              <p>
-                A worker can post labelled count events for an approved
-                question, such as the number of children in a main hall over
-                time. The classifier and metric definition must be validated for
-                that space.
-              </p>
-            </div>
-          </div>
-          <Panel
-            title={
-              countSeries
-                ? `${countSeries.label} over time`
-                : "Classifier counts"
-            }
-            subtitle="Generic labelled count events"
-          >
-            <LineChart
-              points={countSeries?.points || []}
-              unit={countSeries ? ` ${countSeries.label}` : ""}
-              empty="Post labelled count events to populate this view."
-            />
-          </Panel>
-          <Panel
-            title="State monitoring"
-            subtitle="Equipment or scene state durations"
-          >
-            <StateSummary series={d.states.series} />
-          </Panel>
-        </div>
-      )}
-    </>
-  );
-}
-
-function FlowTable({ data }) {
-  if (!data.links.length)
-    return (
-      <EmptyState title="No transitions yet">
-        Stable track IDs need zone-enter sequences or zoned detections.
-      </EmptyState>
-    );
-  const names = [
-    ...new Set(
-      data.links
-        .flatMap((link) => [link.from_name, link.to_name])
-        .filter(Boolean),
-    ),
-  ];
-  const max = Math.max(...data.links.map((link) => link.count), 1);
-  return (
-    <div className="table-scroll">
-      <table className="matrix-table">
-        <thead>
-          <tr>
-            <th>From / to</th>
-            {names.map((name) => (
-              <th key={name}>{name}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {names.map((from) => (
-            <tr key={from}>
-              <th>{from}</th>
-              {names.map((to) => {
-                const value =
-                  data.links.find(
-                    (link) => link.from_name === from && link.to_name === to,
-                  )?.count || 0;
-                return (
-                  <td
-                    key={to}
-                    style={{
-                      backgroundColor: value
-                        ? `rgba(112,89,255,${0.08 + (0.5 * value) / max})`
-                        : undefined,
-                    }}
-                  >
-                    {value || "—"}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function StateSummary({ series }) {
-  if (!series.length)
-    return (
-      <EmptyState title="No state history">
-        State-change events will create equipment or scene timelines.
-      </EmptyState>
-    );
-  return (
-    <div className="state-list">
-      {series.map((item) => (
-        <div key={item.source_id}>
-          <strong>{item.source_name}</strong>
-          <div>
-            {Object.entries(item.totals).map(([label, seconds]) => (
-              <Badge
-                key={label}
-                tone={
-                  label === "open" || label === "on" ? "warning" : "neutral"
-                }
-              >
-                {label} · {formatDuration(seconds)}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function EventsPage({ liveTick = 0, initialSignal, clearInitial }) {
+export function ReviewPage({ liveTick = 0, initialSignal, clearInitial }) {
   const [alerts, setAlerts] = useState([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(null);
@@ -615,7 +302,7 @@ export function EventsPage({ liveTick = 0, initialSignal, clearInitial }) {
   return (
     <>
       <PageHeader
-        eyebrow="Reviewable events"
+        eyebrow="Review queue"
         title="One queue for what needs attention"
         description="Signals support human review. They are not automatic conclusions or accusations."
         actions={
@@ -1156,7 +843,7 @@ function SourceModal({ source, onClose, onSaved }) {
   );
 }
 
-export function ConfigurePage({ notify, refreshShell, liveTick = 0 }) {
+export function ConfigurePage({ notify, refreshShell }) {
   const [tab, setTab] = useState("workspace"),
     [store, setStore] = useState(null),
     [zones, setZones] = useState([]),
@@ -1270,14 +957,7 @@ export function ConfigurePage({ notify, refreshShell, liveTick = 0 }) {
               onAdd={() => setShowRule(true)}
             />
           )}
-          {tab === "technical" && (
-            <TechnicalConfig
-              notify={notify}
-              sources={sources}
-              zones={zones}
-              liveTick={liveTick}
-            />
-          )}
+          {tab === "technical" && <TechnicalConfig notify={notify} />}
         </div>
       </div>
       {showRule && (

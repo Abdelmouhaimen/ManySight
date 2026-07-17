@@ -1,8 +1,9 @@
 """Fridge/door state worker — open/closed timeline from a real video source.
 
 Compares a region of interest against a reference frame captured at startup
-(door must be CLOSED when the script starts). Emits `state_change` on flips with
-the finished state's duration, which powers the States timeline and duration alerts.
+(door must be CLOSED when the script starts). Emits `state_change` with the new
+state's label on flips (plus one anchor at startup); the platform derives
+durations and duration alerts from consecutive timestamps.
 
 Usage:
     python examples/fridge_state.py --source 2 --roi 100,80,220,300 [--thresh 18]
@@ -37,8 +38,7 @@ def main():
     ref_roi = gray(ref)
 
     state, since = "closed", time.time()
-    sl.add_event(source_id=src["id"], event_type="state_change", label=state,
-                 value=0, attributes={"prev_label": state})
+    sl.add_event(source_id=src["id"], event_type="state_change", label=state)
     sl.flush()
     pending, pending_n = None, 0
     print("monitoring… (reference frame assumes door is closed now)")
@@ -53,8 +53,7 @@ def main():
             pending = observed
             if pending_n >= 3:
                 now = time.time()
-                sl.add_event(source_id=src["id"], event_type="state_change", label=observed,
-                             value=now - since, attributes={"prev_label": state})
+                sl.add_event(source_id=src["id"], event_type="state_change", label=observed)
                 sl.flush()
                 print(f"{state} → {observed} after {now - since:.0f}s")
                 state, since, pending_n = observed, now, 0

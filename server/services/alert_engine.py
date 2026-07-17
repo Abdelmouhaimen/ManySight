@@ -1,10 +1,15 @@
-"""Alert rule evaluation. Runs synchronously on each ingested event batch;
-webhooks fire on daemon threads so ingestion never blocks on the network."""
+"""Alert rule evaluation. Runs synchronously on each ingested event batch
+(after the batch is persisted, so derivation queries see same-batch rows);
+webhooks fire on daemon threads so ingestion never blocks on the network.
+
+Dwell and state durations are always platform-derived (services/derive.py) —
+worker-posted zone_dwell values and state_change durations are never trusted."""
 import json
 import threading
 import urllib.request
 
 from .. import db
+from . import derive
 
 
 def _fire(rule: dict, title: str, message: str, payload: dict, ts: float) -> dict:
@@ -50,14 +55,31 @@ def evaluate(batch: list[dict], zone_names: dict[int, str]) -> list[dict]:
         alert = None
         if rule["kind"] == "dwell_exceeds":
             zid, secs = p.get("zone_id"), float(p.get("seconds", 60))
-            for e in batch:
-                val = float(e.get("value") or 0)
-                if e["event_type"] == "zone_dwell" and (zid is None or e.get("zone_id") == zid) and val >= secs:
+            lookback = max(secs * 4, derive.MAX_DWELL_S)
+            for e in batch:  # completed visits: derive duration for each just-ingested exit
+                if e["event_type"] != "zone_exit" or not e.get("track_id") or e.get("zone_id") is None:
+                    continue
+                if zid is not None and e.get("zone_id") != zid:
+                    continue
+                dur = derive.dwell_on_exit(e["track_id"], e["zone_id"], e["ts"], lookback)
+                if dur is not None and dur >= secs:
                     zn = zone_names.get(e.get("zone_id"), f"zone {e.get('zone_id')}")
                     alert = _fire(rule, rule["name"],
-                                  f"Track {e.get('track_id')} dwelled {val:.0f}s in {zn} (limit {secs:.0f}s)",
-                                  {"event": e}, e["ts"])
+                                  f"Track {e.get('track_id')} dwelled {dur:.0f}s in {zn} (limit {secs:.0f}s)",
+                                  {"event": e, "derived_dwell_s": round(dur, 1)}, e["ts"])
                     break
+            if alert is None and any(e.get("zone_id") == zid or zid is None
+                                     for e in batch if e.get("zone_id") is not None):
+                # ongoing loiter: tracks still inside past the threshold (cooldown throttles)
+                opens = derive.open_dwells(batch_max_ts, zid, min_seconds=secs, lookback_s=lookback)
+                if opens:
+                    v = max(opens, key=lambda o: o["value"])
+                    zn = zone_names.get(v["zone_id"], f"zone {v['zone_id']}")
+                    alert = _fire(rule, rule["name"],
+                                  f"Track {v['track_id']} has been in {zn} for {v['value']:.0f}s"
+                                  f" and counting (limit {secs:.0f}s)",
+                                  {"open_visit": {k: v[k] for k in ("zone_id", "track_id", "t0", "value")}},
+                                  batch_max_ts)
         elif rule["kind"] == "occupancy_exceeds":
             zid, count, win = p.get("zone_id"), int(p.get("count", 5)), float(p.get("window_s", 60))
             if any(e.get("zone_id") == zid or zid is None for e in batch if e.get("zone_id") is not None):
@@ -80,18 +102,29 @@ def evaluate(batch: list[dict], zone_names: dict[int, str]) -> list[dict]:
                 if e["event_type"] != "state_change" or (src is not None and e.get("source_id") != src):
                     continue
                 if min_s is not None:
-                    # fires when a state *ends*: e.value carries the finished state's duration,
-                    # e.attributes.prev_label the state that just ended
-                    prev = (e.get("attributes") or {}).get("prev_label")
-                    val = float(e.get("value") or 0)
-                    if prev == label and val >= float(min_s):
+                    # fires when a state *ends*: duration derived from the previous
+                    # state_change timestamp (worker-posted values are ignored)
+                    if e.get("source_id") is None:
+                        continue
+                    prev = derive.state_before(e["source_id"], e["ts"])
+                    if prev and prev["label"] == label and (e["ts"] - prev["ts"]) >= float(min_s):
+                        dur = e["ts"] - prev["ts"]
                         alert = _fire(rule, rule["name"],
-                                      f"State '{label}' lasted {val:.0f}s (limit {float(min_s):.0f}s)",
-                                      {"event": e}, e["ts"])
+                                      f"State '{label}' lasted {dur:.0f}s (limit {float(min_s):.0f}s)",
+                                      {"event": e, "derived_duration_s": round(dur, 1)}, e["ts"])
                         break
                 elif e.get("label") == label:
                     alert = _fire(rule, rule["name"], f"State changed to '{label}'", {"event": e}, e["ts"])
                     break
+            if alert is None and min_s is not None and src is not None:
+                # ongoing state: still in `label` past the threshold (e.g. fridge left open)
+                cur = derive.current_state(src, batch_max_ts)
+                if cur and cur["label"] == label and (batch_max_ts - cur["ts"]) >= float(min_s):
+                    dur = batch_max_ts - cur["ts"]
+                    alert = _fire(rule, rule["name"],
+                                  f"State '{label}' ongoing for {dur:.0f}s (limit {float(min_s):.0f}s)",
+                                  {"source_id": src, "since_ts": cur["ts"],
+                                   "derived_duration_s": round(dur, 1)}, batch_max_ts)
         elif rule["kind"] == "event_match":
             etype, zid = p.get("event_type", ""), p.get("zone_id")
             ak, av = p.get("attr_key"), p.get("attr_value")
