@@ -304,6 +304,115 @@ export function LineChart({
   );
 }
 
+const SERIES_COLORS = [
+  "#7059ff",
+  "#0f8b8d",
+  "#e07a35",
+  "#d14978",
+  "#4878cf",
+  "#6f9e43",
+];
+
+export function MultiLineChart({
+  series = [],
+  unit = "",
+  empty = "No observations in this period",
+}) {
+  const visible = series.filter((item) => item.points?.length);
+  if (!visible.length)
+    return <EmptyState title="No chart data">{empty}</EmptyState>;
+  const width = 680,
+    height = 210,
+    left = 38,
+    right = 12,
+    top = 15,
+    bottom = 30;
+  const allPoints = visible.flatMap((item) => item.points);
+  const t0 = Math.min(...allPoints.map((point) => point.t));
+  const t1 = Math.max(...allPoints.map((point) => point.t), t0 + 1);
+  const max = niceMax(
+    Math.max(...allPoints.map((point) => Number(point.count) || 0), 1),
+  );
+  const x = (t) => left + ((t - t0) / (t1 - t0 || 1)) * (width - left - right);
+  const y = (value) => top + (1 - value / max) * (height - top - bottom);
+  return (
+    <div className="chart-wrap multi-line-wrap">
+      <div className="chart-legend" aria-label="Chart series">
+        {visible.map((item, index) => (
+          <span key={item.label}>
+            <i style={{ background: SERIES_COLORS[index % SERIES_COLORS.length] }} />
+            {item.label}
+          </span>
+        ))}
+      </div>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="line-chart"
+        role="img"
+        aria-label={`Time series comparing ${visible.map((item) => item.label).join(", ")}`}
+      >
+        {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
+          <g key={ratio}>
+            <line
+              x1={left}
+              x2={width - right}
+              y1={y(max * ratio)}
+              y2={y(max * ratio)}
+              className="chart-grid"
+            />
+            <text x={left - 8} y={y(max * ratio) + 3} textAnchor="end">
+              {Math.round(max * ratio)}
+            </text>
+          </g>
+        ))}
+        {visible.map((item, index) => {
+          const color = SERIES_COLORS[index % SERIES_COLORS.length];
+          const path = item.points
+            .map(
+              (point, pointIndex) =>
+                `${pointIndex ? "L" : "M"} ${x(point.t).toFixed(1)} ${y(point.count).toFixed(1)}`,
+            )
+            .join(" ");
+          const latest = item.points.at(-1);
+          return (
+            <g key={item.label}>
+              <path d={path} className="chart-line" style={{ stroke: color }} />
+              <circle
+                cx={x(latest.t)}
+                cy={y(latest.count)}
+                r="4"
+                className="chart-dot"
+                style={{ stroke: color }}
+              />
+            </g>
+          );
+        })}
+        {[0, 0.33, 0.66, 1].map((ratio) => {
+          const ts = t0 + (t1 - t0) * ratio;
+          return (
+            <text
+              key={ratio}
+              x={x(ts)}
+              y={height - 8}
+              textAnchor={ratio === 0 ? "start" : ratio === 1 ? "end" : "middle"}
+            >
+              {formatTime(ts)}
+            </text>
+          );
+        })}
+      </svg>
+      <div className="multi-line-latest">
+        {visible.map((item, index) => (
+          <span key={item.label}>
+            <i style={{ background: SERIES_COLORS[index % SERIES_COLORS.length] }} />
+            {item.label}: <strong>{item.points.at(-1).count}{unit}</strong>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function BarChart({
   rows = [],
   valueKey = "value",

@@ -64,9 +64,10 @@ def main():
 
     sl.register_job(f"Heatmap – {src['name']}", "person feet positions for spatial heatmap",
                     source_ids=[src["id"]], event_types=["detection"])
+    sl.register_worker("heatmap-tracker", version="1")
     cap = sl.open_capture(src)
     tracker = CentroidTracker(max_distance=90)
-    interval, last = 1.0 / args.fps, 0.0
+    interval, last, last_heartbeat = 1.0 / args.fps, 0.0, 0.0
     n = 0
     while True:
         ok, frame = cap.read()
@@ -75,6 +76,11 @@ def main():
             break
         feet = detect(frame)
         now = time.time()
+        if now - last_heartbeat >= 10:
+            command = sl.heartbeat(metrics={"detections": n})
+            last_heartbeat = now
+            if command["should_stop"]:
+                break
         if now - last >= interval:
             for tid, cx, cy in tracker.update(feet):
                 sl.add_event(source_id=src["id"], event_type="detection",
@@ -84,6 +90,7 @@ def main():
             if n and n % 200 == 0:
                 print(f"{n} detections posted")
     sl.flush()
+    sl.stop_worker()
 
 
 if __name__ == "__main__":

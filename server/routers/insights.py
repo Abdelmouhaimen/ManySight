@@ -122,6 +122,12 @@ def list_templates():
     zones = db.q("SELECT id, name, ztype FROM zones ORDER BY id")
     has_positions = bool(db.q1("SELECT 1 FROM events WHERE x_map IS NOT NULL LIMIT 1"))
     has_zone_flow = bool(db.q1("SELECT 1 FROM events WHERE event_type='zone_enter' LIMIT 1"))
+    detection_labels = [r["label"] for r in db.q(
+        "SELECT DISTINCT label FROM events WHERE event_type='detection'"
+        " AND track_id IS NOT NULL AND label IS NOT NULL AND label!='' ORDER BY label")]
+    has_labelled_occupancy = bool(db.q1(
+        "SELECT 1 FROM events WHERE event_type='detection' AND track_id IS NOT NULL"
+        " AND zone_id IS NOT NULL AND label IS NOT NULL AND label!='' LIMIT 1"))
     count_labels = [r["label"] for r in db.q(
         "SELECT DISTINCT label FROM events WHERE event_type='count'"
         " AND label IS NOT NULL AND label!='' ORDER BY label")]
@@ -136,7 +142,8 @@ def list_templates():
 
     templates = [
         {"key": "occupancy_line", "title": "Presence over time", "block": "line", "dataset": "occupancy",
-         "question": "How many people are present over time?", "params": {}, "unit": "people",
+         "question": "How many tracked objects are present over time?",
+         "params": {"event_type": "detection"}, "unit": "objects",
          "limitations": "Distinct track IDs per interval — re-identified people count twice.",
          "available": True, "requires": ""},
         {"key": "heatmap_map", "title": "Activity heatmap", "block": "heatmap_map", "dataset": "heatmap",
@@ -156,6 +163,23 @@ def list_templates():
          "limitations": "Track IDs are per-worker-run, not persistent identities.",
          "available": True, "requires": ""},
     ]
+    templates.insert(1, {
+        "key": "detection_classes_line", "title": "Detection classes over time",
+        "block": "line", "dataset": "occupancy",
+        "question": "How do detected classes compare over time?",
+        "params": {"event_type": "detection", "group_by": "label"}, "unit": "objects",
+        "limitations": "Counts distinct worker track IDs per class and interval; class and tracking accuracy depend on the model.",
+        "available": has_labelled_occupancy,
+        "requires": "" if has_labelled_occupancy else
+                    "labelled, zone-assigned detection events with stable track IDs"})
+    if not count_labels:
+        templates.insert(1, {
+            "key": "counts_line_unavailable", "title": "Counts over time",
+            "block": "line", "dataset": "counts",
+            "question": "How does a measured population change over time?",
+            "params": {}, "unit": "objects",
+            "limitations": "Averages worker-reported count samples per interval; accuracy depends on the model.",
+            "available": False, "requires": "labelled count events with a numeric value"})
     for z in zones:
         if z["ztype"] in {"checkout", "queue"}:
             templates.append({
@@ -189,7 +213,8 @@ def list_templates():
             "params": {"group_by": key}, "unit": "seconds",
             "limitations": f"Groups derived dwell by the worker-reported '{key}' attribute; accuracy depends on the model.",
             "available": True, "requires": ""})
-    return {"templates": templates}
+    return {"templates": templates,
+            "parameters": {"detection_labels": detection_labels, "count_labels": count_labels}}
 
 
 @router.get("/insights/{insight_id}")

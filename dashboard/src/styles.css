@@ -597,6 +597,34 @@ textarea:focus-visible {
 .chart-summary strong {
   font-size: 15px;
 }
+.chart-legend,
+.multi-line-latest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.chart-legend span,
+.multi-line-latest span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chart-legend i,
+.multi-line-latest i {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+.multi-line-latest {
+  justify-content: flex-end;
+  margin-top: -4px;
+}
+.multi-line-latest strong {
+  color: var(--ink);
+}
 
 .activity-map {
   position: relative;
@@ -2110,6 +2138,15 @@ textarea:focus-visible {
   border-top: 1px solid #efeee8;
   white-space: nowrap;
 }
+.event-time-cell {
+  min-width: 185px;
+  font-variant-numeric: tabular-nums;
+}
+.event-time-cell time {
+  color: var(--ink);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
 .event-payload-row td {
   padding: 0;
   white-space: normal;
@@ -2478,8 +2515,222 @@ body {
   padding: 11px;
 }
 
+/* Per-camera zone views and named projection planes */
+.geometry-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px;
+  border: 1px solid var(--border-soft);
+  border-radius: 13px;
+  background: white;
+}
+.geometry-intro h3 {
+  margin: 5px 0;
+  font-size: 16px;
+}
+.geometry-intro p {
+  max-width: 690px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.geometry-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(250px, 0.72fr);
+  gap: 15px;
+  margin-top: 12px;
+}
+.geometry-editor,
+.geometry-settings {
+  min-width: 0;
+}
+.camera-geometry-frame {
+  position: relative;
+  min-height: 250px;
+  overflow: hidden;
+  border: 1px solid #d2d0c8;
+  border-radius: 13px;
+  background: #1b1b19;
+  cursor: crosshair;
+}
+.camera-geometry-frame img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.camera-geometry-frame svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.geometry-outer {
+  fill: rgba(87, 205, 255, 0.13);
+  stroke: #5bd5ff;
+  stroke-width: 4;
+  vector-effect: non-scaling-stroke;
+}
+.geometry-detection {
+  fill: rgba(112, 89, 255, 0.18);
+  stroke: #8b75ff;
+  stroke-width: 4;
+  stroke-dasharray: 9 7;
+  vector-effect: non-scaling-stroke;
+}
+.geometry-point circle {
+  fill: var(--ink);
+  stroke: white;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.geometry-point text {
+  fill: white;
+  font-size: 9px;
+  font-weight: 800;
+  text-anchor: middle;
+}
+.geometry-frame-size {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: white;
+  background: rgba(17, 17, 15, 0.72);
+  font-size: 10px;
+  pointer-events: none;
+}
+.geometry-draw-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.geometry-draw-toolbar button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  color: var(--muted);
+  background: white;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.geometry-draw-toolbar button.active {
+  color: white;
+  border-color: var(--ink);
+  background: var(--ink);
+}
+.geometry-draw-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.geometry-settings {
+  padding: 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 13px;
+  background: #f8f7f2;
+}
+.geometry-settings .field + .field,
+.geometry-settings .geometry-footprint-button {
+  margin-top: 12px;
+}
+.geometry-footprint-button {
+  width: 100%;
+  justify-content: center;
+}
+.geometry-order {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 10px;
+  background: white;
+}
+.geometry-order strong {
+  font-size: 12px;
+}
+.geometry-order p {
+  margin: 5px 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.geometry-order ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.geometry-order li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.geometry-order li span {
+  width: 21px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--ink);
+  font-weight: 800;
+}
+.geometry-order li.done span {
+  color: white;
+  border-color: var(--violet);
+  background: var(--violet);
+}
+.saved-geometry {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 15px;
+}
+.saved-geometry > section {
+  padding: 13px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: white;
+}
+.saved-geometry h4 {
+  margin: 0 0 7px;
+  font-size: 12px;
+}
+.saved-geometry section > div:not(.empty-state) {
+  min-height: 45px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+.saved-geometry section > div > span {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.saved-geometry strong {
+  font-size: 11px;
+}
+.saved-geometry small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
 @media (max-width: 900px) {
   .calibration-grid,
+  .geometry-layout,
+  .saved-geometry,
   .space-detail-grid,
   .technical-grid,
   .contract-columns {

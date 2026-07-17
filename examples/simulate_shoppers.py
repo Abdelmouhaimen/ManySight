@@ -74,13 +74,20 @@ def main():
         raise SystemExit("No zones defined — run scripts/seed_demo.py or draw zones in the Store Map tab.")
     sl.register_job("Live shopper simulation", "synthetic shoppers walking waypoint paths",
                     event_types=["detection", "zone_enter", "zone_exit", "state_change"])
+    sl.register_worker("shopper-simulator", version="1")
     fridge_state, fridge_next = "closed", time.time() + random.uniform(20, 60)
     shoppers = [Shopper(zones, store) for _ in range(args.shoppers)]
     t_end = time.time() + args.minutes * 60
+    last_heartbeat = 0.0
     print(f"Simulating {args.shoppers} shoppers for {args.minutes} min → {args.url}")
 
     while time.time() < t_end:
         now = time.time()
+        if now - last_heartbeat >= 10:
+            command = sl.heartbeat(metrics={"active_shoppers": len(shoppers)})
+            last_heartbeat = now
+            if command["should_stop"]:
+                break
         for s in list(shoppers):
             s.step(1.0, now)
             if s.done:
@@ -108,6 +115,7 @@ def main():
         sl.flush()
         time.sleep(1.0)
     sl.flush()
+    sl.stop_worker()
     print("done.")
 
 

@@ -44,6 +44,12 @@ class CalibrationIn(BaseModel):
 
 class ProjectIn(BaseModel):
     points: list[dict]  # [{x,y}] pixel coords
+    surface_id: int | None = None  # null = saved floor calibration
+
+
+class UnprojectIn(BaseModel):
+    points: list[dict]  # [{x,y}] map metres
+    surface_id: int | None = None
 
 
 def serialize(row: dict, include_secrets: bool = False) -> dict:
@@ -64,6 +70,7 @@ def serialize(row: dict, include_secrets: bool = False) -> dict:
         ),
         "calibrated": bool(cal and cal.get("H")),
         "calibration": cal,
+        "calibration_revision": row.get("calibration_revision", 0),
         "snapshot_url": f"/api/v1/sources/{row['id']}/snapshot.jpg",
         "created_at": row["created_at"],
     }
@@ -122,6 +129,8 @@ def update_source(source_id: int, body: SourcePatch):
 @router.delete("/sources/{source_id}")
 def delete_source(source_id: int):
     _get(source_id)
+    db.ex("DELETE FROM zone_views WHERE source_id=?", (source_id,))
+    db.ex("DELETE FROM projection_surfaces WHERE source_id=?", (source_id,))
     db.ex("DELETE FROM sources WHERE id=?", (source_id,))
     return {"deleted": source_id}
 
@@ -160,29 +169,62 @@ def clear_placement(source_id: int):
 
 @router.put("/sources/{source_id}/calibration")
 def set_calibration(source_id: int, body: CalibrationIn):
-    _get(source_id)
+    row = _get(source_id)
     try:
         H, err = homography.compute_homography(body.points)
     except ValueError as e:
         raise HTTPException(422, str(e))
     import json
-    cal = {"points": body.points, "H": H, "error_m": err, "frame_w": body.frame_w, "frame_h": body.frame_h}
-    db.ex("UPDATE sources SET calibration_json=? WHERE id=?", (json.dumps(cal), source_id))
-    return {"H": H, "error_m": err, "points": len(body.points)}
+    revision = int(row.get("calibration_revision") or 0) + 1
+    cal = {"points": body.points, "H": H, "error_m": err, "frame_w": body.frame_w,
+           "frame_h": body.frame_h, "revision": revision, "plane": "floor"}
+    db.ex("UPDATE sources SET calibration_json=?, calibration_revision=? WHERE id=?",
+          (json.dumps(cal), revision, source_id))
+    return {"H": H, "error_m": err, "points": len(body.points), "revision": revision,
+            "plane": "floor"}
 
 
 @router.delete("/sources/{source_id}/calibration")
 def clear_calibration(source_id: int):
-    _get(source_id)
-    db.ex("UPDATE sources SET calibration_json=NULL WHERE id=?", (source_id,))
-    return {"cleared": True}
+    row = _get(source_id)
+    revision = int(row.get("calibration_revision") or 0) + 1
+    db.ex("UPDATE sources SET calibration_json=NULL, calibration_revision=? WHERE id=?",
+          (revision, source_id))
+    return {"cleared": True, "revision": revision}
+
+
+def _projection(source_id: int, surface_id: int | None) -> tuple[list, str, int]:
+    row = _get(source_id)
+    if surface_id is not None:
+        surface = db.q1("SELECT * FROM projection_surfaces WHERE id=?", (surface_id,))
+        if not surface:
+            raise HTTPException(404, "projection surface not found")
+        if surface["source_id"] != source_id:
+            raise HTTPException(422, "projection surface belongs to a different source")
+        return db.jload(surface["homography_json"], None), surface["name"], surface["revision"]
+    cal = db.jload(row.get("calibration_json"), None)
+    if not cal or not cal.get("H"):
+        raise HTTPException(409, "source floor is not calibrated — set at least 4 point pairs first")
+    return cal["H"], "floor", int(row.get("calibration_revision") or 0)
 
 
 @router.post("/sources/{source_id}/project")
 def project_points(source_id: int, body: ProjectIn):
-    row = _get(source_id)
-    cal = db.jload(row.get("calibration_json"), None)
-    if not cal or not cal.get("H"):
-        raise HTTPException(409, "source is not calibrated — set at least 4 point pairs first")
-    pts = homography.project(cal["H"], body.points)
-    return {"points": [{"x": p[0], "y": p[1]} for p in pts]}
+    H, surface, revision = _projection(source_id, body.surface_id)
+    pts = homography.project(H, body.points)
+    return {"points": [{"x": p[0], "y": p[1]} for p in pts],
+            "surface": surface, "surface_id": body.surface_id, "revision": revision}
+
+
+@router.post("/sources/{source_id}/unproject")
+def unproject_points(source_id: int, body: UnprojectIn):
+    """Map metres -> camera pixels on the selected plane. A floor transform must
+    not be used to compensate for the height of an elevated surface."""
+    H, surface, revision = _projection(source_id, body.surface_id)
+    try:
+        inverse = homography.invert(H)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    pts = homography.project(inverse, body.points)
+    return {"points": [{"x": p[0], "y": p[1]} for p in pts],
+            "surface": surface, "surface_id": body.surface_id, "revision": revision}

@@ -2,7 +2,8 @@
 
 You (Codex, or any coding agent) are the **analysis brain** of StoreLens. The platform is
 deliberately dumb about computer vision: it stores camera sources, a floor plan with named
-zones, per-camera homographies (camera pixels → floor meters), and a generic stream of raw
+global zones, floor and named-plane homographies, per-camera zone views/decision ROIs,
+heartbeat-backed worker instances, and a generic stream of raw
 observations it turns into insights (heatmaps, dwell, flow, states, alerts). **You** pick the
 models, write the worker scripts, run them, and post observations back.
 
@@ -18,14 +19,16 @@ put durations on `state_change` events.
 
 ## The contract
 
-1. **Discover** — `list_sources`, `get_snapshot` (look at frames!), `get_store_map`, `list_zones`.
+1. **Discover** — `list_sources`, `get_snapshot` (look at frames!), `get_store_map`,
+   `list_zones`, `list_projection_surfaces`, and `list_zone_views`.
 2. **Load the platform guide, then pick a recipe** — read `storelens-platform` first,
    then `list_skills()` → `get_skill(name)`. Skills live in `skills/`; follow the closest
    task playbook and compose them for multi-part requests.
 3. **Register a job** — `register_job(name, description, source_ids, event_types)` *before*
    posting anything. Keep the returned `job_id`.
 4. **Run analysis & post observations** — write a worker script (use `sdk/python/storelens.py`),
-   run it, and `submit_events` in batches (≤5000; 100–500 is a good size, every 1–5 s).
+   run it, register its worker instance, heartbeat every 5–15 seconds, obey stop/restart
+   flags, and `submit_events` in batches (≤5000; 100–500 is a good size, every 1–5 s).
 5. **Verify & publish** — `get_events(job_id=...)` and `get_analytics(...)` to confirm the
    data renders, then `register_insight(...)` so the result appears as a card in the
    **Insights** tab (`list_insight_templates()` shows what fits the data; set honest
@@ -39,13 +42,21 @@ put durations on `state_change` events.
 | `source_id` | which camera produced it |
 | `event_type` | `detection` \| `zone_enter` \| `zone_exit` \| `transition` \| `state_change` \| `count` \| `custom` (\| `zone_dwell` — **deprecated**: stored, ignored by analytics/alerts) |
 | `track_id` | stable per-object id (string) — required for occupancy/flow/dwell derivation |
-| `point_px` | `{x,y}` pixel position (person's feet = bottom-center of bbox). **Preferred**: the platform auto-projects it to map meters when the source is calibrated, then auto-assigns the containing zone. |
-| `point_map` | `{x,y}` in floor meters, if you already projected |
-| `bbox` | `[x,y,w,h]` pixels — used to derive the feet point if `point_px` absent |
+| `point_px` | `{x,y}` representative pixel point. Feet/bbox-bottom-centre is the floor default. |
+| `point_map` | `{x,y}` in map metres, if the worker already projected it |
+| `bbox` | `[x,y,w,h]` pixels — preserved; bottom-centre is derived when `point_px` is absent |
+| `keypoints` / `mask` | preserved pose or compressed segmentation evidence for review/ROI rules |
+| `point_kind` | the point's meaning: feet, hip/torso centre, mask centroid, custom |
+| `projection_surface_id` | named plane for a mattress/table/shelf/etc.; omit for floor |
+| `zone_view_id` | explicit camera ROI provenance; normally the server auto-matches it |
 | `zone_id` / `zone` | explicit zone (id or name) — otherwise auto-assigned from the map point |
 | `value` | a per-frame count sample (`count` events only) — never a computed aggregate |
-| `label` | the state name for `state_change` ("open"/"closed"), or what a `count` counts |
+| `label` | the observed class for `detection` ("person"/"child"/"forklift"), the state for `state_change`, or what a `count` counts |
 | `attributes` | free dict — e.g. `{"gender":"female"}`. Insights can group dwell by any attribute key. |
+
+The stored row also records projection/assignment methods and the revisions of the
+zone, floor calibration, projection surface, and zone view used at ingestion. Geometry
+edits affect future rows; never silently reinterpret historical detections.
 
 Conventions that make insights light up:
 - **Heatmap** ← `detection` events with a point, ~1–2 per second per track is plenty.
@@ -65,33 +76,37 @@ Conventions that make insights light up:
 
 ## Zones from camera views
 
-When the user describes an area by what's visible in a camera ("mark the dashed-line
-area on cam 1 as a restricted zone"), you create the geometry — the platform owns what
-it means:
+Separate the physical zone from how one camera sees it:
 
-1. `get_snapshot(source_id)` — look at the frame and propose a pixel polygon for the
-   area. Show/describe it to the user for confirmation.
-2. `create_zone(name, ztype, polygon_px=[...], source_id=...)` — the platform projects
-   pixels → floor meters through the camera's homography (needs calibration; if the
-   camera is uncalibrated, ask the user to calibrate in Store Map, or compute the map
-   polygon yourself).
-3. The `ztype` ("restricted", "queue", ...) is only a semantic label. Whether entering
-   it should alert is a **separate** platform concern — e.g.
-   `create_alert_rule("Restricted area entry", "event_match", {"event_type": "zone_enter", "zone_id": ...})`,
-   created when the user asks for it.
-4. Your worker stays ignorant of all this: it detects the objects the user asked for
-   and posts `detection` / `zone_enter` / `zone_exit`. Enrichment auto-assigns zones
-   from projected points, so a worker posting calibrated detections doesn't even need
-   to know the zone exists.
+1. `get_snapshot(source_id)` and `get_store_map()` — inspect the frame and the current
+   global footprint. Confirm the footprint with the user before creating/updating it.
+2. A **zone** is the canonical physical polygon in map metres. `polygon_px + source_id`
+   is only a shortcut for points on the calibrated floor plane.
+3. A **zone view** belongs to one zone and one camera. Store the visible outer polygon,
+   an inset detection ROI, and one membership rule: `point`, `bbox_overlap`, or
+   `keypoints_inside`. Use `unproject_points` to propose camera pixels from the map
+   footprint, then check the result against the snapshot.
+4. For a mattress, table, shelf, conveyor, or other elevated planar target, create a
+   **projection surface** from at least four matching `{px,map}` points and attach it to
+   the zone view. Height is metadata. Never subtract height from map Y; a homography
+   maps one 2D plane to another and contains no vertical coordinate.
+5. The `ztype` ("restricted", "queue", ...) remains only a semantic label. Alerts are
+   separate platform configuration.
+6. Workers post evidence (`bbox`, keypoints/mask, point and its `point_kind`). The server
+   preserves that evidence, selects the relevant zone view/plane, projects, assigns the
+   zone, and records all definition revisions.
 
-Fallback for uncalibrated cameras: do zone membership in pixel space inside the worker
-and post `zone_enter`/`zone_exit` with an explicit `zone_id` — ingestion accepts an
-explicit zone without any map point.
+For an uncalibrated camera, a zone view can still assign by pixel-space bbox/keypoints.
+Post an explicit `zone_id` only when the server cannot perform that enrichment. Full
+non-planar 3D localization requires camera intrinsics/extrinsics and is outside the
+current plane-homography model.
 
 ## Working in this repo
 
 - Server: `uvicorn server.app:app` → UI at http://localhost:8000, OpenAPI at `/docs`.
 - Worker SDK: `sdk/python/storelens.py` (requests + optional OpenCV). Copy or import it.
+- A job is metadata. A worker instance is heartbeat-backed runtime state. Dashboard
+  stop/restart commands are cooperative; a deployment supervisor performs relaunch.
 - Examples to crib from: `examples/` (simulator, motion-based heatmap tracker, dwell worker, fridge state worker).
 - If OpenCV/ultralytics are unavailable, degrade gracefully: background-subtraction blobs
   (see `examples/heatmap_tracker.py`) still produce usable heatmaps and tracks.

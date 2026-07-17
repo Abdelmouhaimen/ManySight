@@ -53,6 +53,17 @@ export const formatDateTime = (ts) =>
         minute: "2-digit",
       })
     : "—";
+export const formatPreciseDateTime = (ts) =>
+  ts == null
+    ? "—"
+    : new Date(ts * 1000).toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        fractionalSecondDigits: 3,
+      });
 export const formatDuration = (seconds) => {
   if (seconds == null) return "—";
   if (seconds < 90) return `${Math.round(seconds)} sec`;

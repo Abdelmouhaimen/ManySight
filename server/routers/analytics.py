@@ -7,7 +7,7 @@ consecutive state_change timestamps (see services/derive.py).
 """
 from collections import defaultdict
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from .. import db
 from ..services import derive
@@ -50,7 +50,9 @@ def summary(since: float | None = None, until: float | None = None):
 
 @router.get("/analytics/heatmap")
 def heatmap(since: float | None = None, until: float | None = None,
-            event_type: str = "detection", job_id: int | None = None, cell: float = 0.25):
+            event_type: str = "detection", job_id: int | None = None,
+            source_id: int | None = None, zone_id: int | None = None,
+            label: str | None = None, cell: float = 0.25):
     since, until = _range(since, until)
     cell = max(0.05, min(cell, 2.0))
     where, args = ["ts BETWEEN ? AND ?", "x_map IS NOT NULL"], [since, until]
@@ -58,11 +60,19 @@ def heatmap(since: float | None = None, until: float | None = None,
         where.append("event_type=?"); args.append(event_type)
     if job_id is not None:
         where.append("job_id=?"); args.append(job_id)
+    if source_id is not None:
+        where.append("source_id=?"); args.append(source_id)
+    if zone_id is not None:
+        where.append("zone_id=?"); args.append(zone_id)
+    if label is not None:
+        where.append("label=?"); args.append(label)
     rows = db.q(
         f"SELECT CAST(x_map/{cell} AS INTEGER) cx, CAST(y_map/{cell} AS INTEGER) cy, COUNT(*) w"
         f" FROM events WHERE {' AND '.join(where)} GROUP BY cx, cy ORDER BY w DESC LIMIT 50000", args)
     half = cell / 2.0
     return {"cell": cell, "since": since, "until": until,
+            "event_type": event_type, "job_id": job_id, "source_id": source_id,
+            "zone_id": zone_id, "label": label,
             "points": [{"x": r["cx"] * cell + half, "y": r["cy"] * cell + half, "w": r["w"]} for r in rows]}
 
 
@@ -94,7 +104,10 @@ def dwell(since: float | None = None, until: float | None = None, group_by: str 
 
 @router.get("/analytics/occupancy")
 def occupancy(since: float | None = None, until: float | None = None,
-              bucket_s: float = 600, zone_id: int | None = None):
+              bucket_s: float = 600, zone_id: int | None = None,
+              label: str | None = None, group_by: str | None = None,
+              event_type: str | None = None, source_id: int | None = None,
+              job_id: int | None = None):
     """Distinct tracks seen per time bucket, counted across any zone-assigned event
     type (detections, zone_enter/exit, ...). DISTINCT dedupes, so mixed event types
     for the same track do not inflate the count."""
@@ -103,18 +116,46 @@ def occupancy(since: float | None = None, until: float | None = None,
     where, args = ["ts BETWEEN ? AND ?", "track_id IS NOT NULL", "zone_id IS NOT NULL"], [since, until]
     if zone_id is not None:
         where.append("zone_id=?"); args.append(zone_id)
+    if label is not None:
+        where.append("label=?"); args.append(label)
+    if event_type is not None:
+        where.append("event_type=?"); args.append(event_type)
+    if source_id is not None:
+        where.append("source_id=?"); args.append(source_id)
+    if job_id is not None:
+        where.append("job_id=?"); args.append(job_id)
+    if group_by not in {None, "label"}:
+        raise HTTPException(422, "group_by must be 'label' when provided")
+    if group_by == "label":
+        where.extend(["label IS NOT NULL", "label!=''"])
     rows = db.q(
         f"SELECT CAST(ts/{bucket_s} AS INTEGER) b, COUNT(DISTINCT track_id) n"
         f" FROM events WHERE {' AND '.join(where)} GROUP BY b", args)
     by_bucket = {r["b"]: r["n"] for r in rows}
     b0, b1 = int(since // bucket_s), int(until // bucket_s)
     series = [{"t": b * bucket_s, "count": by_bucket.get(b, 0)} for b in range(b0, b1 + 1)]
-    return {"series": series, "bucket_s": bucket_s, "zone_id": zone_id}
+    groups = []
+    if group_by == "label":
+        grouped_rows = db.q(
+            f"SELECT CAST(ts/{bucket_s} AS INTEGER) b, label, COUNT(DISTINCT track_id) n"
+            f" FROM events WHERE {' AND '.join(where)} GROUP BY b, label ORDER BY label, b", args)
+        labels = sorted({r["label"] for r in grouped_rows})
+        values = {(r["label"], r["b"]): r["n"] for r in grouped_rows}
+        groups = [{
+            "label": class_label,
+            "points": [{"t": b * bucket_s, "count": values.get((class_label, b), 0)}
+                       for b in range(b0, b1 + 1)],
+        } for class_label in labels]
+    return {"series": series, "groups": groups, "bucket_s": bucket_s,
+            "zone_id": zone_id, "label": label, "group_by": group_by,
+            "event_type": event_type, "source_id": source_id, "job_id": job_id,
+            "since": since, "until": until}
 
 
 @router.get("/analytics/counts")
 def counts(since: float | None = None, until: float | None = None,
-           bucket_s: float = 300, zone_id: int | None = None, job_id: int | None = None):
+           bucket_s: float = 300, zone_id: int | None = None, job_id: int | None = None,
+           source_id: int | None = None, label: str | None = None):
     """Time series for classifier/counting workers.
 
     A worker posts event_type=count, value=<visible objects>, and a human-readable
@@ -128,6 +169,10 @@ def counts(since: float | None = None, until: float | None = None,
         where.append("zone_id=?"); args.append(zone_id)
     if job_id is not None:
         where.append("job_id=?"); args.append(job_id)
+    if source_id is not None:
+        where.append("source_id=?"); args.append(source_id)
+    if label is not None:
+        where.append("label=?"); args.append(label)
     rows = db.q(
         f"SELECT CAST(ts/{bucket_s} AS INTEGER) b, COALESCE(NULLIF(label,''),'objects') label,"
         f" AVG(value) value, MIN(value) min_value, MAX(value) max_value, COUNT(*) samples"
@@ -138,8 +183,10 @@ def counts(since: float | None = None, until: float | None = None,
             "t": r["b"] * bucket_s, "count": round(r["value"], 2),
             "min": r["min_value"], "max": r["max_value"], "samples": r["samples"],
         })
-    return {"series": [{"label": label, "points": points} for label, points in grouped.items()],
-            "bucket_s": bucket_s, "zone_id": zone_id, "since": since, "until": until}
+    return {"series": [{"label": class_label, "points": points}
+                       for class_label, points in grouped.items()],
+            "bucket_s": bucket_s, "zone_id": zone_id, "job_id": job_id,
+            "source_id": source_id, "label": label, "since": since, "until": until}
 
 
 @router.get("/analytics/transitions")

@@ -12,13 +12,14 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .routers import alerts, analytics, events, insights, jobs, sources, store, zones
+from .routers import alerts, analytics, events, geometry, insights, jobs, sources, store, zones
 
 app = FastAPI(
     title="StoreLens",
     version="1.0.0",
-    description="POC infrastructure for ManySight retail operations analytics: camera sources, floor-plan "
-                "localization + homography, a generic event stream, reviewable insights, and alerts. "
+    description="POC infrastructure for ManySight physical-space intelligence: camera sources, global map "
+                "zones, floor and named-plane localization, camera decision ROIs, a generic evidence-rich "
+                "event stream, heartbeat-backed workers, reviewable insights, and alerts. "
                 "AI agents (Codex) connect via MCP, run models, and post events back here.",
 )
 
@@ -43,7 +44,7 @@ def health():
     return {"ok": True, "service": "storelens", "ts": db.now(), "auth_required": bool(API_KEY)}
 
 
-for r in (sources, store, zones, jobs, events, analytics, alerts, insights):
+for r in (sources, store, zones, geometry, jobs, events, analytics, alerts, insights):
     app.include_router(r.router, prefix="/api/v1")
 
 _server_dir = os.path.dirname(__file__)

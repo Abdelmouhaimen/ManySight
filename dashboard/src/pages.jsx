@@ -1067,9 +1067,15 @@ function WorkspaceForm({ store, onSaved }) {
 }
 
 function JobsConfig({ jobs, onRefresh }) {
-  const toggle = async (job) => {
+  const toggleRegistration = async (job) => {
     await api.put(`/jobs/${job.id}`, {
       status: job.status === "active" ? "paused" : "active",
+    });
+    onRefresh();
+  };
+  const commandWorker = async (worker, desiredState) => {
+    await api.put(`/workers/${worker.id}/desired-state`, {
+      desired_state: desiredState,
     });
     onRefresh();
   };
@@ -1081,46 +1087,92 @@ function JobsConfig({ jobs, onRefresh }) {
   };
   return (
     <Panel
-      title="Analysis registrations"
-      subtitle="POC job metadata; this does not yet manage or restart worker processes"
+      title="Analyses & workers"
+      subtitle="Registered analyses plus heartbeat-backed runtime state"
     >
       <div className="experimental-note">
         <AlertTriangle size={17} />
         <div>
-          <strong>Runtime state is external</strong>
+          <strong>Worker control is cooperative</strong>
           <p>
-            An active registration does not prove that its worker process is
-            running. Continuous heartbeat and restart controls remain backend
-            work.
+            A worker registers once and heartbeats every 5–15 seconds. Stop and
+            restart requests are returned on its next heartbeat; a hosted
+            supervisor must relaunch it after a restart request. A stale worker
+            has missed heartbeats for more than 30 seconds.
           </p>
         </div>
       </div>
       <div className="data-list">
-        {jobs.map((job) => (
-          <div key={job.id}>
-            <span className={`status-light ${job.status}`} />
-            <div>
-              <strong>{job.name}</strong>
-              <small>
-                {job.event_count.toLocaleString()} events · last{" "}
-                {formatDateTime(job.last_event_at)}
-              </small>
-            </div>
-            <Badge tone={job.status === "active" ? "positive" : "neutral"}>
-              {job.status}
-            </Badge>
-            <button className="icon-button" onClick={() => toggle(job)}>
-              {job.status === "active" ? (
-                <Pause size={15} />
-              ) : (
-                <Play size={15} />
+        {jobs.map((job) => {
+          const worker = job.latest_worker;
+          const workerStatus = worker?.effective_status || "unreported";
+          return (
+            <div key={job.id}>
+              <span
+                className={`status-light ${workerStatus === "running" ? "active" : "paused"}`}
+              />
+              <div>
+                <strong>{job.name}</strong>
+                <small>
+                  {job.event_count.toLocaleString()} events · last{" "}
+                  {formatDateTime(job.last_event_at)}
+                </small>
+                <small>
+                  {worker
+                    ? `${worker.name || worker.worker_id} · heartbeat ${formatDateTime(worker.last_heartbeat_at)}`
+                    : "No worker has registered a heartbeat"}
+                </small>
+              </div>
+              <Badge
+                tone={
+                  workerStatus === "running"
+                    ? "positive"
+                    : workerStatus === "error" || workerStatus === "stale"
+                      ? "warning"
+                      : "neutral"
+                }
+              >
+                {workerStatus}
+              </Badge>
+              {worker && (
+                <button
+                  className="icon-button"
+                  onClick={() =>
+                    commandWorker(
+                      worker,
+                      workerStatus === "running" ? "stopped" : "restart",
+                    )
+                  }
+                  aria-label={
+                    workerStatus === "running"
+                      ? `Request ${job.name} worker stop`
+                      : `Request ${job.name} worker restart`
+                  }
+                >
+                  {workerStatus === "running" ? (
+                    <Pause size={15} />
+                  ) : (
+                    <RefreshCw size={15} />
+                  )}
+                </button>
               )}
-            </button>
-            <button className="icon-button danger" onClick={() => remove(job)}>
-              <Trash2 size={15} />
-            </button>
-          </div>
-        ))}
+              <button
+                className="icon-button"
+                onClick={() => toggleRegistration(job)}
+                aria-label={`${job.status === "active" ? "Pause" : "Activate"} ${job.name} registration`}
+              >
+                {job.status === "active" ? (
+                  <Pause size={15} />
+                ) : (
+                  <Play size={15} />
+                )}
+              </button>
+              <button className="icon-button danger" onClick={() => remove(job)}>
+                <Trash2 size={15} />
+              </button>
+            </div>
+          );
+        })}
         {!jobs.length && (
           <EmptyState title="No analyses registered">
             Codex or a worker registers a job before posting events.

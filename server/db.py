@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS sources (
   rotation_deg REAL DEFAULT 0,
   fov_deg REAL DEFAULT 70,
   calibration_json TEXT,                        -- {points, H, error_m, frame_w, frame_h}
+  calibration_revision INTEGER NOT NULL DEFAULT 0,
   created_at REAL
 );
 CREATE TABLE IF NOT EXISTS zones (
@@ -43,8 +44,44 @@ CREATE TABLE IF NOT EXISTS zones (
   ztype TEXT NOT NULL DEFAULT 'area',           -- checkout | entrance | fridge | aisle | area | custom
   color TEXT DEFAULT '',
   polygon_json TEXT NOT NULL,                   -- [{x,y}, ...] in map meters
-  created_at REAL
+  revision INTEGER NOT NULL DEFAULT 1,
+  created_at REAL,
+  updated_at REAL
 );
+CREATE TABLE IF NOT EXISTS projection_surfaces (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'custom',          -- mattress | table | shelf | conveyor | custom
+  height_m REAL,
+  points_json TEXT NOT NULL DEFAULT '[]',       -- [{px:{x,y}, map:{x,y}}, ...]
+  homography_json TEXT NOT NULL,                -- 3x3 pixel -> map matrix
+  error_m REAL,
+  frame_w INTEGER,
+  frame_h INTEGER,
+  revision INTEGER NOT NULL DEFAULT 1,
+  created_at REAL,
+  updated_at REAL,
+  UNIQUE(source_id, name)
+);
+CREATE TABLE IF NOT EXISTS zone_views (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  zone_id INTEGER NOT NULL,
+  source_id INTEGER NOT NULL,
+  outer_polygon_json TEXT NOT NULL,             -- visible boundary in source pixels
+  detection_polygon_json TEXT NOT NULL,         -- inset/decision ROI in source pixels
+  projection_surface_id INTEGER,
+  membership_rule TEXT NOT NULL DEFAULT 'point', -- point | bbox_overlap | keypoints_inside
+  threshold REAL NOT NULL DEFAULT 0.5,
+  min_keypoints INTEGER NOT NULL DEFAULT 1,
+  revision INTEGER NOT NULL DEFAULT 1,
+  created_at REAL,
+  updated_at REAL,
+  UNIQUE(zone_id, source_id)
+);
+CREATE INDEX IF NOT EXISTS idx_projection_surfaces_source ON projection_surfaces(source_id);
+CREATE INDEX IF NOT EXISTS idx_zone_views_source ON zone_views(source_id);
+CREATE INDEX IF NOT EXISTS idx_zone_views_zone ON zone_views(zone_id);
 CREATE TABLE IF NOT EXISTS jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -68,6 +105,18 @@ CREATE TABLE IF NOT EXISTS events (
   x_map REAL, y_map REAL,
   value REAL,
   label TEXT,
+  bbox_json TEXT,
+  keypoints_json TEXT,
+  mask_json TEXT,
+  point_kind TEXT,
+  projection_surface_id INTEGER,
+  zone_view_id INTEGER,
+  zone_assignment_method TEXT,
+  projection_method TEXT,
+  zone_revision INTEGER,
+  calibration_revision INTEGER,
+  surface_revision INTEGER,
+  zone_view_revision INTEGER,
   attributes TEXT DEFAULT '{}',
   created_at REAL
 );
@@ -76,6 +125,24 @@ CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(event_type, ts);
 CREATE INDEX IF NOT EXISTS idx_events_zone ON events(zone_id, ts);
 CREATE INDEX IF NOT EXISTS idx_events_job ON events(job_id, ts);
 CREATE INDEX IF NOT EXISTS idx_events_track ON events(track_id, ts);
+CREATE TABLE IF NOT EXISTS worker_instances (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_id TEXT NOT NULL UNIQUE,
+  job_id INTEGER NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  version TEXT DEFAULT '',
+  config_json TEXT NOT NULL DEFAULT '{}',
+  metrics_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'starting',      -- starting | running | stopping | stopped | error
+  desired_state TEXT NOT NULL DEFAULT 'running', -- running | stopped | restart
+  started_at REAL,
+  last_heartbeat_at REAL,
+  stopped_at REAL,
+  last_error TEXT DEFAULT '',
+  created_at REAL,
+  updated_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_workers_job ON worker_instances(job_id, created_at);
 CREATE TABLE IF NOT EXISTS alert_rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -139,6 +206,32 @@ def init_db():
             con.execute("ALTER TABLE stores ADD COLUMN space_type TEXT NOT NULL DEFAULT 'store'")
         if "environment" not in store_columns:
             con.execute("ALTER TABLE stores ADD COLUMN environment TEXT NOT NULL DEFAULT 'setup'")
+        source_columns = {r[1] for r in con.execute("PRAGMA table_info(sources)").fetchall()}
+        if "calibration_revision" not in source_columns:
+            con.execute("ALTER TABLE sources ADD COLUMN calibration_revision INTEGER NOT NULL DEFAULT 0")
+        zone_columns = {r[1] for r in con.execute("PRAGMA table_info(zones)").fetchall()}
+        if "revision" not in zone_columns:
+            con.execute("ALTER TABLE zones ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")
+        if "updated_at" not in zone_columns:
+            con.execute("ALTER TABLE zones ADD COLUMN updated_at REAL")
+        event_columns = {r[1] for r in con.execute("PRAGMA table_info(events)").fetchall()}
+        event_migrations = {
+            "bbox_json": "TEXT",
+            "keypoints_json": "TEXT",
+            "mask_json": "TEXT",
+            "point_kind": "TEXT",
+            "projection_surface_id": "INTEGER",
+            "zone_view_id": "INTEGER",
+            "zone_assignment_method": "TEXT",
+            "projection_method": "TEXT",
+            "zone_revision": "INTEGER",
+            "calibration_revision": "INTEGER",
+            "surface_revision": "INTEGER",
+            "zone_view_revision": "INTEGER",
+        }
+        for column, sql_type in event_migrations.items():
+            if column not in event_columns:
+                con.execute(f"ALTER TABLE events ADD COLUMN {column} {sql_type}")
         alert_columns = {r[1] for r in con.execute("PRAGMA table_info(alerts)").fetchall()}
         if "status" not in alert_columns:
             con.execute("ALTER TABLE alerts ADD COLUMN status TEXT NOT NULL DEFAULT 'new'")

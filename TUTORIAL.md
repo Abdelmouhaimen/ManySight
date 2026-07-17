@@ -82,11 +82,12 @@ or event as wrongdoing.
 1. Open **Detections**.
 2. Filter by event type, camera, zone, analysis job, track ID, or label; change the
    time range.
-3. Expand a row to see its pixel point, projected map point, and attributes.
+3. Expand a row to see its preserved bbox/keypoints/mask, pixel and map points,
+   `point_kind`, projection plane, zone-assignment method, and geometry revisions.
 4. Pause **Follow live events**, then use **Load more** to page through history
    (following live resets pagination by design).
 5. Open the "How to read this table" panel — it documents every column, every event
-   type, and the enrichment pipeline (bbox → feet point → homography → zone).
+   type, and the evidence-preserving enrichment pipeline.
 
 ## 4c. Curate the Insights catalogue
 
@@ -107,6 +108,29 @@ or event as wrongdoing.
 7. Select the camera, adjust direction and field of view, then choose **Calibrate camera**.
 8. Match at least four fixed floor points between the frame and map, save, and test several projected points.
 
+### 5b. Configure a bed, table, shelf, or other elevated plane
+
+Do this when the subject is not on the calibrated floor—for example, a person lying on
+a mattress or medicine sitting on a shelf.
+
+1. Draw or correct the global zone on the floor map so it is the real map footprint.
+2. Select the camera and open **Zone views & planes**.
+3. Open **Elevated projection plane**, select the zone, and click the visible surface
+   corners in the same order as the listed map corners. Add the physical height only as
+   metadata, then save the named plane.
+4. Return to **Zone view & decision ROI**, select that plane, and click **Project map
+   footprint into frame**.
+5. Adjust the cyan visible boundary and purple inset decision ROI. Choose bounding-box
+   overlap for coarse presence, pose keypoints for lying/partially visible people, or a
+   representative point for compact objects. Save.
+6. Post a bounded test detection with a bbox or keypoints. In **Detections**, confirm
+   `projection_method` names the plane, `zone_assignment_method` names the zone-view
+   rule, and the bbox/keypoints plus geometry revisions are present.
+
+Do not “subtract mattress height” from a map coordinate. Floor and mattress are
+different planes; use separate homographies. Full non-planar 3D localization would need
+camera intrinsics/extrinsics and ray–plane intersection, which this POC does not store.
+
 The current Online/Offline status reflects the last snapshot test. It is not yet a
 continuous heartbeat, FPS, or latency monitor.
 
@@ -118,7 +142,9 @@ In **Configure**:
 2. Choose the space type and draw named polygon zones such as an entrance, checkout,
    main hall, classroom, meeting room, or equipment area.
 3. Calibrate required streams.
-4. Confirm the analysis job appears after its worker registers.
+4. Confirm the analysis job appears. When the process starts, it must also register a
+   worker instance and heartbeat every 5–15 seconds; **Analyses** should show `running`
+   rather than `unreported`.
 5. Add a narrow occupancy or dwell threshold.
 
 Use `Live pilot` only when real camera streams and workers are connected. Keep seeded
@@ -145,9 +171,11 @@ Example bounded request:
 > resulting analytics, and register the insight cards so they appear on the dashboard.
 > Explain limitations and do not infer identity or sensitive traits.
 
-Codex can inspect snapshots and create workers, but registered job status does not yet
-prove the process is still running. Runtime heartbeat/restart management remains POC
-work.
+Codex can inspect snapshots and create workers. Job status still does not prove a
+process is alive, but a registered worker now reports heartbeat-backed `running`,
+`stopped`, `error`, or `stale` state. Dashboard stop/restart commands are cooperative:
+the process reads them in heartbeat responses, exits cleanly, and a deployment
+supervisor must relaunch it after `restart`.
 
 Example school request:
 
@@ -159,7 +187,7 @@ Example school request:
 Adding a camera source stores access metadata and enables snapshots. Codex can inspect
 that source through the API/MCP and write a subscriber worker, but the dashboard does
 not itself keep RTSP connections or model processes alive. The worker must run where
-it can reach the camera and continuously post events.
+it can reach the camera, register itself, heartbeat, and continuously post events.
 
 ## 8. Test API authentication
 
@@ -192,7 +220,10 @@ signals, and live SSE reconnect states.
 - Ongoing alerts (loitering without an exit, door still open) evaluate only when new
   events are ingested; a silent zone re-alerts on the next batch.
 - Source health is based on snapshot checks, not continuous telemetry.
-- Job state is registration metadata, not worker process supervision.
+- Worker heartbeats and desired-state commands are a lifecycle protocol, not a process
+  supervisor. Hosted deployments still need systemd, Docker, Kubernetes, or equivalent.
+- Named surfaces are planar approximations; arbitrary 3D pose localization still needs
+  camera intrinsics/extrinsics and a 3D model.
 - Insight lifecycle states (collecting/validating/degraded) are displayed but not yet
   automatically transitioned.
 - Demo and live records still share the same SQLite database.

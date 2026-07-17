@@ -50,6 +50,17 @@ def project(H: list[list[float]], points: list) -> list[list[float]]:
     return (out[:, :2] / w).tolist()
 
 
+def invert(H: list[list[float]]) -> list[list[float]]:
+    """Invert a non-degenerate homography and normalize it to H[2][2] == 1."""
+    try:
+        inv = np.linalg.inv(np.array(H, dtype=float))
+    except np.linalg.LinAlgError as exc:
+        raise ValueError("Degenerate homography") from exc
+    if abs(inv[2, 2]) < 1e-12:
+        raise ValueError("Degenerate homography")
+    return (inv / inv[2, 2]).tolist()
+
+
 def point_in_polygon(x: float, y: float, poly: list[dict]) -> bool:
     """Ray-casting point-in-polygon. poly: [{x,y}, ...]."""
     inside = False
@@ -66,3 +77,54 @@ def point_in_polygon(x: float, y: float, poly: list[dict]) -> bool:
                 inside = not inside
         j = i
     return inside
+
+
+def polygon_area(poly: list[dict]) -> float:
+    """Unsigned area of a simple polygon."""
+    if len(poly) < 3:
+        return 0.0
+    total = 0.0
+    for i, p in enumerate(poly):
+        q = poly[(i + 1) % len(poly)]
+        total += float(p["x"]) * float(q["y"]) - float(q["x"]) * float(p["y"])
+    return abs(total) / 2.0
+
+
+def polygon_box_overlap(poly: list[dict], bbox: list[float]) -> float:
+    """Fraction of an axis-aligned bbox covered by a polygon, using polygon clipping."""
+    if len(poly) < 3 or len(bbox) < 4 or bbox[2] <= 0 or bbox[3] <= 0:
+        return 0.0
+    x0, y0, w, h = map(float, bbox[:4])
+    x1, y1 = x0 + w, y0 + h
+    points = [{"x": float(p["x"]), "y": float(p["y"])} for p in poly]
+
+    def clip(items, inside, intersect):
+        if not items:
+            return []
+        result, previous = [], items[-1]
+        for current in items:
+            current_in, previous_in = inside(current), inside(previous)
+            if current_in:
+                if not previous_in:
+                    result.append(intersect(previous, current))
+                result.append(current)
+            elif previous_in:
+                result.append(intersect(previous, current))
+            previous = current
+        return result
+
+    def vertical(a, b, x):
+        dx = b["x"] - a["x"]
+        t = (x - a["x"]) / dx if abs(dx) > 1e-12 else 0.0
+        return {"x": x, "y": a["y"] + t * (b["y"] - a["y"])}
+
+    def horizontal(a, b, y):
+        dy = b["y"] - a["y"]
+        t = (y - a["y"]) / dy if abs(dy) > 1e-12 else 0.0
+        return {"x": a["x"] + t * (b["x"] - a["x"]), "y": y}
+
+    points = clip(points, lambda p: p["x"] >= x0, lambda a, b: vertical(a, b, x0))
+    points = clip(points, lambda p: p["x"] <= x1, lambda a, b: vertical(a, b, x1))
+    points = clip(points, lambda p: p["y"] >= y0, lambda a, b: horizontal(a, b, y0))
+    points = clip(points, lambda p: p["y"] <= y1, lambda a, b: horizontal(a, b, y1))
+    return min(1.0, polygon_area(points) / (w * h))

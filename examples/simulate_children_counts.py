@@ -41,6 +41,8 @@ def main():
         source_ids=[args.source] if args.source else [],
         event_types=["count"],
     )
+    sl.register_worker("children-count-simulator", version="1")
+    sl.heartbeat(metrics={"mode": "finite_backfill"})
     now = time.time()
     start = now - args.hours * 3600
     samples = max(2, int(args.hours * 3600 / args.interval))
@@ -67,6 +69,7 @@ def main():
         events.append(event)
 
     result = sl.post_events(events, job_id=job["id"])
+    sl.stop_worker()
     print(f"Posted {result['inserted']} child-count samples to job {job['id']}.")
     print("Open Insights and choose a range covering the last 3 hours.")
 

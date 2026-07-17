@@ -6,9 +6,11 @@ onto the floor plan.
 
 ## What the platform needs from you
 
-A stream of `detection` events with a **pixel point at the person's feet**
-(`point_px` = bottom-center of the bbox). If the source is calibrated the platform
-projects pixels → floor meters and bins them; you don't do any geometry.
+A stream of `detection` events with preserved bbox evidence and a representative point
+on the plane being measured. For standing floor traffic, use the person's **feet**
+(`point_px` = bottom-center of the bbox) and omit `projection_surface_id`. If the user
+is measuring activity on a mattress, table, shelf, or other configured planar surface,
+use the appropriate point plus that named plane. The platform projects and bins it.
 
 ## Steps
 
@@ -17,6 +19,8 @@ projects pixels → floor meters and bins them; you don't do any geometry.
    tab → ⌗) or skip them.
 2. `get_snapshot(source_id)` for each candidate — check the view actually covers the
    floor area the user cares about.
+   Also inspect `list_projection_surfaces` and `list_zone_views` when subjects are
+   sitting, lying, occluded, or elevated.
 3. `register_job("Heatmap – <scope>", event_types=["detection"], source_ids=[...])`.
 4. Detect people per frame. Model choice, best first:
    - `ultralytics` YOLO (`model.predict`, class 0 = person) if installed/installable;
@@ -61,7 +65,8 @@ while True:
     if now - last_post >= 0.5:                   # ≤2 Hz per track
         for tid, cx, cy in tracker.update(feet):
             sl.add_event(source_id=src["id"], event_type="detection",
-                         track_id=tid, point_px={"x": cx, "y": cy})
+                         track_id=tid, point_px={"x": cx, "y": cy},
+                         point_kind="feet")
         last_post = now
 sl.flush()
 ```
@@ -77,5 +82,9 @@ feet = [(float(x), float(y + h / 2)) for x, y, w, h in boxes]
 ## Pitfalls
 
 - Feet, not bbox center — projecting a torso point through a floor homography lands meters off.
+- For a lying person, do not force a feet point or subtract mattress height from map Y.
+  Use the camera zone view for presence and a named mattress plane for localization.
+- Post the original `bbox`/keypoints when available; StoreLens preserves them for review
+  and can use them for camera-ROI membership.
 - Don't flood: 30 fps × N tracks kills nothing but adds nothing; 1–2 Hz is visually identical.
 - Multiple cameras: one job is fine; post with each event's own `source_id`.

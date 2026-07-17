@@ -9,8 +9,12 @@ Typical worker loop:
     sl = StoreLens("http://localhost:8000")
     src = sl.source(1)
     job = sl.register_job("Dwell at checkout", event_types=["detection", "zone_enter", "zone_exit"])
+    worker = sl.register_worker("checkout-worker", version="1")
     cap = sl.open_capture(src)
     ...
+    command = sl.heartbeat(metrics={"fps": fps})
+    if command["should_stop"]:
+        break
     sl.add_event(source_id=src["id"], event_type="detection", track_id=tid, point_px={"x": u, "y": v})
     sl.flush()   # or use `with sl.batch():` — events auto-flush every `batch_size`
 """
@@ -29,6 +33,7 @@ class StoreLens:
             self.session.headers["X-API-Key"] = api_key
         self.batch_size = batch_size
         self.job_id = None
+        self.worker_instance_id = None
         self._buffer: list[dict] = []
         atexit.register(self.flush)
 
@@ -49,10 +54,25 @@ class StoreLens:
     def store_map(self) -> dict:
         m = self._req("GET", "/store")
         m["zones"] = self.zones()
+        m["projection_surfaces"] = self.projection_surfaces()
+        m["zone_views"] = self.zone_views()
         return m
 
     def zones(self) -> list[dict]:
         return self._req("GET", "/zones")
+
+    def projection_surfaces(self, source_id: int | None = None) -> list[dict]:
+        return self._req("GET", "/projection-surfaces", params={"source_id": source_id} if source_id else None)
+
+    def zone_views(self, source_id: int | None = None, zone_id: int | None = None) -> list[dict]:
+        params = {k: v for k, v in {"source_id": source_id, "zone_id": zone_id}.items() if v is not None}
+        return self._req("GET", "/zone-views", params=params)
+
+    def create_projection_surface(self, **definition) -> dict:
+        return self._req("POST", "/projection-surfaces", definition)
+
+    def create_zone_view(self, **definition) -> dict:
+        return self._req("POST", "/zone-views", definition)
 
     def zone_by_name(self, name: str) -> dict | None:
         return next((z for z in self.zones() if z["name"].lower() == name.lower()), None)
@@ -64,10 +84,39 @@ class StoreLens:
         self.job_id = job["id"]
         return job
 
+    def register_worker(self, name: str = "", version: str = "", config=None,
+                        worker_id: str | None = None) -> dict:
+        """Register a concrete worker process after register_job. Heartbeat regularly;
+        the dashboard can request stop/restart but does not spawn arbitrary processes."""
+        if self.job_id is None:
+            raise RuntimeError("register_job before register_worker")
+        body = {"job_id": self.job_id, "name": name, "version": version,
+                "config": config or {}}
+        if worker_id:
+            body["worker_id"] = worker_id
+        worker = self._req("POST", "/workers", body)
+        self.worker_instance_id = worker["id"]
+        return worker
+
+    def heartbeat(self, status: str = "running", metrics=None, last_error: str = "") -> dict:
+        """Report liveness and receive cooperative stop/restart commands.
+        Call every 5â€“15 seconds and exit when `should_stop` is true."""
+        if self.worker_instance_id is None:
+            raise RuntimeError("register_worker before heartbeat")
+        return self._req("POST", f"/workers/{self.worker_instance_id}/heartbeat",
+                         {"status": status, "metrics": metrics or {}, "last_error": last_error})
+
+    def stop_worker(self, error: str = "") -> dict | None:
+        if self.worker_instance_id is None:
+            return None
+        self.flush()
+        return self.heartbeat("error" if error else "stopped", last_error=error)
+
     def add_event(self, **event):
         """Buffer one event; flushes automatically at batch_size. See API docs for fields:
-        ts, source_id, event_type, track_id, zone_id/zone, point_px/point_map/bbox, value,
-        label, attributes."""
+        ts, source_id, event_type, track_id, zone_id/zone, point_px/point_map/bbox,
+        keypoints/mask, point_kind, projection_surface_id, zone_view_id, value, label,
+        attributes."""
         event.setdefault("ts", time.time())
         self._buffer.append(event)
         if len(self._buffer) >= self.batch_size:
@@ -94,6 +143,16 @@ class StoreLens:
             out.append(((H[0][0] * x + H[0][1] * y + H[0][2]) / w,
                         (H[1][0] * x + H[1][1] * y + H[1][2]) / w))
         return out
+
+    def project_remote(self, source_id: int, points: list[dict],
+                       surface_id: int | None = None) -> list[dict]:
+        return self._req("POST", f"/sources/{source_id}/project",
+                         {"points": points, "surface_id": surface_id})["points"]
+
+    def unproject_remote(self, source_id: int, points: list[dict],
+                         surface_id: int | None = None) -> list[dict]:
+        return self._req("POST", f"/sources/{source_id}/unproject",
+                         {"points": points, "surface_id": surface_id})["points"]
 
     @staticmethod
     def point_in_zone(zone: dict, x: float, y: float) -> bool:

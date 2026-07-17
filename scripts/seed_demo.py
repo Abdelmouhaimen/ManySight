@@ -26,6 +26,7 @@ HISTORY_S = 3 * 3600
 def clear_previous_seed():
     for job in db.q("SELECT id FROM jobs WHERE name LIKE 'Seed:%'"):
         db.ex("DELETE FROM events WHERE job_id=?", (job["id"],))
+        db.ex("DELETE FROM worker_instances WHERE job_id=?", (job["id"],))
         db.ex("DELETE FROM jobs WHERE id=?", (job["id"],))
 
 
@@ -58,18 +59,21 @@ ZONES = [
 
 
 def seed_zones() -> dict[str, dict]:
+    db.ex("DELETE FROM zone_views")
     db.ex("DELETE FROM zones")
     out = {}
     for name, ztype, color, poly in ZONES:
         polygon = [{"x": x, "y": y} for x, y in poly]
-        zid = db.ex("INSERT INTO zones (name, ztype, color, polygon_json, created_at) VALUES (?,?,?,?,?)",
-                    (name, ztype, color, json.dumps(polygon), NOW))
+        zid = db.ex("INSERT INTO zones (name, ztype, color, polygon_json, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+                    (name, ztype, color, json.dumps(polygon), NOW, NOW))
         out[name] = {"id": zid, "name": name, "ztype": ztype, "polygon": polygon}
     print(f"zones: {list(out)}")
     return out
 
 
 def seed_sources() -> dict[str, int]:
+    db.ex("DELETE FROM zone_views")
+    db.ex("DELETE FROM projection_surfaces")
     db.ex("DELETE FROM sources")
     ids = {}
     # 1 — entrance cam with a real homography computed from 5 point pairs
@@ -83,10 +87,10 @@ def seed_sources() -> dict[str, int]:
     H, err = homography.compute_homography(pairs)
     cal = {"points": pairs, "H": H, "error_m": err, "frame_w": 1280, "frame_h": 720}
     ids["entrance"] = db.ex(
-        "INSERT INTO sources (name, kind, url, username, password, status, map_x, map_y, rotation_deg, fov_deg, calibration_json, created_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO sources (name, kind, url, username, password, status, map_x, map_y, rotation_deg, fov_deg, calibration_json, calibration_revision, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         ("Entrance cam", "rtsp", "rtsp://192.168.1.10:554/stream1", "demo", "demo123",
-         "unknown", 18.6, 11.2, 211, 85, json.dumps(cal), NOW))
+         "unknown", 18.6, 11.2, 211, 85, json.dumps(cal), 1, NOW))
     # 2 — overhead webcam with a clean top-down homography
     pairs2 = [
         {"px": {"x": 100, "y": 100}, "map": {"x": 6.0, "y": 2.0}},
@@ -97,9 +101,9 @@ def seed_sources() -> dict[str, int]:
     H2, err2 = homography.compute_homography(pairs2)
     cal2 = {"points": pairs2, "H": H2, "error_m": err2, "frame_w": 1280, "frame_h": 720}
     ids["overhead"] = db.ex(
-        "INSERT INTO sources (name, kind, url, status, map_x, map_y, rotation_deg, fov_deg, calibration_json, created_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?)",
-        ("Overhead center", "webcam", "0", "unknown", 10.0, 6.2, 90, 110, json.dumps(cal2), NOW))
+        "INSERT INTO sources (name, kind, url, status, map_x, map_y, rotation_deg, fov_deg, calibration_json, calibration_revision, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        ("Overhead center", "webcam", "0", "unknown", 10.0, 6.2, 90, 110, json.dumps(cal2), 1, NOW))
     # 3 — fridge cam, placed but uncalibrated (shows that state too)
     ids["fridge"] = db.ex(
         "INSERT INTO sources (name, kind, url, status, map_x, map_y, rotation_deg, fov_deg, created_at)"

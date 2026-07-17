@@ -23,6 +23,7 @@ import {
   LoadingState,
   MetricCard,
   Modal,
+  MultiLineChart,
   PageHeader,
   Panel,
   RangeSelect,
@@ -125,6 +126,15 @@ function InsightBody({ definition, range, context, liveTick }) {
     }
     case "line": {
       if (definition.dataset === "counts") {
+        if (!definition.params?.label && data.series.length > 1) {
+          return (
+            <MultiLineChart
+              series={data.series}
+              unit={definition.unit ? ` ${definition.unit}` : ""}
+              empty="Post labelled count events to populate this view."
+            />
+          );
+        }
         const series =
           data.series.find((s) => s.label === definition.params?.label) ||
           data.series[0];
@@ -136,10 +146,19 @@ function InsightBody({ definition, range, context, liveTick }) {
           />
         );
       }
+      if (definition.dataset === "occupancy" && data.groups?.length) {
+        return (
+          <MultiLineChart
+            series={data.groups}
+            unit={definition.unit ? ` ${definition.unit}` : ""}
+            empty="Post labelled detections with stable track IDs to compare classes."
+          />
+        );
+      }
       return (
         <LineChart
           points={data.series}
-          unit=" people"
+          unit={definition.unit ? ` ${definition.unit}` : " objects"}
           empty="Tracking events with stable IDs will populate this chart."
         />
       );
@@ -455,6 +474,10 @@ export function InsightsPage({ liveTick = 0, notify }) {
 
 function InsightModal({ existing, zones, onClose, onSaved }) {
   const [templates, setTemplates] = useState(null);
+  const [parameterOptions, setParameterOptions] = useState({
+    detection_labels: [],
+    count_labels: [],
+  });
   const [form, setForm] = useState(
     existing
       ? {
@@ -472,12 +495,14 @@ function InsightModal({ existing, zones, onClose, onSaved }) {
   const [saving, setSaving] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
-    if (existing) return;
     api
       .get("/insights/templates")
-      .then((result) => setTemplates(result.templates))
+      .then((result) => {
+        setParameterOptions(result.parameters || parameterOptions);
+        if (!existing) setTemplates(result.templates);
+      })
       .catch((err) => setError(err.message));
-  }, [existing]);
+  }, [existing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const pick = (template) =>
     setForm({
       title: template.title,
@@ -505,7 +530,41 @@ function InsightModal({ existing, zones, onClose, onSaved }) {
       setSaving(false);
     }
   };
-  const supportsZone = form && ["dwell"].includes(form.dataset);
+  const supportsZone =
+    form && ["dwell", "occupancy", "counts", "heatmap"].includes(form.dataset);
+  const classParameter =
+    form && ["occupancy", "heatmap"].includes(form.dataset)
+      ? "detection"
+      : form?.dataset === "counts"
+        ? "count"
+        : null;
+  const discoveredLabels = classParameter
+    ? parameterOptions[`${classParameter}_labels`] || []
+    : [];
+  const classLabels = [
+    ...new Set(
+      [form?.params?.label, ...discoveredLabels].filter(
+        (value) => value != null && value !== "",
+      ),
+    ),
+  ];
+  const canCompareClasses =
+    form?.block === "line" && ["occupancy", "counts"].includes(form.dataset);
+  const classSelection = form?.params?.group_by === "label"
+    ? "__compare__"
+    : form?.dataset === "counts" && !form?.params?.label
+      ? "__compare__"
+      : form?.params?.label || "";
+  const setClassSelection = (selection) => {
+    const params = { ...form.params };
+    delete params.label;
+    delete params.group_by;
+    if (selection === "__compare__" && form.dataset === "occupancy") {
+      params.group_by = "label";
+    }
+    else if (selection) params.label = selection;
+    setForm({ ...form, params });
+  };
   return (
     <Modal
       title={existing ? `Edit ${existing.title}` : "Add insight"}
@@ -609,6 +668,34 @@ function InsightModal({ existing, zones, onClose, onSaved }) {
                   </option>
                 ))}
               </select>
+            </label>
+          )}
+          {classParameter && (
+            <label className="field">
+              <span>{classParameter === "detection" ? "Detection class" : "Count label"}</span>
+              <select
+                value={classSelection}
+                onChange={(e) => setClassSelection(e.target.value)}
+                disabled={!classLabels.length}
+              >
+                {classParameter === "detection" && (
+                  <option value="">All classes combined</option>
+                )}
+                {canCompareClasses && (
+                  <option value="__compare__">Compare classes as separate lines</option>
+                )}
+                {!classLabels.length && (
+                  <option value="">No labelled {classParameter} events found</option>
+                )}
+                {classLabels.map((label) => (
+                  <option key={label} value={label}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <small>
+                Uses the top-level label posted by the worker, not an attribute.
+              </small>
             </label>
           )}
           <label className="field">

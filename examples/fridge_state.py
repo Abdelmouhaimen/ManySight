@@ -30,6 +30,7 @@ def main():
     src = sl.source(args.source)
     sl.register_job(f"Fridge monitor – {src['name']}", "door state via ROI diff",
                     source_ids=[src["id"]], event_types=["state_change"])
+    sl.register_worker("fridge-state", version="1")
     cap = sl.open_capture(src)
     ok, ref = cap.read()
     if not ok:
@@ -41,9 +42,16 @@ def main():
     sl.add_event(source_id=src["id"], event_type="state_change", label=state)
     sl.flush()
     pending, pending_n = None, 0
+    last_heartbeat = 0.0
     print("monitoring… (reference frame assumes door is closed now)")
 
     while True:
+        now = time.time()
+        if now - last_heartbeat >= 10:
+            command = sl.heartbeat(metrics={"state": state})
+            last_heartbeat = now
+            if command["should_stop"]:
+                break
         ok, frame = cap.read()
         if not ok:
             break
@@ -60,6 +68,7 @@ def main():
         else:
             pending_n = 0
         time.sleep(args.period)
+    sl.stop_worker()
 
 
 if __name__ == "__main__":

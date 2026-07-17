@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Crosshair,
   Eraser,
+  Layers3,
   MapPin,
   MousePointer2,
   Pencil,
@@ -17,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { api, assetUrl } from "./api.js";
+import { CameraGeometryModal } from "./camera-geometry.jsx";
 import { Badge, EmptyState, Modal, Panel } from "./components.jsx";
 
 const ZONE_TYPES = [
@@ -258,6 +260,7 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
   const [labelDraft, setLabelDraft] = useState(null);
   const [editingZone, setEditingZone] = useState(null);
   const [calibrating, setCalibrating] = useState(null);
+  const [geometrySource, setGeometrySource] = useState(null);
   const [placementDraft, setPlacementDraft] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -733,6 +736,13 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
                         : "Calibrate camera"}
                     </button>
                     <button
+                      className="button button-secondary"
+                      onClick={() => setGeometrySource(selectedSource)}
+                    >
+                      <Layers3 size={14} />
+                      Zone views & planes
+                    </button>
+                    <button
                       className="button button-ghost danger"
                       onClick={clearPlacement}
                     >
@@ -792,6 +802,17 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
               "Pixel detections can now be projected onto the floor map.",
             );
           }}
+        />
+      )}
+      {geometrySource && (
+        <CameraGeometryModal
+          source={
+            sources.find((item) => item.id === geometrySource.id) ||
+            geometrySource
+          }
+          zones={zones}
+          onClose={() => setGeometrySource(null)}
+          notify={notify}
         />
       )}
     </div>

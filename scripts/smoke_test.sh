@@ -89,5 +89,46 @@ curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE/zones" -H 'Content-Type: a
   | grep -q 409 && pass "uncalibrated camera -> 409"
 curl -sf -X DELETE "$BASE/zones/$SZID" >/dev/null && pass "cleanup"
 
+echo "7. plane geometry, evidence provenance, and worker lifecycle"
+SURFACE=$(curl -sf -X POST "$BASE/projection-surfaces" -H 'Content-Type: application/json' -d "{
+  \"source_id\": $SRC, \"name\": \"Smoke elevated plane\", \"kind\": \"platform\", \"height_m\": 0.5,
+  \"points\": [
+    {\"px\":{\"x\":300,\"y\":300},\"map\":{\"x\":10,\"y\":8}},
+    {\"px\":{\"x\":900,\"y\":300},\"map\":{\"x\":14,\"y\":8}},
+    {\"px\":{\"x\":900,\"y\":650},\"map\":{\"x\":14,\"y\":11}},
+    {\"px\":{\"x\":300,\"y\":650},\"map\":{\"x\":10,\"y\":11}}
+  ], \"frame_w\": 1280, \"frame_h\": 720}")
+SID=$(echo "$SURFACE" | jqpy "print(d['id'])")
+echo "$SURFACE" | jqpy "assert d['revision']==1 and d['kind']=='platform', d" && pass "named plane created"
+VIEW=$(curl -sf -X POST "$BASE/zone-views" -H 'Content-Type: application/json' -d "{
+  \"zone_id\": $CHECKOUT, \"source_id\": $SRC, \"projection_surface_id\": $SID,
+  \"outer_polygon_px\":[{\"x\":300,\"y\":300},{\"x\":900,\"y\":300},{\"x\":900,\"y\":650},{\"x\":300,\"y\":650}],
+  \"detection_polygon_px\":[{\"x\":350,\"y\":350},{\"x\":850,\"y\":350},{\"x\":850,\"y\":620},{\"x\":350,\"y\":620}],
+  \"membership_rule\":\"bbox_overlap\", \"threshold\":0.5}")
+VID=$(echo "$VIEW" | jqpy "print(d['id'])")
+JOB=$(curl -sf -X POST "$BASE/jobs" -H 'Content-Type: application/json' -d "{
+  \"name\":\"Smoke plane job\",\"source_ids\":[$SRC],\"event_types\":[\"detection\"]}")
+JID=$(echo "$JOB" | jqpy "print(d['id'])")
+WORKER=$(curl -sf -X POST "$BASE/workers" -H 'Content-Type: application/json' -d "{
+  \"job_id\":$JID,\"name\":\"smoke-worker\",\"version\":\"1\"}")
+WID=$(echo "$WORKER" | jqpy "print(d['id'])")
+curl -sf -X POST "$BASE/workers/$WID/heartbeat" -H 'Content-Type: application/json' \
+  -d '{"status":"running","metrics":{"fps":4}}' \
+  | jqpy "assert d['effective_status']=='running' and d['metrics']['fps']==4, d" && pass "worker heartbeat running"
+curl -sf -X POST "$BASE/events" -H 'Content-Type: application/json' -d "{
+  \"job_id\":$JID,\"events\":[{\"source_id\":$SRC,\"event_type\":\"detection\",\"track_id\":\"smoke-person\",
+  \"bbox\":[400,400,200,150],\"keypoints\":[{\"x\":500,\"y\":480,\"name\":\"hip\",\"confidence\":0.9}],
+  \"point_kind\":\"bbox_bottom_center\"}]}" \
+  | jqpy "assert d['zone_view_assigned']==1 and d['projected']==1, d" && pass "zone view assigned + named plane projected"
+curl -sf "$BASE/events?job_id=$JID&limit=1" \
+  | jqpy "e=d['events'][0]; assert e['bbox'] and e['keypoints'] and e['projection_surface_id']==$SID and e['zone_view_id']==$VID and e['surface_revision']==1 and e['zone_view_revision']==1, e" \
+  && pass "evidence and geometry revisions persisted"
+curl -sf -X PUT "$BASE/workers/$WID/desired-state" -H 'Content-Type: application/json' -d '{"desired_state":"restart"}' >/dev/null
+curl -sf -X POST "$BASE/workers/$WID/heartbeat" -H 'Content-Type: application/json' -d '{"status":"running"}' \
+  | jqpy "assert d['should_stop'] and d['restart_requested'], d" && pass "restart command reaches heartbeat"
+curl -sf -X DELETE "$BASE/zone-views/$VID" >/dev/null
+curl -sf -X DELETE "$BASE/projection-surfaces/$SID" >/dev/null
+curl -sf -X DELETE "$BASE/jobs/$JID?purge_events=true" >/dev/null && pass "geometry/worker cleanup"
+
 echo
 echo "All smoke checks passed."

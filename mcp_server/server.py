@@ -31,10 +31,15 @@ mcp = FastMCP(
         "Then call list_skills() and load the closest task-specific playbook when one applies. "
         "Discover the live sources, map, zones, snapshots, jobs, and data instead of assuming "
         "prior conversation or demo state. Use MCP for agent operations; persistent workers "
-        "use the REST API documented at {STORELENS_URL}/docs (default http://localhost:8000/docs). "
+        "use the REST API documented at the configured StoreLens URL's /docs endpoint "
+        "(default http://localhost:8000/docs). "
         "Post raw observations only (what the model saw), never computed aggregates — the "
         "platform derives dwell, durations, and every insight. After posting events, register "
-        "the resulting view with register_insight so it appears in the Insights catalogue."
+        "the resulting view with register_insight so it appears in the Insights catalogue. "
+        "A zone polygon is its global map footprint. Use zone views for camera-specific visible "
+        "and inset decision polygons, and named projection surfaces for mattresses, tables, or "
+        "other elevated planes; never compensate for height by subtracting map Y. Preserve bbox, "
+        "keypoints, masks, point meaning, and geometry provenance in submitted observations."
     ),
 )
 
@@ -87,6 +92,8 @@ def get_store_map() -> dict:
     camera with its position, rotation, FOV and calibration state."""
     store = _req("GET", "/store")
     store["zones"] = _req("GET", "/zones")
+    store["projection_surfaces"] = _req("GET", "/projection-surfaces")
+    store["zone_views"] = _req("GET", "/zone-views")
     store["cameras"] = [
         {k: s[k] for k in ("id", "name", "kind", "status", "placement", "calibrated")}
         for s in _req("GET", "/sources")
@@ -101,12 +108,20 @@ def list_zones() -> list[dict]:
 
 
 @mcp.tool()
+def update_zone(zone_id: int, patch: dict) -> dict:
+    """Update a global map zone. Its polygon is a physical footprint in metres;
+    camera-specific visible/inset polygons belong in a zone view."""
+    return _req("PUT", f"/zones/{zone_id}", patch)
+
+
+@mcp.tool()
 def create_zone(name: str, ztype: str = "area",
                 polygon_map: list[dict] | None = None,
                 polygon_px: list[dict] | None = None,
                 source_id: int | None = None) -> dict:
-    """Create a named zone from a polygon you propose — typically after looking at a
-    get_snapshot frame ("mark the dashed-line area on cam 1 as restricted").
+    """Create a named global physical footprint. When starting from a snapshot, use
+    polygon_px only for points on the calibrated floor plane; then create a zone view
+    for the camera-specific visible boundary and inset detection ROI.
     Pass EITHER polygon_map ([{x,y}, ...] in floor meters) OR polygon_px ([{x,y}, ...]
     in that camera's pixels) + source_id — the platform projects pixels to the map
     through the source's calibrated homography (409 if uncalibrated: ask the user to
@@ -121,11 +136,90 @@ def create_zone(name: str, ztype: str = "area",
 
 
 @mcp.tool()
-def project_points(source_id: int, points: list[dict]) -> dict:
-    """Project camera pixel coordinates to store-map meters using the source's homography.
-    points: [{"x": px, "y": px}, ...]. Prefer sending point_px directly in events instead —
-    the platform projects automatically on ingest."""
-    return _req("POST", f"/sources/{source_id}/project", {"points": points})
+def project_points(source_id: int, points: list[dict], surface_id: int | None = None) -> dict:
+    """Project camera pixels to map metres on the floor (surface_id omitted) or a named
+    elevated plane. Never compensate for physical height by subtracting map Y."""
+    return _req("POST", f"/sources/{source_id}/project",
+                {"points": points, "surface_id": surface_id})
+
+
+@mcp.tool()
+def unproject_points(source_id: int, points: list[dict], surface_id: int | None = None) -> dict:
+    """Project map-metre points into a camera frame on the selected plane."""
+    return _req("POST", f"/sources/{source_id}/unproject",
+                {"points": points, "surface_id": surface_id})
+
+
+@mcp.tool()
+def list_projection_surfaces(source_id: int | None = None) -> list[dict]:
+    """List named source-specific planes such as mattress, table, shelf, or conveyor."""
+    suffix = "" if source_id is None else "?" + urllib.parse.urlencode({"source_id": source_id})
+    return _req("GET", "/projection-surfaces" + suffix)
+
+
+@mcp.tool()
+def create_projection_surface(source_id: int, name: str, points: list[dict],
+                              kind: str = "custom", height_m: float | None = None,
+                              frame_w: int | None = None,
+                              frame_h: int | None = None) -> dict:
+    """Create a plane homography from at least four {px,map} pairs. Use this for an
+    elevated planar target instead of pixel offsets or height subtraction."""
+    return _req("POST", "/projection-surfaces", {
+        "source_id": source_id, "name": name, "kind": kind, "height_m": height_m,
+        "points": points, "frame_w": frame_w, "frame_h": frame_h,
+    })
+
+
+@mcp.tool()
+def update_projection_surface(surface_id: int, patch: dict) -> dict:
+    """Update a named plane and recompute its homography. Its revision increments;
+    existing events keep the surface revision used when they were ingested."""
+    return _req("PUT", f"/projection-surfaces/{surface_id}", patch)
+
+
+@mcp.tool()
+def delete_projection_surface(surface_id: int) -> dict:
+    """Delete an unused named plane. Remove or repoint dependent zone views first."""
+    return _req("DELETE", f"/projection-surfaces/{surface_id}")
+
+
+@mcp.tool()
+def list_zone_views(source_id: int | None = None, zone_id: int | None = None) -> list[dict]:
+    """List per-camera zone geometry: visible outer polygon, inset detection ROI,
+    projection surface, and membership rule."""
+    params = {k: v for k, v in {"source_id": source_id, "zone_id": zone_id}.items()
+              if v is not None}
+    return _req("GET", "/zone-views" + ("?" + urllib.parse.urlencode(params) if params else ""))
+
+
+@mcp.tool()
+def create_zone_view(zone_id: int, source_id: int, outer_polygon_px: list[dict],
+                     detection_polygon_px: list[dict] | None = None,
+                     projection_surface_id: int | None = None,
+                     membership_rule: str = "point", threshold: float = 0.5,
+                     min_keypoints: int = 1) -> dict:
+    """Create a camera view of a global zone after user confirmation. Membership rules:
+    point, bbox_overlap, or keypoints_inside."""
+    return _req("POST", "/zone-views", {
+        "zone_id": zone_id, "source_id": source_id,
+        "outer_polygon_px": outer_polygon_px,
+        "detection_polygon_px": detection_polygon_px,
+        "projection_surface_id": projection_surface_id,
+        "membership_rule": membership_rule, "threshold": threshold,
+        "min_keypoints": min_keypoints,
+    })
+
+
+@mcp.tool()
+def update_zone_view(view_id: int, patch: dict) -> dict:
+    """Update a camera ROI, decision rule, or plane. The view revision increments."""
+    return _req("PUT", f"/zone-views/{view_id}", patch)
+
+
+@mcp.tool()
+def delete_zone_view(view_id: int) -> dict:
+    """Delete one camera-specific view without deleting the global map zone."""
+    return _req("DELETE", f"/zone-views/{view_id}")
 
 
 @mcp.tool()
@@ -140,17 +234,66 @@ def register_job(name: str, description: str = "", source_ids: list[int] | None 
 
 
 @mcp.tool()
+def list_jobs() -> list[dict]:
+    """List analysis registrations and their latest heartbeat-backed worker instance."""
+    return _req("GET", "/jobs")
+
+
+@mcp.tool()
+def list_workers(job_id: int | None = None) -> list[dict]:
+    """List concrete worker instances. effective_status becomes stale without heartbeats;
+    job status alone is not proof that a process is alive."""
+    suffix = "" if job_id is None else "?" + urllib.parse.urlencode({"job_id": job_id})
+    return _req("GET", "/workers" + suffix)
+
+
+@mcp.tool()
+def register_worker(job_id: int, name: str = "", version: str = "",
+                    worker_id: str | None = None, config: dict | None = None) -> dict:
+    """Register a concrete worker instance when launching it. Persistent workers should
+    normally call this REST endpoint through the SDK themselves, then heartbeat every
+    5–15 seconds. Do not register a worker that was not actually started."""
+    return _req("POST", "/workers", {
+        "job_id": job_id, "name": name, "version": version,
+        "worker_id": worker_id, "config": config or {},
+    })
+
+
+@mcp.tool()
+def heartbeat_worker(worker_id: int, status: str = "running",
+                     metrics: dict | None = None, last_error: str = "") -> dict:
+    """Send one lifecycle heartbeat. The response includes should_stop and
+    restart_requested. A worker must obey those flags and exit cleanly; a supervisor
+    is responsible for relaunch after restart."""
+    return _req("POST", f"/workers/{worker_id}/heartbeat", {
+        "status": status, "metrics": metrics or {}, "last_error": last_error,
+    })
+
+
+@mcp.tool()
+def request_worker_state(worker_id: int, desired_state: str) -> dict:
+    """Request running, stopped, or restart. The worker/supervisor must obey the command.
+    `restart` cannot create a process if no supervisor exists; StoreLens never executes
+    arbitrary user scripts inside the web process."""
+    return _req("PUT", f"/workers/{worker_id}/desired-state",
+                {"desired_state": desired_state})
+
+
+@mcp.tool()
 def submit_events(events: list[dict], job_id: int | None = None) -> dict:
     """Post a batch of raw observations (max 5000). Event fields:
       ts (epoch seconds, optional), source_id, event_type (detection|zone_enter|zone_exit|
       transition|state_change|count|custom), track_id, point_px {x,y} OR point_map {x,y}
-      OR bbox [x,y,w,h], zone_id or zone (name), value (a per-frame count sample only),
-      label (e.g. state name), attributes (free dict, e.g. {"gender":"female"}).
+      OR bbox [x,y,w,h], keypoints, compressed mask evidence, point_kind,
+      projection_surface_id, zone_view_id, zone_id or zone (name), value (a per-frame
+      count sample only), label, and attributes. Geometry evidence and revision
+      provenance are persisted; use a named surface for elevated planar targets.
     Contract: post what the model SAW, never computed aggregates. The platform derives
     dwell from zone_enter/zone_exit pairs and state durations from state_change
     timestamps. `zone_dwell` is deprecated: still stored, but its value is ignored by
     analytics and alerts. The platform auto-projects point_px to map meters (if the
-    source is calibrated) and auto-assigns the zone containing the map point.
+    source is calibrated) and can assign zones through map geometry or a source-specific
+    zone view (point, bbox overlap, or keypoints-inside rule).
     Returns enrichment counts."""
     return _req("POST", "/events", {"job_id": job_id, "events": events})
 
@@ -175,7 +318,9 @@ def get_events(since: float | None = None, until: float | None = None,
 def get_analytics(kind: str, params: dict | None = None) -> dict:
     """Read the platform's computed analytics. kind: summary | heatmap | dwell | occupancy |
     counts | transitions | states. params are the endpoint's query params (since/until epoch seconds,
-    group_by, zone_id, ...). Useful to verify your events produce sensible insights.
+    group_by, zone_id, ...). Occupancy and heatmap accept the top-level detection `label`;
+    occupancy also accepts group_by="label" to return per-class series. Counts accepts
+    the top-level count-event `label`. Useful to verify your events produce sensible insights.
     All analytics are derived from raw observations — dwell always comes from
     zone_enter/zone_exit pairs, state durations from state_change timestamps."""
     allowed = {"summary", "heatmap", "dwell", "occupancy", "counts", "transitions", "states"}
@@ -209,7 +354,9 @@ def register_insight(title: str, block: str, dataset: str, params: dict | None =
     block: metric|line|bar|table|heatmap_map|flow_matrix|state_timeline. dataset: the
     platform analytics feeding it (summary|heatmap|dwell|occupancy|counts|transitions|
     states). params are that analytics endpoint's filters (zone_id, label, group_by,
-    source_id, field...). Call list_insight_templates() first to see which combinations
+    source_id, field...). For labelled detections, use occupancy with label="class" to
+    filter one class or group_by="label" to compare class lines. Call
+    list_insight_templates() first to see which combinations
     fit the data, and list_insights() to avoid duplicates. Always state `limitations`
     honestly — it is shown on the card. pinned=True also shows it on Overview."""
     return _req("POST", "/insights", {

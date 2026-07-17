@@ -14,10 +14,10 @@ block registry — you register structure, never UI code.
 | block | renders | datasets it accepts |
 |---|---|---|
 | `metric` | one KPI number | `summary` (params.field: tracks/events/active_tracks), `dwell` (avg for params.zone_id), `occupancy` (peak) |
-| `line` | time series | `occupancy`, `counts` (params.label) |
+| `line` | time series | `occupancy` (params.zone_id, label, group_by="label", event_type), `counts` (params.zone_id, label) |
 | `bar` | per-zone/per-group bars | `dwell` (params.zone_id?, group_by?) |
 | `table` | rows | `dwell`, `transitions` |
-| `heatmap_map` | floor-plan heatmap | `heatmap` |
+| `heatmap_map` | floor-plan heatmap | `heatmap` (params.zone_id, label, source_id, job_id) |
 | `flow_matrix` | zone→zone matrix | `transitions` |
 | `state_timeline` | state totals per source | `states` (params.source_id?) |
 
@@ -27,6 +27,10 @@ block registry — you register structure, never UI code.
    (it scans count labels, state sources, zones, and attribute keys for you).
 2. `list_insights()` — avoid registering a duplicate of an existing card.
 3. `register_insight(title, block, dataset, params, question, unit, limitations, pinned)`.
+   - A detection worker's top-level `label` is an observed class. Use
+     `dataset="occupancy"` with `params={"event_type":"detection", "label":"child"}`
+     for one class, or replace `label` with `group_by="label"` to compare classes.
+     Add `zone_id` to scope either form to one zone.
    - Write `limitations` honestly — it is displayed on the card. Say what the metric
      cannot claim ("derived dwell, not validated wait time"; "appearance-based gender
      is an estimate").

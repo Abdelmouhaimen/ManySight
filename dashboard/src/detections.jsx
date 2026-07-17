@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Activity, RefreshCw } from "lucide-react";
-import { api, formatDateTime } from "./api.js";
+import { api, formatPreciseDateTime } from "./api.js";
 import {
   Badge,
   EmptyState,
@@ -24,7 +24,10 @@ const EVENT_TYPES = [
 ];
 
 const COLUMN_DOCS = [
-  ["Time", "When the worker observed it (event `ts`, not ingestion time)."],
+  [
+    "Time",
+    "When the worker observed it (event `ts`, not ingestion time), displayed through milliseconds. Expand the row for the exact epoch value.",
+  ],
   ["Type", "The event_type posted by the worker — see the glossary below."],
   ["Source", "The camera the observation came from (`source_id`)."],
   [
@@ -42,7 +45,7 @@ const COLUMN_DOCS = [
   ["Job", "The registered analysis job that posted the event."],
   [
     "Details (expand)",
-    "point_px = pixel position (person's feet). point_map = floor meters, projected by the platform through the camera's homography. attributes = free worker-supplied dict (e.g. gender).",
+    "The complete observation evidence: pixel/map point, bbox, keypoints or mask, point meaning, projection plane, zone-assignment method, geometry revisions, and free worker attributes.",
   ],
 ];
 
@@ -330,12 +333,15 @@ export function DetectionsPage({ liveTick = 0 }) {
             <h3>Enrichment pipeline</h3>
             <p>
               Workers post what their model saw. On ingestion the platform
-              enriches each event: a <code>bbox</code> becomes a feet point
-              (bottom-center) → the pixel point is projected to floor meters
-              through the camera's calibrated homography → the map point is
-              tested against zone polygons to auto-assign a zone. Analytics,
-              alerts, and insights are all derived from these enriched rows —
-              workers never post computed aggregates.
+              preserves the original <code>bbox</code>, keypoints, or mask, then
+              enriches the row. A point may be projected through the floor or a
+              named horizontal plane such as a mattress. Camera-specific zone
+              views can assign a zone by point, bounding-box overlap, or
+              keypoints before the resulting map point is tested against the
+              global floor polygon. The row records which method and geometry
+              revisions were used, so a later geometry edit never rewrites
+              history. Analytics, alerts, and insights are derived from these
+              enriched rows; workers never post computed aggregates.
             </p>
             <h3>Columns</h3>
             <div className="table-scroll">
@@ -383,7 +389,14 @@ function EventRows({ event, source, job, expanded, toggle }) {
   return (
     <>
       <tr>
-        <td>{formatDateTime(event.ts)}</td>
+        <td className="event-time-cell">
+          <time
+            dateTime={new Date(event.ts * 1000).toISOString()}
+            title={`Epoch ts: ${event.ts}`}
+          >
+            {formatPreciseDateTime(event.ts)}
+          </time>
+        </td>
         <td>
           <Badge tone={event.event_type === "zone_dwell" ? "warning" : "violet"}>
             {event.event_type.replaceAll("_", " ")}
@@ -413,11 +426,23 @@ function EventRows({ event, source, job, expanded, toggle }) {
             <div>
               <span>
                 Event #{event.id} · job {event.job_id || "unregistered"} ·
-                ingested {formatDateTime(event.created_at)}
+                observed {formatPreciseDateTime(event.ts)} · ingested{" "}
+                {formatPreciseDateTime(event.created_at)}
               </span>
               <pre>
                 {JSON.stringify(
                   {
+                    timestamp: {
+                      ts: event.ts,
+                      iso: new Date(event.ts * 1000).toISOString(),
+                    },
+                    ingestion_timestamp: {
+                      ts: event.created_at,
+                      iso: new Date(event.created_at * 1000).toISOString(),
+                    },
+                    bbox: event.bbox,
+                    keypoints: event.keypoints,
+                    mask: event.mask,
                     point_px:
                       event.x_px == null
                         ? null
@@ -426,6 +451,19 @@ function EventRows({ event, source, job, expanded, toggle }) {
                       event.x_map == null
                         ? null
                         : { x: event.x_map, y: event.y_map },
+                    point_kind: event.point_kind,
+                    projection: {
+                      method: event.projection_method,
+                      surface_id: event.projection_surface_id,
+                      calibration_revision: event.calibration_revision,
+                      surface_revision: event.surface_revision,
+                    },
+                    zone_assignment: {
+                      method: event.zone_assignment_method,
+                      zone_view_id: event.zone_view_id,
+                      zone_revision: event.zone_revision,
+                      zone_view_revision: event.zone_view_revision,
+                    },
                     attributes: event.attributes,
                   },
                   null,

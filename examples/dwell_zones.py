@@ -33,18 +33,25 @@ def main():
 
     sl.register_job(f"Dwell – {src['name']}", f"dwell in {[z['name'] for z in zones]}",
                     source_ids=[src["id"]], event_types=["zone_enter", "zone_exit"])
+    sl.register_worker("dwell-zones", version="1")
     detect = motion_detector()
     cap = sl.open_capture(src)
     tracker = CentroidTracker(max_distance=90)
     inside: dict[tuple, float] = {}
     membership_hits: dict[tuple, int] = {}
     DEBOUNCE = 3
+    last_heartbeat = 0.0
 
     while True:
         ok, frame = cap.read()
         if not ok:
             break
         now = time.time()
+        if now - last_heartbeat >= 10:
+            command = sl.heartbeat(metrics={"open_visits": len(inside)})
+            last_heartbeat = now
+            if command["should_stop"]:
+                break
         tracked = tracker.update(detect(frame))
         if not tracked:
             continue
@@ -66,6 +73,7 @@ def main():
     for (tid, zid) in inside:
         sl.add_event(source_id=src["id"], event_type="zone_exit", track_id=tid, zone_id=zid)
     sl.flush()
+    sl.stop_worker()
 
 
 if __name__ == "__main__":

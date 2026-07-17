@@ -41,7 +41,8 @@ class ZonePatch(BaseModel):
 
 def serialize(row: dict) -> dict:
     return {"id": row["id"], "name": row["name"], "ztype": row["ztype"],
-            "color": row["color"], "polygon": db.jload(row["polygon_json"], [])}
+            "color": row["color"], "polygon": db.jload(row["polygon_json"], []),
+            "revision": row.get("revision", 1), "updated_at": row.get("updated_at")}
 
 
 @router.get("/zones")
@@ -71,9 +72,10 @@ def create_zone(body: ZoneIn):
     if body.ztype not in ZTYPES:
         raise HTTPException(422, f"ztype must be one of {sorted(ZTYPES)}")
     color = body.color or ZONE_COLORS[db.q1("SELECT COUNT(*) n FROM zones")["n"] % len(ZONE_COLORS)]
+    now = db.now()
     zid = db.ex(
-        "INSERT INTO zones (name, ztype, color, polygon_json, created_at) VALUES (?,?,?,?,?)",
-        (body.name, body.ztype, color, json.dumps(polygon), db.now()),
+        "INSERT INTO zones (name, ztype, color, polygon_json, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+        (body.name, body.ztype, color, json.dumps(polygon), now, now),
     )
     return serialize(db.q1("SELECT * FROM zones WHERE id=?", (zid,)))
 
@@ -97,6 +99,7 @@ def update_zone(zone_id: int, body: ZonePatch):
             raise HTTPException(422, "polygon needs at least 3 points")
         sets.append("polygon_json=?"); args.append(json.dumps(body.polygon))
     if sets:
+        sets.extend(["revision=revision+1", "updated_at=?"]); args.append(db.now())
         db.ex(f"UPDATE zones SET {', '.join(sets)} WHERE id=?", (*args, zone_id))
     return serialize(db.q1("SELECT * FROM zones WHERE id=?", (zone_id,)))
 
@@ -105,5 +108,6 @@ def update_zone(zone_id: int, body: ZonePatch):
 def delete_zone(zone_id: int):
     if not db.q1("SELECT id FROM zones WHERE id=?", (zone_id,)):
         raise HTTPException(404, "zone not found")
+    db.ex("DELETE FROM zone_views WHERE zone_id=?", (zone_id,))
     db.ex("DELETE FROM zones WHERE id=?", (zone_id,))
     return {"deleted": zone_id}

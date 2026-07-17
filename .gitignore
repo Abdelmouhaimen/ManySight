@@ -21,3 +21,4 @@ dashboard/dist/
 *.log
 .DS_Store
 Thumbs.db
+codex-simulations/
