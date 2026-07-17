@@ -11,6 +11,7 @@ They are discoverable two ways:
 
 | skill | purpose |
 |---|---|
+| [storelens-platform](storelens-platform/SKILL.md) | default platform guide: purpose, MCP/REST roles, API discovery, lifecycle, event contract, and safe defaults |
 | [heatmap](heatmap/SKILL.md) | spatial traffic heatmaps on the floor plan |
 | [dwell-time](dwell-time/SKILL.md) | time spent in zones, grouped by attributes |
 | [state-monitoring](state-monitoring/SKILL.md) | equipment states (fridge open/closed) + durations |
@@ -20,3 +21,5 @@ They are discoverable two ways:
 Contract reminder: workers post **raw observations** (detections, enter/exit pairs,
 label-only state changes, per-frame counts) — the platform derives dwell, durations,
 and every insight. Finish an analysis by registering it with `register_insight`.
+
+An MCP-only agent should load `storelens-platform` before any task-specific skill.

@@ -25,13 +25,13 @@ SKILLS_DIR = os.environ.get(
 mcp = FastMCP(
     "storelens",
     instructions=(
-        "StoreLens is the analysis workbench behind the ManySight retail operations POC. "
-        "Cameras, a floor plan "
-        "with named zones, and per-camera homographies (pixels -> floor meters) are configured "
-        "by the store owner in the UI. You are the analysis brain: read sources and the map, "
-        "run CV models on the streams, and post events back. Always call list_skills() first "
-        "when asked for a new kind of analysis — skills are step-by-step recipes for common "
-        "tasks (heatmaps, dwell time, state monitoring, alerts). "
+        "StoreLens is an agent-operated computer-vision platform for physical spaces. "
+        "On the first StoreLens request, always call get_skill('storelens-platform') and "
+        "follow that general operating guide before planning or changing the platform. "
+        "Then call list_skills() and load the closest task-specific playbook when one applies. "
+        "Discover the live sources, map, zones, snapshots, jobs, and data instead of assuming "
+        "prior conversation or demo state. Use MCP for agent operations; persistent workers "
+        "use the REST API documented at {STORELENS_URL}/docs (default http://localhost:8000/docs). "
         "Post raw observations only (what the model saw), never computed aggregates — the "
         "platform derives dwell, durations, and every insight. After posting events, register "
         "the resulting view with register_insight so it appears in the Insights catalogue."
@@ -251,24 +251,27 @@ def delete_insight(insight_id: int) -> dict:
 
 @mcp.tool()
 def list_skills() -> list[dict]:
-    """List the analysis skills (playbooks) shipped with the platform. Each skill is a
-    step-by-step recipe for a task: heatmap, dwell-time, state-monitoring, alerts-workflows.
-    Call get_skill(name) and follow it when the user asks for that kind of analysis."""
+    """List the operating guide and analysis playbooks shipped with StoreLens. Load
+    `storelens-platform` first, then the closest task-specific skill."""
     out = []
     if os.path.isdir(SKILLS_DIR):
         for entry in sorted(os.listdir(SKILLS_DIR)):
             path = os.path.join(SKILLS_DIR, entry, "SKILL.md")
             if os.path.isfile(path):
                 with open(path, encoding="utf-8") as f:
-                    first = f.readline().strip().lstrip("# ")
-                out.append({"name": entry, "title": first})
+                    content = f.read()
+                title = next(
+                    (line[2:].strip() for line in content.splitlines() if line.startswith("# ")),
+                    entry,
+                )
+                out.append({"name": entry, "title": title})
     return out
 
 
 @mcp.tool()
 def get_skill(name: str) -> str:
-    """Return the full markdown playbook for a skill, including runnable worker-script
-    templates. Follow it step by step; adapt the template to the user's exact request."""
+    """Return a complete StoreLens operating guide or task playbook. Load
+    `storelens-platform` first on every new StoreLens task."""
     path = os.path.join(SKILLS_DIR, name, "SKILL.md")
     if not os.path.isfile(path):
         raise ValueError(f"unknown skill '{name}' — call list_skills() first")

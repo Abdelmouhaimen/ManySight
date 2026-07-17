@@ -1,0 +1,4 @@
+interface:
+  display_name: "StoreLens Platform"
+  short_description: "Operate StoreLens cameras, workers, and insights"
+  default_prompt: "Use $storelens-platform to inspect my configured space and carry out the requested camera analysis."

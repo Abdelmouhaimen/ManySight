@@ -19,9 +19,9 @@ put durations on `state_change` events.
 ## The contract
 
 1. **Discover** — `list_sources`, `get_snapshot` (look at frames!), `get_store_map`, `list_zones`.
-2. **Pick a recipe** — `list_skills()` → `get_skill(name)`. Skills live in `skills/` and are
-   step-by-step playbooks with worker templates. Follow the closest one; compose them for
-   multi-part requests ("dwell by gender at checkout" = dwell-time skill + an attribute model).
+2. **Load the platform guide, then pick a recipe** — read `storelens-platform` first,
+   then `list_skills()` → `get_skill(name)`. Skills live in `skills/`; follow the closest
+   task playbook and compose them for multi-part requests.
 3. **Register a job** — `register_job(name, description, source_ids, event_types)` *before*
    posting anything. Keep the returned `job_id`.
 4. **Run analysis & post observations** — write a worker script (use `sdk/python/storelens.py`),
@@ -104,6 +104,7 @@ explicit zone without any map point.
 
 | skill | use when the user asks for |
 |---|---|
+| `storelens-platform` | any StoreLens task; load first for platform purpose, API discovery, workflow, and safety defaults |
 | `heatmap` | traffic/popularity heatmaps of the store or an area |
 | `dwell-time` | how long people stay somewhere, optionally split by an attribute (gender, staff/customer…) |
 | `state-monitoring` | open/closed, on/off states of equipment (fridge doors, lights) and their durations |
