@@ -42,6 +42,7 @@ const PARAM_WHITELIST = [
   "job_id",
   "cell",
   "max_dwell_s",
+  "aggregation",
 ];
 
 function useInsightData(definition, range, liveTick) {
@@ -143,6 +144,7 @@ function InsightBody({ definition, range, context, liveTick }) {
             points={series?.points || []}
             unit={series ? ` ${series.label}` : ""}
             empty="Post labelled count events to populate this view."
+            latestPoint={series?.latest || null}
           />
         );
       }
@@ -696,6 +698,24 @@ function InsightModal({ existing, zones, onClose, onSaved }) {
               <small>
                 Uses the top-level label posted by the worker, not an attribute.
               </small>
+            </label>
+          )}
+          {form.dataset === "counts" && (
+            <label className="field">
+              <span>Value per time interval</span>
+              <select
+                value={form.params.aggregation || "last"}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    params: { ...form.params, aggregation: e.target.value },
+                  })
+                }
+              >
+                <option value="last">Last observed count</option>
+                <option value="avg">Average observed count</option>
+              </select>
+              <small>Last keeps instantaneous counts discrete; average can be fractional.</small>
             </label>
           )}
           <label className="field">

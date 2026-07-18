@@ -177,8 +177,8 @@ def list_templates():
             "key": "counts_line_unavailable", "title": "Counts over time",
             "block": "line", "dataset": "counts",
             "question": "How does a measured population change over time?",
-            "params": {}, "unit": "objects",
-            "limitations": "Averages worker-reported count samples per interval; accuracy depends on the model.",
+            "params": {"aggregation": "last"}, "unit": "objects",
+            "limitations": "Each curve point and the headline use the last raw count observation in their interval. Accuracy depends on the model.",
             "available": False, "requires": "labelled count events with a numeric value"})
     for z in zones:
         if z["ztype"] in {"checkout", "queue"}:
@@ -194,8 +194,8 @@ def list_templates():
             "key": f"count_line_{label}", "title": f"Population — {label}",
             "block": "line", "dataset": "counts",
             "question": f"How many {label} are visible over time?",
-            "params": {"label": label}, "unit": label,
-            "limitations": "Averages per-frame model counts per interval; accuracy depends on the model.",
+            "params": {"label": label, "aggregation": "last"}, "unit": label,
+            "limitations": "Each curve point and the headline use the last raw count observation in their interval. Accuracy depends on the model.",
             "available": True, "requires": ""})
     for sid in sorted(state_sources):
         templates.append({

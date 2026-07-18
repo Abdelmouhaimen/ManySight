@@ -14,7 +14,7 @@ block registry — you register structure, never UI code.
 | block | renders | datasets it accepts |
 |---|---|---|
 | `metric` | one KPI number | `summary` (params.field: tracks/events/active_tracks), `dwell` (avg for params.zone_id), `occupancy` (peak) |
-| `line` | time series | `occupancy` (params.zone_id, label, group_by="label", event_type), `counts` (params.zone_id, label) |
+| `line` | time series | `occupancy` (params.zone_id, label, group_by="label", event_type), `counts` (params.zone_id, label, aggregation="last" or "avg"; last is the default, and the headline always uses the latest raw sample) |
 | `bar` | per-zone/per-group bars | `dwell` (params.zone_id?, group_by?) |
 | `table` | rows | `dwell`, `transitions` |
 | `heatmap_map` | floor-plan heatmap | `heatmap` (params.zone_id, label, source_id, job_id) |

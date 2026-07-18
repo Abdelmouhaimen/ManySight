@@ -290,6 +290,22 @@ def init_db():
         if "resolved_at" not in alert_columns:
             con.execute("ALTER TABLE alerts ADD COLUMN resolved_at REAL")
         con.execute("UPDATE alerts SET status='resolved' WHERE acknowledged=1 AND status='new'")
+        # Count lines now default to the last instantaneous observation in each
+        # interval. Update only legacy template text, never user-authored wording.
+        legacy_count_limitations = (
+            "Averages worker-reported count samples per interval; accuracy depends on the model.",
+            "Averages per-frame model counts per interval; accuracy depends on the model.",
+            "The curve averages count samples per interval; the headline is the latest raw observation. Accuracy depends on the model.",
+            "The curve averages per-frame model counts per interval; the headline is the latest raw observation. Accuracy depends on the model.",
+        )
+        con.execute(
+            f"UPDATE insight_definitions SET limitations=? WHERE dataset='counts'"
+            f" AND limitations IN ({','.join('?' for _ in legacy_count_limitations)})",
+            (
+                "Each curve point and the headline use the last raw count observation in their interval. Accuracy depends on the model.",
+                *legacy_count_limitations,
+            ),
+        )
         row = con.execute("SELECT id FROM stores WHERE id=1").fetchone()
         if not row:
             con.execute(

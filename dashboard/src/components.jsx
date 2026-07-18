@@ -218,6 +218,7 @@ export function LineChart({
   points = [],
   unit = "",
   empty = "No observations in this period",
+  latestPoint = null,
 }) {
   if (!points.length)
     return <EmptyState title="No chart data">{empty}</EmptyState>;
@@ -241,13 +242,14 @@ export function LineChart({
     )
     .join(" ");
   const area = `${path} L ${x(t1)} ${y(0)} L ${x(t0)} ${y(0)} Z`;
+  const summaryPoint = latestPoint || points.at(-1);
   return (
     <div className="chart-wrap">
       <svg
         viewBox={`0 0 ${width} ${height}`}
         className="line-chart"
         role="img"
-        aria-label={`Time series ending at ${points.at(-1).count}${unit}`}
+        aria-label={`Time series with latest observation ${summaryPoint.count}${unit}`}
       >
         <defs>
           <linearGradient id="line-fill" x1="0" x2="0" y1="0" y2="1">
@@ -294,9 +296,9 @@ export function LineChart({
         })}
       </svg>
       <div className="chart-summary">
-        <span>Latest</span>
+        <span>{latestPoint ? "Latest observation" : "Latest"}</span>
         <strong>
-          {points.at(-1).count}
+          {summaryPoint.count}
           {unit}
         </strong>
       </div>
@@ -402,12 +404,15 @@ export function MultiLineChart({
         })}
       </svg>
       <div className="multi-line-latest">
-        {visible.map((item, index) => (
-          <span key={item.label}>
-            <i style={{ background: SERIES_COLORS[index % SERIES_COLORS.length] }} />
-            {item.label}: <strong>{item.points.at(-1).count}{unit}</strong>
-          </span>
-        ))}
+        {visible.map((item, index) => {
+          const summaryPoint = item.latest || item.points.at(-1);
+          return (
+            <span key={item.label}>
+              <i style={{ background: SERIES_COLORS[index % SERIES_COLORS.length] }} />
+              {item.label}: <strong>{summaryPoint.count}{unit}</strong>
+            </span>
+          );
+        })}
       </div>
     </div>
   );

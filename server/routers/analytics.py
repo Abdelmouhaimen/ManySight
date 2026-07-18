@@ -163,14 +163,19 @@ def occupancy(since: float | None = None, until: float | None = None,
 @router.get("/analytics/counts")
 def counts(since: float | None = None, until: float | None = None,
            bucket_s: float = 300, zone_id: int | None = None, job_id: int | None = None,
-           source_id: int | None = None, label: str | None = None):
+           source_id: int | None = None, label: str | None = None,
+           aggregation: str = "last"):
     """Time series for classifier/counting workers.
 
     A worker posts event_type=count, value=<visible objects>, and a human-readable
-    label such as "children". Multiple samples in a bucket are averaged so the
-    chart represents a population at a point in time rather than cumulative events.
+    label such as "children". The historical curve uses the last sample in each
+    bucket by default because count observations represent instantaneous state.
+    Pass aggregation=avg when a bucket mean is the intended question. Each series
+    also returns its latest raw observation for an unambiguous card headline.
     """
     since, until = _range(since, until)
+    if aggregation not in {"last", "avg"}:
+        raise HTTPException(422, "aggregation must be 'last' or 'avg'")
     bucket_s = max(bucket_s, (until - since) / 500, 10)
     where, args = ["ts BETWEEN ? AND ?", "event_type='count'", "value IS NOT NULL"], [since, until]
     if zone_id is not None:
@@ -181,20 +186,58 @@ def counts(since: float | None = None, until: float | None = None,
         where.append("source_id=?"); args.append(source_id)
     if label is not None:
         where.append("label=?"); args.append(label)
-    rows = db.q(
-        f"SELECT CAST(ts/{bucket_s} AS INTEGER) b, COALESCE(NULLIF(label,''),'objects') label,"
-        f" AVG(value) value, MIN(value) min_value, MAX(value) max_value, COUNT(*) samples"
-        f" FROM events WHERE {' AND '.join(where)} GROUP BY b, label ORDER BY b", args)
+    if aggregation == "avg":
+        rows = db.q(
+            f"SELECT CAST(ts/{bucket_s} AS INTEGER) b, COALESCE(NULLIF(label,''),'objects') label,"
+            f" AVG(value) value, MIN(value) min_value, MAX(value) max_value, COUNT(*) samples"
+            f" FROM events WHERE {' AND '.join(where)} GROUP BY b, label ORDER BY b", args)
+    else:
+        rows = db.q(
+            "WITH matching AS ("
+            f" SELECT id, ts, value, CAST(ts/{bucket_s} AS INTEGER) b,"
+            " COALESCE(NULLIF(label,''),'objects') label"
+            f" FROM events WHERE {' AND '.join(where)}"
+            "), ranked AS ("
+            " SELECT b, label, value, ts,"
+            " MIN(value) OVER (PARTITION BY b, label) min_value,"
+            " MAX(value) OVER (PARTITION BY b, label) max_value,"
+            " COUNT(*) OVER (PARTITION BY b, label) samples,"
+            " ROW_NUMBER() OVER (PARTITION BY b, label ORDER BY ts DESC, id DESC) rank"
+            " FROM matching"
+            ") SELECT b, label, value, min_value, max_value, samples"
+            " FROM ranked WHERE rank=1 ORDER BY b, label",
+            args,
+        )
+    latest_rows = db.q(
+        "WITH matching AS ("
+        " SELECT id, ts, value, COALESCE(NULLIF(label,''),'objects') label"
+        f" FROM events WHERE {' AND '.join(where)}"
+        "), ranked AS ("
+        " SELECT label, value, ts,"
+        " ROW_NUMBER() OVER (PARTITION BY label ORDER BY ts DESC, id DESC) rank"
+        " FROM matching"
+        ") SELECT label, value, ts FROM ranked WHERE rank=1 ORDER BY label",
+        args,
+    )
+    latest_by_label = {
+        row["label"]: {"t": row["ts"], "count": row["value"]}
+        for row in latest_rows
+    }
     grouped: dict[str, list] = defaultdict(list)
     for r in rows:
         grouped[r["label"]].append({
-            "t": r["b"] * bucket_s, "count": round(r["value"], 2),
+            "t": r["b"] * bucket_s,
+            "count": round(r["value"], 2) if aggregation == "avg" else r["value"],
             "min": r["min_value"], "max": r["max_value"], "samples": r["samples"],
         })
-    return {"series": [{"label": class_label, "points": points}
+    return {"series": [{"label": class_label, "points": points,
+                        "latest": latest_by_label.get(class_label)}
                        for class_label, points in grouped.items()],
+            "latest": [{"label": class_label, **sample}
+                       for class_label, sample in latest_by_label.items()],
             "bucket_s": bucket_s, "zone_id": zone_id, "job_id": job_id,
-            "source_id": source_id, "label": label, "since": since, "until": until}
+            "source_id": source_id, "label": label, "aggregation": aggregation,
+            "since": since, "until": until}
 
 
 @router.get("/analytics/transitions")
