@@ -7,7 +7,6 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.environ.get("STORELENS_DATA", os.path.join(ROOT, "data"))
 DB_PATH = os.path.join(DATA_DIR, "storelens.db")
-SNAP_DIR = os.path.join(DATA_DIR, "snapshots")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stores (
@@ -24,12 +23,13 @@ CREATE TABLE IF NOT EXISTS sources (
   store_id INTEGER NOT NULL DEFAULT 1,
   name TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'rtsp',            -- rtsp | webrtc | http | webcam | file
-  url TEXT DEFAULT '',
-  username TEXT DEFAULT '',
-  password TEXT DEFAULT '',
-  extra_json TEXT DEFAULT '{}',
-  status TEXT DEFAULT 'unknown',                -- unknown | online | offline | unsupported
-  last_checked REAL,
+  connection_mode TEXT NOT NULL DEFAULT 'agent_local', -- agent_local | edge_gateway
+  locator_json TEXT NOT NULL DEFAULT '{}',      -- non-secret local device / secret reference
+  capabilities_json TEXT NOT NULL DEFAULT '[]', -- video | audio | detections | custom
+  metadata_json TEXT NOT NULL DEFAULT '{}',     -- non-secret agent/domain metadata
+  last_observation_at REAL,                     -- timestamp reported by a worker
+  last_ingestion_at REAL,                       -- time StoreLens last received an observation
+  event_count INTEGER NOT NULL DEFAULT 0,
   map_x REAL, map_y REAL,
   rotation_deg REAL DEFAULT 0,
   fov_deg REAL DEFAULT 70,
@@ -188,7 +188,7 @@ CREATE TABLE IF NOT EXISTS insight_definitions (
 
 
 def connect() -> sqlite3.Connection:
-    os.makedirs(SNAP_DIR, exist_ok=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
     con = sqlite3.connect(DB_PATH, timeout=15)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
@@ -209,6 +209,56 @@ def init_db():
         source_columns = {r[1] for r in con.execute("PRAGMA table_info(sources)").fetchall()}
         if "calibration_revision" not in source_columns:
             con.execute("ALTER TABLE sources ADD COLUMN calibration_revision INTEGER NOT NULL DEFAULT 0")
+        source_migrations = {
+            "connection_mode": "TEXT NOT NULL DEFAULT 'agent_local'",
+            "locator_json": "TEXT NOT NULL DEFAULT '{}'",
+            "capabilities_json": "TEXT NOT NULL DEFAULT '[]'",
+            "metadata_json": "TEXT NOT NULL DEFAULT '{}'",
+            "last_observation_at": "REAL",
+            "last_ingestion_at": "REAL",
+            "event_count": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for column, sql_type in source_migrations.items():
+            if column not in source_columns:
+                con.execute(f"ALTER TABLE sources ADD COLUMN {column} {sql_type}")
+        legacy_url = "url" if "url" in source_columns else "'' AS url"
+        for source in con.execute(
+            f"SELECT id, kind, {legacy_url}, locator_json, capabilities_json FROM sources"
+        ).fetchall():
+            locator = jload(source["locator_json"], {})
+            capabilities = jload(source["capabilities_json"], [])
+            changed = False
+            if not capabilities and source["kind"] in {"rtsp", "webrtc", "http", "webcam", "file"}:
+                capabilities = ["video"]
+                changed = True
+            if not locator and source["kind"] == "webcam" and str(source["url"] or "").isdigit():
+                locator = {"device_index": int(source["url"])}
+                changed = True
+            if changed:
+                con.execute(
+                    "UPDATE sources SET locator_json=?, capabilities_json=? WHERE id=?",
+                    (json.dumps(locator), json.dumps(capabilities), source["id"]),
+                )
+        # The online architecture never retains camera connection material. Once
+        # safe webcam indices have been migrated, scrub dormant legacy fields so
+        # upgrading an old database does not leave credentials behind.
+        scrub_values = {
+            "url": "''",
+            "username": "''",
+            "password": "''",
+            "extra_json": "'{}'",
+        }
+        scrub = [f"{column}={value}" for column, value in scrub_values.items() if column in source_columns]
+        if scrub:
+            con.execute(f"UPDATE sources SET {', '.join(scrub)}")
+        con.execute(
+            "UPDATE sources SET "
+            "event_count=(SELECT COUNT(*) FROM events WHERE events.source_id=sources.id), "
+            "last_observation_at=(SELECT MAX(ts) FROM events WHERE events.source_id=sources.id), "
+            "last_ingestion_at=(SELECT MAX(created_at) FROM events WHERE events.source_id=sources.id) "
+            "WHERE last_ingestion_at IS NULL AND EXISTS "
+            "(SELECT 1 FROM events WHERE events.source_id=sources.id)"
+        )
         zone_columns = {r[1] for r in con.execute("PRAGMA table_info(zones)").fetchall()}
         if "revision" not in zone_columns:
             con.execute("ALTER TABLE zones ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")

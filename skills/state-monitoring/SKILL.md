@@ -18,7 +18,7 @@ timestamps — both for the States timeline and for duration alerts. Do not post
 
 ## Steps
 
-1. `get_snapshot(source_id)` — look at the frame; pick the ROI (region of interest)
+1. Capture a frame on the worker device — inspect it and pick the ROI (region of interest)
    around the door/indicator. Ask the user to confirm the ROI if ambiguous.
 2. `register_job("Fridge monitor – <name>", event_types=["state_change"])`.
 3. Classify state per sampled frame (1 frame / 2–5 s is plenty). Cheap and robust,
@@ -39,13 +39,13 @@ timestamps — both for the States timeline and for duration alerts. Do not post
 ## Worker template
 
 ```python
-import time, cv2, numpy as np, sys
+import os, time, cv2, numpy as np, sys
 sys.path.insert(0, "sdk/python")
 from storelens import StoreLens
 
 ROI = (x, y, w, h)                     # from step 1
 THRESH = 18.0                          # mean abs-diff threshold; tune once
-sl = StoreLens("http://localhost:8000")
+sl = StoreLens(os.environ["STORELENS_URL"])
 src = sl.source(SOURCE_ID)
 job = sl.register_job("Fridge monitor", "door open/closed via ROI diff", [src["id"]], ["state_change"])
 cap = sl.open_capture(src)

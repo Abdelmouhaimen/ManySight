@@ -1,0 +1,45 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "storelens-hackathon",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "containers": [
+    {
+      "class_name": "StoreLensContainer",
+      "image": "../../Dockerfile.cloudflare",
+      "max_instances": 1,
+      "instance_type": "lite"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "STORELENS_CONTAINER",
+        "class_name": "StoreLensContainer"
+      },
+      {
+        "name": "STORELENS_STATE",
+        "class_name": "StoreLensState"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["StoreLensContainer", "StoreLensState"]
+    }
+  ],
+  "vars": {
+    "STORELENS_ENDPOINT_PROFILE": "cloudflare",
+    "STORELENS_PUBLIC_URL": "https://storelens-hackathon.workers.dev",
+    "STORELENS_PUBLIC_MCP_URL": "https://storelens-hackathon.workers.dev/mcp",
+    "STORELENS_PUBLIC_READS": "true",
+    "STORELENS_SEED_DEMO": "true",
+    "STORELENS_STATE_URL": "http://storelens-state.do/primary/storelens.db",
+    "STORELENS_BACKUP_INTERVAL_S": "30"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

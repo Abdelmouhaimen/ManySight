@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: storelens-demo
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile.render
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: STORELENS_ENDPOINT_PROFILE
+        value: render
+      - key: STORELENS_SEED_DEMO
+        value: "false"
+      - key: STORELENS_PUBLIC_READS
+        value: "true"

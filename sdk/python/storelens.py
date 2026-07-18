@@ -7,10 +7,10 @@ every insight. Never post computed aggregates (zone_dwell is deprecated/ignored)
 Typical worker loop:
     from storelens import StoreLens, CentroidTracker
     sl = StoreLens("http://localhost:8000")
-    src = sl.source(1)
+    src = sl.source(1)  # logical metadata only; no camera credential is returned
     job = sl.register_job("Dwell at checkout", event_types=["detection", "zone_enter", "zone_exit"])
     worker = sl.register_worker("checkout-worker", version="1")
-    cap = sl.open_capture(src)
+    cap = sl.open_capture(src, local_connection=0)
     ...
     command = sl.heartbeat(metrics={"fps": fps})
     if command["should_stop"]:
@@ -20,6 +20,7 @@ Typical worker loop:
 """
 import atexit
 import json
+import os
 import time
 
 import requests
@@ -49,7 +50,24 @@ class StoreLens:
         return self._req("GET", "/sources")
 
     def source(self, source_id: int) -> dict:
-        return self._req("GET", f"/sources/{source_id}", params={"secrets": "true"})
+        return self._req("GET", f"/sources/{source_id}")
+
+    def create_source(self, name: str, kind: str = "webcam",
+                      connection_mode: str = "agent_local", locator=None,
+                      capabilities=None, metadata=None) -> dict:
+        """Register a logical source. `locator` must contain only non-secret local
+        hints such as {"device_index": 0} or {"local_secret_ref": "entrance"}."""
+        return self._req("POST", "/sources", {
+            "name": name,
+            "kind": kind,
+            "connection_mode": connection_mode,
+            "locator": locator or {},
+            "capabilities": capabilities or [],
+            "metadata": metadata or {},
+        })
+
+    def update_source(self, source_id: int, **patch) -> dict:
+        return self._req("PUT", f"/sources/{source_id}", patch)
 
     def store_map(self) -> dict:
         m = self._req("GET", "/store")
@@ -165,12 +183,25 @@ class StoreLens:
         return inside
 
     # ---------- video ----------
-    def open_capture(self, source: dict):
-        """cv2.VideoCapture for any source kind (webcam index, file path, rtsp/http URL)."""
+    def open_capture(self, source: dict, local_connection=None):
+        """Open a camera in the worker process, never through StoreLens.
+
+        Webcams can use the source's public `locator.device_index`. Network URLs,
+        file paths, and credentials must be supplied by the worker as
+        `local_connection`, normally from a local environment variable or keychain.
+        """
         import cv2
-        if source["kind"] == "webcam":
-            return cv2.VideoCapture(int(source.get("url") or 0))
-        return cv2.VideoCapture(source.get("connect_url") or source["url"])
+        if local_connection is not None:
+            if source["kind"] == "webcam" and str(local_connection).isdigit():
+                local_connection = int(local_connection)
+            return cv2.VideoCapture(local_connection)
+        locator = source.get("locator") or {}
+        if source["kind"] == "webcam" and "device_index" in locator:
+            return cv2.VideoCapture(int(locator["device_index"]))
+        raise RuntimeError(
+            "camera access is agent-local; pass local_connection from a local "
+            "environment variable/keychain (StoreLens does not store camera URLs or credentials)"
+        )
 
 
 class CentroidTracker:
@@ -220,4 +251,9 @@ def parse_args_base(description: str):
     ap.add_argument("--url", default="http://localhost:8000", help="StoreLens base URL")
     ap.add_argument("--api-key", default="", help="X-API-Key if the server requires one")
     ap.add_argument("--source", type=int, required=False, help="source id to analyse")
+    ap.add_argument(
+        "--connection",
+        default=os.environ.get("STORELENS_SOURCE_CONNECTION"),
+        help="Agent-local camera URL/path/index; prefer STORELENS_SOURCE_CONNECTION for secrets",
+    )
     return ap

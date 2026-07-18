@@ -1,32 +1,50 @@
-"""Camera sources: CRUD, snapshots, map placement, homography calibration, projection."""
+"""Logical observation sources and their map/projection configuration.
+
+StoreLens never opens a source. Camera access belongs to the agent-authored worker
+running where the device is reachable. The hosted platform stores only non-secret
+local locator hints, capabilities, geometry, and observation health.
+"""
+import json
+import re
+
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from .. import db
-from ..services import homography, snapshots
+from ..services import homography
+from .jobs import serialize_worker
 
 router = APIRouter(tags=["sources"])
 
-KINDS = {"rtsp", "webrtc", "http", "webcam", "file"}
+KINDS = {"rtsp", "webrtc", "http", "webcam", "file", "sensor", "custom"}
+CONNECTION_MODES = {"agent_local", "edge_gateway"}
+VIDEO_KINDS = {"rtsp", "webrtc", "http", "webcam", "file"}
+FORBIDDEN_LOCATOR_KEYS = {
+    "url", "uri", "username", "password", "token", "api_key", "apikey",
+    "secret", "credential", "credentials", "connection_string",
+}
 
 
 class SourceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
-    kind: str = "rtsp"
-    url: str = ""
-    username: str = ""
-    password: str = ""
-    extra: dict = {}
+    kind: str = "webcam"
+    connection_mode: str = "agent_local"
+    locator: dict = Field(default_factory=dict)
+    capabilities: list[str] = Field(default_factory=list)
+    metadata: dict = Field(default_factory=dict)
 
 
 class SourcePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = None
     kind: str | None = None
-    url: str | None = None
-    username: str | None = None
-    password: str | None = None
-    extra: dict | None = None
+    connection_mode: str | None = None
+    locator: dict | None = None
+    capabilities: list[str] | None = None
+    metadata: dict | None = None
 
 
 class Placement(BaseModel):
@@ -52,18 +70,79 @@ class UnprojectIn(BaseModel):
     surface_id: int | None = None
 
 
-def serialize(row: dict, include_secrets: bool = False) -> dict:
+def _validate_source(kind: str, connection_mode: str, locator: dict):
+    if kind not in KINDS:
+        raise HTTPException(422, f"kind must be one of {sorted(KINDS)}")
+    if connection_mode not in CONNECTION_MODES:
+        raise HTTPException(422, f"connection_mode must be one of {sorted(CONNECTION_MODES)}")
+
+    def walk(value, path="locator"):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                normalized = str(key).lower().replace("-", "_")
+                if normalized in FORBIDDEN_LOCATOR_KEYS:
+                    raise HTTPException(
+                        422,
+                        f"{path}.{key} may contain camera access or credentials; "
+                        "store them on the worker device and use local_secret_ref instead",
+                    )
+                walk(item, f"{path}.{key}")
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                walk(item, f"{path}[{index}]")
+        elif isinstance(value, str) and re.match(r"^(rtsp|rtsps|https?)://", value, re.I):
+            raise HTTPException(
+                422,
+                f"{path} must not contain a network camera URL; use a local_secret_ref",
+            )
+
+    walk(locator)
+
+
+def _runtime_by_source() -> dict[int, dict]:
+    runtime: dict[int, dict] = {}
+    for job in db.q("SELECT id, name, source_ids, status FROM jobs ORDER BY created_at DESC"):
+        worker = db.q1(
+            "SELECT * FROM worker_instances WHERE job_id=? ORDER BY created_at DESC LIMIT 1",
+            (job["id"],),
+        )
+        summary = {
+            "job_id": job["id"],
+            "job_name": job["name"],
+            "job_status": job["status"],
+            "worker": serialize_worker(worker) if worker else None,
+        }
+        for source_id in db.jload(job["source_ids"], []):
+            try:
+                runtime.setdefault(int(source_id), summary)
+            except (TypeError, ValueError):
+                continue
+    return runtime
+
+
+def serialize(row: dict, runtime: dict | None = None) -> dict:
     cal = db.jload(row.get("calibration_json"), None) if row.get("calibration_json") else None
-    out = {
+    last_ingestion = row.get("last_ingestion_at")
+    age = max(0.0, db.now() - last_ingestion) if last_ingestion else None
+    observation_status = (
+        "never" if age is None else
+        "active" if age <= 30 else
+        "recent" if age <= 300 else
+        "stale"
+    )
+    return {
         "id": row["id"],
         "name": row["name"],
         "kind": row["kind"],
-        "url": row["url"],
-        "username": row["username"],
-        "has_password": bool(row["password"]),
-        "extra": db.jload(row["extra_json"], {}),
-        "status": row["status"],
-        "last_checked": row["last_checked"],
+        "connection_mode": row.get("connection_mode") or "agent_local",
+        "locator": db.jload(row.get("locator_json"), {}),
+        "capabilities": db.jload(row.get("capabilities_json"), []),
+        "metadata": db.jload(row.get("metadata_json"), {}),
+        "observation_status": observation_status,
+        "last_observation_at": row.get("last_observation_at"),
+        "last_ingestion_at": last_ingestion,
+        "observation_age_s": age,
+        "event_count": int(row.get("event_count") or 0),
         "placement": (
             {"x": row["map_x"], "y": row["map_y"], "rotation_deg": row["rotation_deg"], "fov_deg": row["fov_deg"]}
             if row["map_x"] is not None else None
@@ -71,13 +150,9 @@ def serialize(row: dict, include_secrets: bool = False) -> dict:
         "calibrated": bool(cal and cal.get("H")),
         "calibration": cal,
         "calibration_revision": row.get("calibration_revision", 0),
-        "snapshot_url": f"/api/v1/sources/{row['id']}/snapshot.jpg",
+        "latest_runtime": runtime,
         "created_at": row["created_at"],
     }
-    if include_secrets:
-        out["password"] = row["password"]
-        out["connect_url"] = snapshots.connect_url(row)
-    return out
 
 
 def _get(source_id: int) -> dict:
@@ -89,38 +164,49 @@ def _get(source_id: int) -> dict:
 
 @router.get("/sources")
 def list_sources():
-    return [serialize(r) for r in db.q("SELECT * FROM sources ORDER BY id")]
+    runtime = _runtime_by_source()
+    return [serialize(r, runtime.get(r["id"])) for r in db.q("SELECT * FROM sources ORDER BY id")]
 
 
 @router.post("/sources", status_code=201)
 def create_source(body: SourceIn):
-    if body.kind not in KINDS:
-        raise HTTPException(422, f"kind must be one of {sorted(KINDS)}")
-    import json
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(422, "name is required")
+    _validate_source(body.kind, body.connection_mode, body.locator)
+    capabilities = body.capabilities or (["video"] if body.kind in VIDEO_KINDS else [])
     sid = db.ex(
-        "INSERT INTO sources (name, kind, url, username, password, extra_json, created_at) VALUES (?,?,?,?,?,?,?)",
-        (body.name, body.kind, body.url, body.username, body.password, json.dumps(body.extra), db.now()),
+        "INSERT INTO sources (name,kind,connection_mode,locator_json,capabilities_json,metadata_json,created_at) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (name, body.kind, body.connection_mode, json.dumps(body.locator),
+         json.dumps(capabilities), json.dumps(body.metadata), db.now()),
     )
     return serialize(_get(sid))
 
 
 @router.get("/sources/{source_id}")
-def get_source(source_id: int, secrets: bool = False):
-    return serialize(_get(source_id), include_secrets=secrets)
+def get_source(source_id: int):
+    return serialize(_get(source_id), _runtime_by_source().get(source_id))
 
 
 @router.put("/sources/{source_id}")
 def update_source(source_id: int, body: SourcePatch):
     row = _get(source_id)
-    import json
+    kind = body.kind or row["kind"]
+    mode = body.connection_mode or row.get("connection_mode") or "agent_local"
+    locator = body.locator if body.locator is not None else db.jload(row.get("locator_json"), {})
+    _validate_source(kind, mode, locator)
     fields = {
-        "name": body.name, "kind": body.kind, "url": body.url,
-        "username": body.username, "password": body.password,
-        "extra_json": json.dumps(body.extra) if body.extra is not None else None,
+        "name": body.name.strip() if body.name is not None else None,
+        "kind": body.kind,
+        "connection_mode": body.connection_mode,
+        "locator_json": json.dumps(body.locator) if body.locator is not None else None,
+        "capabilities_json": json.dumps(body.capabilities) if body.capabilities is not None else None,
+        "metadata_json": json.dumps(body.metadata) if body.metadata is not None else None,
     }
     sets = {k: v for k, v in fields.items() if v is not None}
-    if body.kind is not None and body.kind not in KINDS:
-        raise HTTPException(422, f"kind must be one of {sorted(KINDS)}")
+    if body.name is not None and not fields["name"]:
+        raise HTTPException(422, "name is required")
     if sets:
         db.ex(f"UPDATE sources SET {', '.join(f'{k}=?' for k in sets)} WHERE id=?", (*sets.values(), source_id))
     return serialize(_get(source_id))
@@ -133,21 +219,6 @@ def delete_source(source_id: int):
     db.ex("DELETE FROM projection_surfaces WHERE source_id=?", (source_id,))
     db.ex("DELETE FROM sources WHERE id=?", (source_id,))
     return {"deleted": source_id}
-
-
-@router.post("/sources/{source_id}/snapshot")
-def refresh_snapshot(source_id: int):
-    row = _get(source_id)
-    status, _ = snapshots.capture(row)
-    db.ex("UPDATE sources SET status=?, last_checked=? WHERE id=?", (status, db.now(), source_id))
-    return {"status": status, "snapshot_url": f"/api/v1/sources/{source_id}/snapshot.jpg"}
-
-
-@router.get("/sources/{source_id}/snapshot.jpg")
-def snapshot_image(source_id: int):
-    row = _get(source_id)
-    data, media = snapshots.get_snapshot_bytes(row)
-    return Response(content=data, media_type=media, headers={"Cache-Control": "no-store"})
 
 
 @router.put("/sources/{source_id}/placement")

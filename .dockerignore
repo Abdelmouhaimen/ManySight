@@ -1,0 +1,16 @@
+.git
+.github
+.agents
+.codex
+data
+output
+tmp
+codex-simulations
+dashboard/node_modules
+dashboard/dist
+__pycache__
+*.pyc
+*.log
+.env*
+.dev.vars*
+deploy/cloudflare/node_modules

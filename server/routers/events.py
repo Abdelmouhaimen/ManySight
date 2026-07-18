@@ -107,6 +107,20 @@ async def ingest(batch: EventBatch):
         raise HTTPException(413, "batch too large — send at most 5000 events per request")
     if batch.job_id is not None and not db.q1("SELECT id FROM jobs WHERE id=?", (batch.job_id,)):
         raise HTTPException(404, f"job {batch.job_id} not found — register a job first")
+    source_ids = {ev.source_id for ev in batch.events if ev.source_id is not None}
+    known_sources = (
+        {
+            row["id"]
+            for row in db.q(
+                f"SELECT id FROM sources WHERE id IN ({','.join('?' for _ in source_ids)})",
+                tuple(source_ids),
+            )
+        }
+        if source_ids else set()
+    )
+    missing_sources = sorted(source_ids - known_sources)
+    if missing_sources:
+        raise HTTPException(404, f"unknown source ids {missing_sources} — create sources first")
 
     zones, cals, surfaces, views_by_source, views_by_id, zone_by_name = _load_context()
     zone_by_id = {z["id"]: z for z in zones}
@@ -234,6 +248,16 @@ async def ingest(batch: EventBatch):
     if batch.job_id is not None:
         db.ex("UPDATE jobs SET event_count=event_count+?, last_event_at=? WHERE id=?",
               (len(rows), max(e["ts"] for e in enriched), batch.job_id))
+    ingested_at = db.now()
+    for source_id in source_ids:
+        source_events = [event for event in enriched if event["source_id"] == source_id]
+        latest_observation = max(event["ts"] for event in source_events)
+        db.ex(
+            "UPDATE sources SET event_count=event_count+?, last_ingestion_at=?, "
+            "last_observation_at=CASE WHEN last_observation_at IS NULL OR last_observation_at<? "
+            "THEN ? ELSE last_observation_at END WHERE id=?",
+            (len(source_events), ingested_at, latest_observation, latest_observation, source_id),
+        )
 
     zone_names = {z["id"]: z["name"] for z in zones}
     alerts = alert_engine.evaluate(enriched, zone_names)

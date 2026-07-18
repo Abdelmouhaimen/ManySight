@@ -1,0 +1,36 @@
+{
+  "active_profile": "local",
+  "profiles": {
+    "local": {
+      "public_url": "http://localhost:8000",
+      "mcp_url": "http://localhost:8001/mcp",
+      "cors_origins": [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000"
+      ]
+    },
+    "cloudflare": {
+      "public_url": "",
+      "mcp_url": "",
+      "cors_origins": []
+    },
+    "render": {
+      "public_url": "",
+      "mcp_url": "",
+      "cors_origins": []
+    }
+  },
+  "paths": {
+    "dashboard": "/",
+    "agent_guide": "/agent.md",
+    "agent_guide_alias": "/agend.md",
+    "llms": "/llms.txt",
+    "discovery": "/.well-known/storelens.json",
+    "openapi": "/openapi.json",
+    "docs": "/docs",
+    "rest": "/api/v1",
+    "health": "/api/v1/health",
+    "platform_config": "/api/v1/platform-config",
+    "mcp": "/mcp"
+  }
+}

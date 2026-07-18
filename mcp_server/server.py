@@ -7,32 +7,71 @@ Env:
   STORELENS_URL      base URL of the platform (default http://localhost:8000)
   STORELENS_API_KEY  only if the server enforces one
   STORELENS_SKILLS   path to the skills/ folder (default: sibling of this file's parent)
+  STORELENS_MCP_TRANSPORT  stdio (default) | streamable-http
+  STORELENS_MCP_HOST / STORELENS_MCP_PORT  remote transport bind settings
+  STORELENS_MCP_ALLOWED_HOSTS / STORELENS_MCP_ALLOWED_ORIGINS  comma-separated
 """
 import json
 import os
+import sys
 import urllib.parse
 import urllib.request
 
-from mcp.server.fastmcp import FastMCP, Image
+from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.server import TransportSecuritySettings
 
-BASE = os.environ.get("STORELENS_URL", "http://localhost:8000").rstrip("/")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+from server.platform_config import resolve as resolve_platform_config
+
+PLATFORM_ENDPOINTS = resolve_platform_config()
+BASE = os.environ.get("STORELENS_URL", PLATFORM_ENDPOINTS["public_url"]).rstrip("/")
+REST_BASE = os.environ.get(
+    "STORELENS_REST_URL",
+    BASE + PLATFORM_ENDPOINTS["paths"].get("rest", "/api/v1"),
+).rstrip("/")
 API_KEY = os.environ.get("STORELENS_API_KEY", "")
 SKILLS_DIR = os.environ.get(
     "STORELENS_SKILLS",
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills"),
 )
+MCP_HOST = os.environ.get("STORELENS_MCP_HOST", "127.0.0.1")
+MCP_PORT = int(os.environ.get("STORELENS_MCP_PORT", "8001"))
+MCP_DNS_REBINDING_PROTECTION = os.environ.get(
+    "STORELENS_MCP_DNS_REBINDING_PROTECTION", "true"
+).lower() in {"1", "true", "yes"}
+MCP_ALLOWED_HOSTS = [
+    value.strip() for value in os.environ.get(
+        "STORELENS_MCP_ALLOWED_HOSTS", "127.0.0.1:*,localhost:*,[::1]:*"
+    ).split(",") if value.strip()
+]
+MCP_ALLOWED_ORIGINS = [
+    value.strip() for value in os.environ.get(
+        "STORELENS_MCP_ALLOWED_ORIGINS", "http://127.0.0.1:*,http://localhost:*"
+    ).split(",") if value.strip()
+]
 
 mcp = FastMCP(
     "storelens",
+    host=MCP_HOST,
+    port=MCP_PORT,
+    stateless_http=True,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=MCP_DNS_REBINDING_PROTECTION,
+        allowed_hosts=MCP_ALLOWED_HOSTS,
+        allowed_origins=MCP_ALLOWED_ORIGINS,
+    ),
     instructions=(
         "StoreLens is an agent-operated computer-vision platform for physical spaces. "
         "On the first StoreLens request, always call get_skill('storelens-platform') and "
         "follow that general operating guide before planning or changing the platform. "
         "Then call list_skills() and load the closest task-specific playbook when one applies. "
-        "Discover the live sources, map, zones, snapshots, jobs, and data instead of assuming "
-        "prior conversation or demo state. Use MCP for agent operations; persistent workers "
-        "use the REST API documented at the configured StoreLens URL's /docs endpoint "
-        "(default http://localhost:8000/docs). "
+        "Discover the logical sources, map, zones, jobs, and data instead of assuming "
+        "prior conversation or demo state. Camera access is agent-local: StoreLens never opens "
+        "a feed and never returns camera credentials. Use MCP for agent operations; workers "
+        "use the REST endpoint returned by get_platform_config(). "
         "Post raw observations only (what the model saw), never computed aggregates — the "
         "platform derives dwell, durations, and every insight. After posting events, register "
         "the resulting view with register_insight so it appears in the Insights catalogue. "
@@ -45,7 +84,7 @@ mcp = FastMCP(
 
 
 def _req(method: str, path: str, body: dict | None = None, raw: bool = False):
-    url = BASE + "/api/v1" + path
+    url = REST_BASE + path
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json"}
     if API_KEY:
@@ -58,31 +97,53 @@ def _req(method: str, path: str, body: dict | None = None, raw: bool = False):
 
 @mcp.tool()
 def list_sources() -> list[dict]:
-    """List every camera source: id, name, protocol kind, status, whether it is placed on the
-    store map and calibrated (pixel->meter homography available)."""
+    """List logical observation sources, non-secret local locator hints, capabilities,
+    latest worker runtime, observation freshness, placement, and calibration."""
     return _req("GET", "/sources")
 
 
 @mcp.tool()
+def get_platform_config() -> dict:
+    """Return the authoritative dashboard, REST, OpenAPI, agent-guide, discovery,
+    and MCP endpoints resolved for this StoreLens deployment."""
+    return _req("GET", "/platform-config")
+
+
+@mcp.tool()
 def get_source(source_id: int) -> dict:
-    """Full detail for one source including credentials and the resolved connect_url you can
-    open with OpenCV (cv2.VideoCapture), plus its calibration (homography H, error) if set."""
-    return _req("GET", f"/sources/{source_id}?secrets=true")
+    """Get one logical source. It contains no camera URL or credential. Resolve webcam
+    indices or local_secret_ref values on the machine where the worker will run."""
+    return _req("GET", f"/sources/{source_id}")
 
 
 @mcp.tool()
-def get_snapshot(source_id: int) -> Image:
-    """Latest frame from a source as an image — look at it to understand what the camera sees
-    (angle, coverage, which zones are visible) before choosing models or drawing polygons."""
-    data = _req("GET", f"/sources/{source_id}/snapshot.jpg", raw=True)
-    fmt = "png" if data[:4] == b"\x89PNG" else "jpeg"
-    return Image(data=data, format=fmt)
+def create_source(name: str, kind: str = "webcam", connection_mode: str = "agent_local",
+                  locator: dict | None = None, capabilities: list[str] | None = None,
+                  metadata: dict | None = None) -> dict:
+    """Register a logical source before creating a job. `locator` is a non-secret hint such
+    as {"device_index": 0} or {"local_secret_ref": "warehouse-entrance"}. Never send camera
+    URLs, usernames, passwords, API keys, or tokens to StoreLens."""
+    return _req("POST", "/sources", {
+        "name": name,
+        "kind": kind,
+        "connection_mode": connection_mode,
+        "locator": locator or {},
+        "capabilities": capabilities or [],
+        "metadata": metadata or {},
+    })
 
 
 @mcp.tool()
-def refresh_snapshot(source_id: int) -> dict:
-    """Ask the platform to capture a fresh frame from the source right now (tests connectivity)."""
-    return _req("POST", f"/sources/{source_id}/snapshot")
+def update_source(source_id: int, patch: dict) -> dict:
+    """Update a logical source's name, kind, connection mode, non-secret locator,
+    capabilities, or metadata. Camera credentials are rejected."""
+    return _req("PUT", f"/sources/{source_id}", patch)
+
+
+@mcp.tool()
+def delete_source(source_id: int) -> dict:
+    """Delete a logical source and its geometry. Historical observations remain queryable."""
+    return _req("DELETE", f"/sources/{source_id}")
 
 
 @mcp.tool()
@@ -95,7 +156,7 @@ def get_store_map() -> dict:
     store["projection_surfaces"] = _req("GET", "/projection-surfaces")
     store["zone_views"] = _req("GET", "/zone-views")
     store["cameras"] = [
-        {k: s[k] for k in ("id", "name", "kind", "status", "placement", "calibrated")}
+        {k: s[k] for k in ("id", "name", "kind", "observation_status", "placement", "calibrated")}
         for s in _req("GET", "/sources")
     ]
     return store
@@ -119,7 +180,7 @@ def create_zone(name: str, ztype: str = "area",
                 polygon_map: list[dict] | None = None,
                 polygon_px: list[dict] | None = None,
                 source_id: int | None = None) -> dict:
-    """Create a named global physical footprint. When starting from a snapshot, use
+    """Create a named global physical footprint. When starting from a local frame, use
     polygon_px only for points on the calibrated floor plane; then create a zone view
     for the camera-specific visible boundary and inset detection ROI.
     Pass EITHER polygon_map ([{x,y}, ...] in floor meters) OR polygon_px ([{x,y}, ...]
@@ -423,8 +484,23 @@ def get_skill(name: str) -> str:
     if not os.path.isfile(path):
         raise ValueError(f"unknown skill '{name}' — call list_skills() first")
     with open(path, encoding="utf-8") as f:
-        return f.read()
+        content = f.read()
+    endpoints = get_platform_config()
+    runtime = (
+        "## Runtime endpoints (authoritative for this connection)\n\n"
+        f"- Dashboard: `{endpoints['dashboard_url']}`\n"
+        f"- REST base: `{endpoints['rest_url']}`\n"
+        f"- OpenAPI: `{endpoints['openapi_url']}`\n"
+        f"- Interactive docs: `{endpoints['docs_url']}`\n"
+        f"- Remote MCP: `{endpoints['mcp_url']}`\n"
+        f"- Agent guide: `{endpoints['agent_guide_url']}`\n\n"
+        "Use these resolved values instead of hard-coded hosts.\n\n"
+    )
+    return runtime + content
 
 
 if __name__ == "__main__":
-    mcp.run()
+    transport = os.environ.get("STORELENS_MCP_TRANSPORT", "stdio")
+    if transport not in {"stdio", "streamable-http"}:
+        raise SystemExit("STORELENS_MCP_TRANSPORT must be stdio or streamable-http")
+    mcp.run(transport=transport)

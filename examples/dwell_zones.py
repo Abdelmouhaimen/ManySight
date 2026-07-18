@@ -35,7 +35,7 @@ def main():
                     source_ids=[src["id"]], event_types=["zone_enter", "zone_exit"])
     sl.register_worker("dwell-zones", version="1")
     detect = motion_detector()
-    cap = sl.open_capture(src)
+    cap = sl.open_capture(src, args.connection)
     tracker = CentroidTracker(max_distance=90)
     inside: dict[tuple, float] = {}
     membership_hits: dict[tuple, int] = {}

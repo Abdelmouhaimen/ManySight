@@ -31,7 +31,7 @@ def main():
     sl.register_job(f"Fridge monitor – {src['name']}", "door state via ROI diff",
                     source_ids=[src["id"]], event_types=["state_change"])
     sl.register_worker("fridge-state", version="1")
-    cap = sl.open_capture(src)
+    cap = sl.open_capture(src, args.connection)
     ok, ref = cap.read()
     if not ok:
         raise SystemExit("cannot read from source")

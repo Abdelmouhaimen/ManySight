@@ -17,8 +17,8 @@ use the appropriate point plus that named plane. The platform projects and bins 
 1. `get_store_map()` — confirm which cameras are **placed + calibrated**. Uncalibrated
    cameras can't contribute to the heatmap; either ask the user to calibrate (Store Map
    tab → ⌗) or skip them.
-2. `get_snapshot(source_id)` for each candidate — check the view actually covers the
-   floor area the user cares about.
+2. Capture a frame from each candidate directly on the worker device — check the view
+   actually covers the floor area the user cares about.
    Also inspect `list_projection_surfaces` and `list_zone_views` when subjects are
    sitting, lying, occluded, or elevated.
 3. `register_job("Heatmap – <scope>", event_types=["detection"], source_ids=[...])`.
@@ -36,11 +36,11 @@ use the appropriate point plus that named plane. The platform projects and bins 
 ## Worker template
 
 ```python
-import time, cv2, sys
+import os, time, cv2, sys
 sys.path.insert(0, "sdk/python")
 from storelens import StoreLens, CentroidTracker
 
-sl = StoreLens("http://localhost:8000")
+sl = StoreLens(os.environ["STORELENS_URL"])
 src = sl.source(SOURCE_ID)
 job = sl.register_job("Heatmap – whole store", "person detections for heatmap",
                       source_ids=[src["id"]], event_types=["detection"])

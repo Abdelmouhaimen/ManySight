@@ -6,6 +6,6 @@ numpy
 pillow
 requests
 mcp
-# Optional but recommended — needed for real camera snapshots and the CV examples.
+# Optional — needed only by workers that open local video and by the CV examples.
 # Comment out if you only run the simulator / seeded demo.
 opencv-python

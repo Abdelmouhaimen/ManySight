@@ -16,7 +16,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server import db  # noqa: E402
-from server.services import homography, snapshots  # noqa: E402
+from server.services import homography  # noqa: E402
 
 random.seed(42)
 NOW = time.time()
@@ -87,10 +87,12 @@ def seed_sources() -> dict[str, int]:
     H, err = homography.compute_homography(pairs)
     cal = {"points": pairs, "H": H, "error_m": err, "frame_w": 1280, "frame_h": 720}
     ids["entrance"] = db.ex(
-        "INSERT INTO sources (name, kind, url, username, password, status, map_x, map_y, rotation_deg, fov_deg, calibration_json, calibration_revision, created_at)"
+        "INSERT INTO sources (name, kind, connection_mode, locator_json, capabilities_json, metadata_json, "
+        "map_x, map_y, rotation_deg, fov_deg, calibration_json, calibration_revision, created_at)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        ("Entrance cam", "rtsp", "rtsp://192.168.1.10:554/stream1", "demo", "demo123",
-         "unknown", 18.6, 11.2, 211, 85, json.dumps(cal), 1, NOW))
+        ("Entrance cam", "rtsp", "agent_local", json.dumps({"local_secret_ref": "entrance_camera"}),
+         json.dumps(["video"]), json.dumps({"purpose": "entrance traffic"}),
+         18.6, 11.2, 211, 85, json.dumps(cal), 1, NOW))
     # 2 — overhead webcam with a clean top-down homography
     pairs2 = [
         {"px": {"x": 100, "y": 100}, "map": {"x": 6.0, "y": 2.0}},
@@ -101,20 +103,20 @@ def seed_sources() -> dict[str, int]:
     H2, err2 = homography.compute_homography(pairs2)
     cal2 = {"points": pairs2, "H": H2, "error_m": err2, "frame_w": 1280, "frame_h": 720}
     ids["overhead"] = db.ex(
-        "INSERT INTO sources (name, kind, url, status, map_x, map_y, rotation_deg, fov_deg, calibration_json, calibration_revision, created_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        ("Overhead center", "webcam", "0", "unknown", 10.0, 6.2, 90, 110, json.dumps(cal2), 1, NOW))
+        "INSERT INTO sources (name, kind, connection_mode, locator_json, capabilities_json, metadata_json, "
+        "map_x, map_y, rotation_deg, fov_deg, calibration_json, calibration_revision, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("Overhead center", "webcam", "agent_local", json.dumps({"device_index": 0}),
+         json.dumps(["video"]), json.dumps({"purpose": "central floor coverage"}),
+         10.0, 6.2, 90, 110, json.dumps(cal2), 1, NOW))
     # 3 — fridge cam, placed but uncalibrated (shows that state too)
     ids["fridge"] = db.ex(
-        "INSERT INTO sources (name, kind, url, status, map_x, map_y, rotation_deg, fov_deg, created_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?)",
-        ("Fridge cam", "file", "./data/videos/fridge_demo.mp4", "unknown", 1.2, 4.6, 300, 60, NOW))
-    # placeholder snapshots so every card shows an image
-    for key, sid in ids.items():
-        row = db.q1("SELECT * FROM sources WHERE id=?", (sid,))
-        png = snapshots.placeholder_png(row, "seeded demo — click ⟳ test for a real frame")
-        with open(snapshots.snapshot_path(sid), "wb") as f:
-            f.write(png)
+        "INSERT INTO sources (name, kind, connection_mode, locator_json, capabilities_json, metadata_json, "
+        "map_x, map_y, rotation_deg, fov_deg, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        ("Fridge cam", "file", "agent_local", json.dumps({"local_secret_ref": "fridge_demo_video"}),
+         json.dumps(["video"]), json.dumps({"purpose": "fridge state monitoring"}),
+         1.2, 4.6, 300, 60, NOW))
     print(f"sources: entrance cam (calibrated ±{err:.2f}m), overhead (±{err2:.2f}m), fridge cam")
     return ids
 

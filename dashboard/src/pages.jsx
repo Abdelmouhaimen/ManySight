@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Code2,
-  Eye,
   Map,
   Pause,
   Play,
@@ -17,7 +16,7 @@ import {
   Settings2,
   Trash2,
 } from "lucide-react";
-import { api, assetUrl, formatDateTime, formatDuration } from "./api.js";
+import { api, formatDateTime, formatDuration } from "./api.js";
 import {
   ActivityMap,
   Badge,
@@ -34,7 +33,7 @@ import {
 } from "./components.jsx";
 import { InsightCard } from "./insights.jsx";
 import { SpaceWorkbench } from "./space-workbench.jsx";
-import { ConnectionModal, TechnicalConfig } from "./technical-config.jsx";
+import { TechnicalConfig } from "./technical-config.jsx";
 
 function useDashboardData(range, liveTick = 0) {
   const [state, setState] = useState({
@@ -506,15 +505,12 @@ function SignalDrawer({ signal, onClose, onSave }) {
   );
 }
 
-export function StreamsPage({ notify }) {
+export function SourcesPage({ liveTick = 0 }) {
   const [sources, setSources] = useState([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(null),
-    [filter, setFilter] = useState("all"),
-    [editing, setEditing] = useState(null),
-    [connection, setConnection] = useState(null);
+    [filter, setFilter] = useState("all");
   const load = async () => {
-    setLoading(true);
     try {
       setSources(await api.get("/sources"));
       setError(null);
@@ -526,71 +522,57 @@ export function StreamsPage({ notify }) {
   };
   useEffect(() => {
     load();
-  }, []);
-  const test = async (source) => {
-    try {
-      const result = await api.post(`/sources/${source.id}/snapshot`);
-      notify(
-        result.status === "online" ? "Frame captured" : "Camera unavailable",
-        result.status === "online"
-          ? source.name
-          : "Check the stream URL and network.",
-        result.status === "online" ? "success" : "error",
-      );
-      await load();
-    } catch (err) {
-      notify("Connection test failed", err.message, "error");
-    }
-  };
-  const remove = async (source) => {
-    if (!window.confirm(`Delete ${source.name}? Stored events remain.`)) return;
-    await api.del(`/sources/${source.id}`);
-    notify("Camera removed", source.name);
-    load();
-  };
+  }, [liveTick]);
+
+  const statuses = ["all", "active", "recent", "stale", "never"];
   const visible = sources.filter(
-    (source) => filter === "all" || source.status === filter,
+    (source) =>
+      filter === "all" || source.observation_status === filter,
   );
+  const statusTone = (status) =>
+    status === "active"
+      ? "positive"
+      : status === "recent"
+        ? "warning"
+        : status === "stale"
+          ? "danger"
+          : "neutral";
+
   return (
     <>
       <PageHeader
-        eyebrow="Streams"
-        title="Camera coverage and health"
-        description="The views required for the selected workflow, with credentials hidden by default."
-        actions={
-          <button className="button button-dark" onClick={() => setEditing({})}>
-            <Plus size={16} />
-            Add stream
-          </button>
-        }
+        eyebrow="Sources"
+        title="Observation sources"
+        description="Logical provenance registered by agents. Camera access and models run on the device that can reach the source."
       />
-      <div className="health-summary">
+      <div className="health-summary source-health-summary">
         <div>
           <strong>
-            {sources.filter((source) => source.status === "online").length}
+            {sources.filter((source) => source.observation_status === "active").length}
           </strong>
-          <span>online</span>
+          <span>active now</span>
         </div>
         <div>
           <strong>
-            {sources.filter((source) => source.status === "offline").length}
+            {sources.reduce((sum, source) => sum + source.event_count, 0)}
           </strong>
-          <span>offline</span>
+          <span>observations</span>
         </div>
         <div>
           <strong>
-            {sources.filter((source) => source.calibrated).length}
+            {sources.filter(
+              (source) => source.latest_runtime?.worker?.effective_status === "running",
+            ).length}
           </strong>
-          <span>calibrated</span>
+          <span>workers live</span>
         </div>
         <p>
           <AlertTriangle size={15} />
-          POC health reflects the last manual snapshot test, not continuous
-          monitoring.
+          Health reflects event ingestion and worker heartbeats, never a server-side camera probe.
         </p>
       </div>
       <div className="filter-row">
-        {["all", "online", "offline", "unknown", "unsupported"].map((value) => (
+        {statuses.map((value) => (
           <button
             key={value}
             className={filter === value ? "active" : ""}
@@ -598,248 +580,91 @@ export function StreamsPage({ notify }) {
           >
             {value}
             <span>
-              {
-                sources.filter(
-                  (source) => value === "all" || source.status === value,
-                ).length
-              }
+              {sources.filter(
+                (source) => value === "all" || source.observation_status === value,
+              ).length}
             </span>
           </button>
         ))}
       </div>
       {loading ? (
-        <LoadingState label="Loading streams…" />
+        <LoadingState label="Loading sources…" />
       ) : error ? (
         <ErrorState error={error} retry={load} />
       ) : (
-        <div className="stream-grid">
-          {visible.map((source) => (
-            <article className="stream-card" key={source.id}>
-              <div className="stream-image">
-                <img
-                  src={assetUrl(
-                    `/sources/${source.id}/snapshot.jpg?t=${Date.now()}`,
-                  )}
-                  alt={`Latest frame from ${source.name}`}
-                />
-                <Badge
-                  tone={
-                    source.status === "online"
-                      ? "positive"
-                      : source.status === "offline"
-                        ? "danger"
-                        : "neutral"
-                  }
-                >
-                  <span className="badge-dot" />
-                  {source.status}
-                </Badge>
-              </div>
-              <div className="stream-body">
-                <div className="stream-title">
-                  <div>
-                    <strong>{source.name}</strong>
-                    <small>
-                      {source.kind.toUpperCase()} ·{" "}
-                      {source.placement ? "Placed" : "Not placed"}
-                    </small>
+        <div className="source-status-grid">
+          {visible.map((source) => {
+            const worker = source.latest_runtime?.worker;
+            return (
+              <article className="source-status-card" key={source.id}>
+                <header>
+                  <div className="source-kind-mark">
+                    <Activity size={18} />
                   </div>
-                  <button
-                    className="icon-button"
-                    onClick={() => setEditing(source)}
-                    aria-label={`Edit ${source.name}`}
+                  <div>
+                    <span className="tiny-label">Source #{source.id}</span>
+                    <h2>{source.name}</h2>
+                  </div>
+                  <Badge tone={statusTone(source.observation_status)}>
+                    <span className="badge-dot" />
+                    {source.observation_status}
+                  </Badge>
+                </header>
+                <dl className="source-status-facts">
+                  <div>
+                    <dt>Type</dt>
+                    <dd>{source.kind.toUpperCase()}</dd>
+                  </div>
+                  <div>
+                    <dt>Connection</dt>
+                    <dd>{source.connection_mode.replaceAll("_", " ")}</dd>
+                  </div>
+                  <div>
+                    <dt>Last observation</dt>
+                    <dd>{formatDateTime(source.last_observation_at)}</dd>
+                  </div>
+                  <div>
+                    <dt>Received</dt>
+                    <dd>
+                      {source.observation_age_s == null
+                        ? "No data yet"
+                        : `${formatDuration(source.observation_age_s)} ago`}
+                    </dd>
+                  </div>
+                </dl>
+                <div className="source-runtime-row">
+                  <div>
+                    <span className="tiny-label">Latest runtime</span>
+                    <strong>{source.latest_runtime?.job_name || "No job registered"}</strong>
+                  </div>
+                  <Badge
+                    tone={worker?.effective_status === "running" ? "positive" : "neutral"}
                   >
-                    <Settings2 size={16} />
-                  </button>
+                    {worker?.effective_status || "not running"}
+                  </Badge>
                 </div>
-                <div className="stream-meta">
-                  <span>
-                    <CheckCircle2 size={14} />
-                    {source.calibrated
-                      ? `Calibrated ±${source.calibration.error_m.toFixed(2)}m`
-                      : "Calibration required"}
-                  </span>
-                  <span>
-                    <RefreshCw size={14} />
-                    {source.last_checked
-                      ? `Checked ${formatDateTime(source.last_checked)}`
-                      : "Not tested"}
-                  </span>
+                <div className="source-capabilities">
+                  {(source.capabilities.length ? source.capabilities : ["unspecified"]).map(
+                    (capability) => <span key={capability}>{capability}</span>,
+                  )}
                 </div>
-                <div className="card-actions">
-                  <button
-                    className="button button-secondary"
-                    onClick={() => test(source)}
-                  >
-                    <RefreshCw size={14} />
-                    Test frame
-                  </button>
-                  <button
-                    className="button button-secondary"
-                    onClick={() => setConnection(source)}
-                  >
-                    <Eye size={14} />
-                    Connection
-                  </button>
-                  <button
-                    className="button button-ghost danger"
-                    onClick={() => remove(source)}
-                  >
-                    <Trash2 size={14} />
-                    Remove
-                  </button>
-                </div>
-              </div>
-            </article>
-          ))}
+                <footer>
+                  <span>{source.event_count.toLocaleString()} stored observations</span>
+                  <a href={`#detections`} className="button button-secondary">
+                    Inspect data <ArrowRight size={14} />
+                  </a>
+                </footer>
+              </article>
+            );
+          })}
           {!visible.length && (
-            <EmptyState title="No streams in this view">
-              Add a camera or choose a different health filter.
+            <EmptyState title="No sources in this view">
+              Agents register sources through StoreLens MCP before starting a worker.
             </EmptyState>
           )}
         </div>
       )}
-      {editing && (
-        <SourceModal
-          source={editing.id ? editing : null}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            load();
-            notify("Stream saved", "The camera configuration is ready.");
-          }}
-        />
-      )}
-      {connection && (
-        <ConnectionModal
-          source={connection}
-          onClose={() => setConnection(null)}
-          notify={notify}
-        />
-      )}
     </>
-  );
-}
-
-function SourceModal({ source, onClose, onSaved }) {
-  const [form, setForm] = useState({
-      name: source?.name || "",
-      kind: source?.kind || "rtsp",
-      url: source?.url || "",
-      username: source?.username || "",
-      password: "",
-      extra: JSON.stringify(source?.extra || {}),
-    }),
-    [saving, setSaving] = useState(false),
-    [error, setError] = useState("");
-  const change = (key, value) =>
-    setForm((current) => ({ ...current, [key]: value }));
-  const save = async () => {
-    setSaving(true);
-    setError("");
-    try {
-      const body = {
-        name: form.name.trim(),
-        kind: form.kind,
-        url: form.url.trim(),
-        username: form.username.trim(),
-        extra: JSON.parse(form.extra || "{}"),
-      };
-      if (form.password) body.password = form.password;
-      if (!body.name) throw new Error("Camera name is required");
-      source
-        ? await api.put(`/sources/${source.id}`, body)
-        : await api.post("/sources", { ...body, password: form.password });
-      onSaved();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <Modal
-      title={source ? `Edit ${source.name}` : "Add camera stream"}
-      onClose={onClose}
-      footer={
-        <>
-          <button className="button button-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="button button-dark"
-            onClick={save}
-            disabled={saving}
-          >
-            <Save size={15} />
-            {saving ? "Saving…" : "Save stream"}
-          </button>
-        </>
-      }
-    >
-      <div className="form-grid">
-        <label className="field field-full">
-          <span>Camera name</span>
-          <input
-            value={form.name}
-            onChange={(e) => change("name", e.target.value)}
-            placeholder="Main entrance"
-          />
-        </label>
-        <label className="field">
-          <span>Source type</span>
-          <select
-            value={form.kind}
-            onChange={(e) => change("kind", e.target.value)}
-          >
-            {["rtsp", "http", "webcam", "file", "webrtc"].map((kind) => (
-              <option key={kind}>{kind}</option>
-            ))}
-          </select>
-        </label>
-        <label className="field field-full">
-          <span>URL, device, or file path</span>
-          <input
-            value={form.url}
-            onChange={(e) => change("url", e.target.value)}
-            placeholder={
-              form.kind === "webcam" ? "0" : "rtsp://camera.local/stream"
-            }
-          />
-        </label>
-        <label className="field">
-          <span>Username</span>
-          <input
-            value={form.username}
-            onChange={(e) => change("username", e.target.value)}
-          />
-        </label>
-        <label className="field">
-          <span>Password</span>
-          <input
-            type="password"
-            value={form.password}
-            onChange={(e) => change("password", e.target.value)}
-            placeholder={
-              source?.has_password ? "Leave empty to keep current" : ""
-            }
-          />
-        </label>
-        <label className="field field-full">
-          <span>Worker configuration (JSON)</span>
-          <textarea
-            rows="3"
-            value={form.extra}
-            onChange={(e) => change("extra", e.target.value)}
-          />
-        </label>
-      </div>
-      {error && (
-        <div className="form-error" role="alert">
-          {error}
-        </div>
-      )}
-    </Modal>
   );
 }
 
@@ -891,11 +716,11 @@ export function ConfigurePage({ notify, refreshShell }) {
       <PageHeader
         eyebrow="Configure"
         title="Pilot setup"
-        description="A guided path from camera access to an accepted operational signal."
+        description="A guided path from logical source definition to an accepted operational signal."
       />
       <div className="setup-progress">
         {[
-          ["Streams", readiness[0]],
+          ["Sources", readiness[0]],
           ["Zones", readiness[1]],
           ["Calibration", readiness[2]],
           ["Analysis", readiness[3]],
@@ -1022,7 +847,7 @@ function WorkspaceForm({ store, onSaved }) {
             <option value="live">Live pilot</option>
           </select>
           <small>
-            Choose Live pilot only for real connected streams and workers.
+            Choose Live pilot only when real workers are sending observations.
           </small>
         </label>
         <label className="field">

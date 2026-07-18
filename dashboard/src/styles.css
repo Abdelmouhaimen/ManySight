@@ -2138,6 +2138,132 @@ textarea:focus-visible {
   border-top: 1px solid #efeee8;
   white-space: nowrap;
 }
+
+.source-health-summary {
+  grid-template-columns: repeat(3, minmax(120px, 0.7fr)) minmax(300px, 2fr);
+}
+
+.source-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 18px;
+}
+
+.source-status-card {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--white);
+  box-shadow: 0 14px 34px rgba(38, 30, 6, 0.06);
+}
+
+.source-status-card > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.source-status-card h2 {
+  margin: 3px 0 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.source-kind-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 13px;
+  color: var(--violet);
+  background: rgba(112, 89, 255, 0.1);
+}
+
+.source-status-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin: 22px 0;
+}
+
+.source-status-facts div {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--paper-light);
+}
+
+.source-status-facts dt {
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.source-status-facts dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  text-transform: capitalize;
+}
+
+.source-runtime-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.source-runtime-row div {
+  display: grid;
+  gap: 4px;
+}
+
+.source-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 16px;
+}
+
+.source-capabilities span {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--paper-light);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.source-status-card > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 850px) {
+  .source-health-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .source-health-summary p {
+    grid-column: 1 / -1;
+  }
+
+  .source-status-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .event-time-cell {
   min-width: 185px;
   font-variant-numeric: tabular-nums;

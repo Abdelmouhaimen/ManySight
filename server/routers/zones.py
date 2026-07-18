@@ -5,7 +5,7 @@ Alerts about a zone (e.g. "someone entered the restricted area") are separate
 alert_rules; workers posting zone_enter/zone_exit don't know or care what the zone
 means. Zones can be created from a camera-pixel polygon (`polygon_px` + `source_id`):
 the platform projects it to map meters through the source's calibrated homography —
-the path an agent uses after proposing a polygon from a snapshot."""
+the path an agent uses after proposing a polygon from a locally captured frame."""
 import json
 
 from fastapi import APIRouter, HTTPException

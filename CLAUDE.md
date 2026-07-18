@@ -5,11 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 StoreLens is the working POC infrastructure behind the **ManySight** physical-space
-intelligence dashboard: camera sources, a floor plan with named zones, per-camera
+intelligence dashboard: logical observation sources, a floor plan with named zones, per-camera
 pixel→meter homographies, a generic event stream, computed insights, and alerts. It
 deliberately contains **zero hardcoded CV logic** — the analysis half is an external AI
-coding agent (OpenAI Codex, or any MCP client) that looks at camera snapshots, writes and
-runs worker scripts, and posts events back over REST or MCP. `AGENTS.md` is that agent's
+coding agent (OpenAI Codex, or any MCP client) that opens cameras locally, writes and
+runs worker scripts, and posts observations back over REST or MCP. The hosted platform
+never opens feeds or stores camera connection URLs/credentials. `AGENTS.md` is that agent's
 operating manual; `skills/*/SKILL.md` are its step-by-step playbooks.
 
 ## Commands
@@ -27,7 +28,8 @@ uvicorn server.app:app --port 8000        # or: ./run.sh (respects $PORT)
 - Dashboard-only iteration: `npm run dev --prefix dashboard` (Vite dev server) / `npm run preview`.
 - Live demo motion without a camera: `python examples/simulate_shoppers.py --shoppers 6 --minutes 10`.
 - Standalone MCP server (for manual testing against a running StoreLens instance):
-  `python mcp_server/server.py`, configured via `STORELENS_URL`/`STORELENS_API_KEY`/`STORELENS_SKILLS`.
+`python mcp_server/server.py`, configured via `STORELENS_URL`/`STORELENS_API_KEY`/`STORELENS_SKILLS`.
+  Set `STORELENS_MCP_TRANSPORT=streamable-http` for the separately hosted remote MCP service.
 - There is no test suite or linter config in this repo currently.
 - `requirements.txt` intentionally carries no version pins ("Latest stable versions; no
   pins.") — preserve that convention if you touch it.
@@ -85,7 +87,7 @@ with it; new inserts don't break open cursors.
 lives in alert rules and insights, not the zone row — workers posting enter/exit don't
 know zone semantics. `POST /zones` also accepts `polygon_px` + `source_id` (projected
 server-side through the camera homography, 409 if uncalibrated) so an agent can create
-a zone straight from a snapshot; exposed over MCP as `create_zone`.
+a zone from points selected on a locally captured frame; exposed over MCP as `create_zone`.
 
 **DB layer** (`server/db.py`): raw `sqlite3` in WAL mode, dict rows, no migrations
 framework — `init_db()` runs `CREATE TABLE IF NOT EXISTS` then hand-rolled `ALTER TABLE ...
@@ -110,10 +112,10 @@ to background-subtraction blobs when OpenCV/ultralytics aren't available; crib f
 when changing the SDK contract.
 
 **Dashboard** (`dashboard/`, React 19 + Vite, no react-router): `main.jsx` owns hash-based
-routing (`#overview`/`#insights`/`#review`/`#detections`/`#streams`/`#configure`; legacy
-`#events` redirects to `#review`) and the app shell (live SSE indicator, toasts, alert
+routing (`#overview`/`#insights`/`#review`/`#detections`/`#sources`/`#configure`; legacy
+`#events` and `#streams` redirect to their replacements) and the app shell (live SSE indicator, toasts, alert
 badge). `api.js` is a thin fetch wrapper that reads the API key from `localStorage` and
-appends it as `X-API-Key` or `?api_key=`. `pages.jsx` holds Overview/Review/Streams/
+appends it as `X-API-Key` or `?api_key=`. `pages.jsx` holds Overview/Review/Sources/
 Configure; `insights.jsx` the registry-driven Insights catalogue (and `InsightCard`, also
 used for Overview pinning); `detections.jsx` the raw-observation browser with its in-page
 docs panel; `space-workbench.jsx`/`technical-config.jsx` the Configure sub-tabs. Shared

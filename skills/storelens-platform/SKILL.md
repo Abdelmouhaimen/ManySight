@@ -11,7 +11,7 @@ not prior conversation or demo assumptions, as the source of truth.
 ## Understand the platform
 
 StoreLens is infrastructure for computer-vision analysis of physical spaces. It stores
-camera access, snapshots, a floor map, named global zones, floor calibration, named
+logical non-secret source descriptors, a floor map, named global zones, floor calibration, named
 projection planes, per-camera zone views/decision ROIs, analysis and worker-instance
 registrations, raw observations, derived analytics, alerts, and structured insight
 definitions.
@@ -32,10 +32,17 @@ Keep the three surfaces distinct:
 A worker must not require MCP. MCP is an agent adapter, not a camera subscriber or
 worker runtime.
 
+Camera access is agent-local. StoreLens never opens a feed, captures a snapshot, or
+returns a camera URL/password. A logical source may advertise a safe `device_index` or
+`local_secret_ref`; resolve the real connection from an environment variable, keychain,
+or ignored file on the device where the worker runs.
+
 ## Find the API
 
-Use the StoreLens URL supplied by the MCP/client configuration or by the user. The
-default local URL is `http://localhost:8000`.
+Start with `get_platform_config`. It resolves the editable `config/endpoints.json`
+profile plus deployment overrides and is authoritative for the current connection.
+If it is unavailable, use the StoreLens URL supplied by the MCP/client configuration
+or by the user.
 
 - Interactive OpenAPI: `{STORELENS_URL}/docs`
 - REST base: `{STORELENS_URL}/api/v1`
@@ -59,15 +66,16 @@ the observation contract.
 
 ## Follow the default workflow
 
-1. **Discover.** Call `list_sources`, `get_store_map`, and `list_zones`. Inspect relevant
-   frames with `refresh_snapshot` and `get_snapshot`. Never invent source IDs, zones,
-   camera coverage, placement, or calibration.
+1. **Discover.** Call `list_sources`, `get_store_map`, and `list_zones`. If a source is
+   missing, call `create_source` with non-secret local hints. Inspect relevant frames
+   directly on the worker device. Never invent source IDs, zones, camera coverage,
+   placement, or calibration.
 2. **Clarify the measurement.** State what an object, count, visit, state, or alert will
    mean. Distinguish anonymous tracks from unique people and model output from fact.
 3. **Load a recipe.** Call `list_skills` and then `get_skill` for the closest specialized
    playbook. Compose playbooks when necessary.
 4. **Confirm geometry.** Keep the global map footprint separate from its camera view.
-   Inspect the snapshot, projection surfaces, and zone views. For a new zone, confirm
+   Inspect a locally captured frame, projection surfaces, and zone views. For a new zone, confirm
    the map footprint. For each camera, confirm the visible outer polygon and inset
    decision ROI. If the target is elevated and planar (mattress, table, shelf), create
    a named plane from at least four `{px,map}` pairs. Never subtract physical height
@@ -139,7 +147,7 @@ registered insight views from these observations.
   point, `bbox_overlap` requires the configured fraction of the box in the inset ROI,
   and `keypoints_inside` combines an inside fraction with `min_keypoints`.
 - **Map footprint to camera proposal:** call `unproject_points` with the selected
-  surface, then inset the returned polygon and confirm it against the snapshot.
+  surface, then inset the returned polygon and confirm it against a locally captured frame.
 - **Non-planar 3D requirement:** do not improvise a pixel or map offset. Explain that
   intrinsics/extrinsics and ray–plane or 3D reconstruction are required.
 
@@ -150,7 +158,7 @@ retain the revisions that produced them.
 ## Build workers conservatively
 
 - Prefer a lightweight, supported model that directly measures the requested concept.
-- Keep a worker and its virtual environment in the user-designated workspace.
+- Keep a worker and its virtual environment in the user-designated workspace or edge gateway.
 - Store configuration in environment variables or ignored local files; never print
   camera credentials or API keys.
 - Use anonymous tracking and stable per-run IDs when tracking is required.
@@ -165,8 +173,8 @@ retain the revisions that produced them.
   that a fallback measures the same concept with equal accuracy.
 
 Remember that job status is registration metadata. `latest_worker.effective_status`
-is heartbeat-backed, but restart still requires a process supervisor. Camera
-online/offline status remains the last snapshot test, not continuous stream health.
+is heartbeat-backed, but restart still requires a process supervisor. Source health is
+derived from event ingestion and heartbeats, not from a platform camera probe.
 
 ## Protect meaning, privacy, and trust
 

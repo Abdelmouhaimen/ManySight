@@ -14,7 +14,7 @@ import { api, apiKey } from "./api.js";
 import { BrandMark, EnvironmentBadge, Toast } from "./components.jsx";
 import { DetectionsPage } from "./detections.jsx";
 import { InsightsPage } from "./insights.jsx";
-import { ConfigurePage, OverviewPage, ReviewPage, StreamsPage } from "./pages.jsx";
+import { ConfigurePage, OverviewPage, ReviewPage, SourcesPage } from "./pages.jsx";
 import "./styles.css";
 
 const NAV = [
@@ -22,7 +22,7 @@ const NAV = [
   ["insights", "Insights", Activity],
   ["review", "Review", BellRing],
   ["detections", "Detections", ScanSearch],
-  ["streams", "Streams", Camera],
+  ["sources", "Sources", Camera],
   ["configure", "Configure", Settings2],
 ];
 
@@ -38,6 +38,7 @@ const SPACE_LABELS = {
 function currentRoute() {
   const route = window.location.hash.replace("#", "");
   if (route === "events") return "review"; // legacy bookmarks
+  if (route === "streams") return "sources"; // legacy bookmarks
   return NAV.some(([value]) => value === route) ? route : "overview";
 }
 
@@ -116,8 +117,8 @@ function App() {
       alert.status || (alert.acknowledged ? "resolved" : "new"),
     ),
   ).length;
-  const online = shell.sources.filter(
-    (source) => source.status === "online",
+  const activeSources = shell.sources.filter(
+    (source) => source.observation_status === "active",
   ).length;
   const Page =
     route === "overview"
@@ -128,8 +129,8 @@ function App() {
           ? ReviewPage
           : route === "detections"
             ? DetectionsPage
-            : route === "streams"
-              ? StreamsPage
+            : route === "sources"
+              ? SourcesPage
               : ConfigurePage;
 
   return (
@@ -159,13 +160,13 @@ function App() {
           <span className={`live-indicator live-${liveStatus}`}>
             <i />
             {liveStatus === "live"
-              ? "Event stream live"
+              ? "Observation updates live"
               : liveStatus === "offline"
-                ? "Event stream offline"
+                ? "Observation updates offline"
                 : "Connecting"}
           </span>
           <span className="stream-count">
-            {online}/{shell.sources.length} streams online
+            {activeSources}/{shell.sources.length} sources active
           </span>
         </div>
       </header>

@@ -1,11 +1,16 @@
 # StoreLens — agent operating manual
 
 You (Codex, or any coding agent) are the **analysis brain** of StoreLens. The platform is
-deliberately dumb about computer vision: it stores camera sources, a floor plan with named
+deliberately dumb about computer vision: it stores logical source descriptors, a floor plan with named
 global zones, floor and named-plane homographies, per-camera zone views/decision ROIs,
 heartbeat-backed worker instances, and a generic stream of raw
 observations it turns into insights (heatmaps, dwell, flow, states, alerts). **You** pick the
 models, write the worker scripts, run them, and post observations back.
+
+Camera access is agent-local. The hosted platform never opens a feed, captures a
+snapshot, or stores camera URLs and credentials. A source locator contains only safe
+local hints such as `device_index` or `local_secret_ref`; resolve the actual connection
+on the worker device from its environment or keychain.
 
 ## Observations, not aggregates
 
@@ -19,15 +24,16 @@ put durations on `state_change` events.
 
 ## The contract
 
-1. **Discover** — `list_sources`, `get_snapshot` (look at frames!), `get_store_map`,
+1. **Discover** — `list_sources`, `get_store_map`,
    `list_zones`, `list_projection_surfaces`, and `list_zone_views`.
 2. **Load the platform guide, then pick a recipe** — read `storelens-platform` first,
    then `list_skills()` → `get_skill(name)`. Skills live in `skills/`; follow the closest
    task playbook and compose them for multi-part requests.
 3. **Register a job** — `register_job(name, description, source_ids, event_types)` *before*
    posting anything. Keep the returned `job_id`.
-4. **Run analysis & post observations** — write a worker script (use `sdk/python/storelens.py`),
-   run it, register its worker instance, heartbeat every 5–15 seconds, obey stop/restart
+4. **Run analysis & post observations** — connect to and inspect the camera locally, write a
+   worker script (use `sdk/python/storelens.py`), run it, register its worker instance,
+   heartbeat every 5–15 seconds, obey stop/restart
    flags, and `submit_events` in batches (≤5000; 100–500 is a good size, every 1–5 s).
 5. **Verify & publish** — `get_events(job_id=...)` and `get_analytics(...)` to confirm the
    data renders, then `register_insight(...)` so the result appears as a card in the
@@ -78,14 +84,16 @@ Conventions that make insights light up:
 
 Separate the physical zone from how one camera sees it:
 
-1. `get_snapshot(source_id)` and `get_store_map()` — inspect the frame and the current
-   global footprint. Confirm the footprint with the user before creating/updating it.
+1. Capture and inspect a frame directly on the worker device, then call
+   `get_store_map()` for the current global footprint. Confirm the footprint with the
+   user before creating/updating it. Never upload the frame unless the user explicitly
+   chooses to retain visual evidence.
 2. A **zone** is the canonical physical polygon in map metres. `polygon_px + source_id`
    is only a shortcut for points on the calibrated floor plane.
 3. A **zone view** belongs to one zone and one camera. Store the visible outer polygon,
    an inset detection ROI, and one membership rule: `point`, `bbox_overlap`, or
    `keypoints_inside`. Use `unproject_points` to propose camera pixels from the map
-   footprint, then check the result against the snapshot.
+   footprint, then check the result against a frame captured on the worker device.
 4. For a mattress, table, shelf, conveyor, or other elevated planar target, create a
    **projection surface** from at least four matching `{px,map}` points and attach it to
    the zone view. Height is metadata. Never subtract height from map Y; a homography
@@ -110,7 +118,7 @@ current plane-homography model.
 - Examples to crib from: `examples/` (simulator, motion-based heatmap tracker, dwell worker, fridge state worker).
 - If OpenCV/ultralytics are unavailable, degrade gracefully: background-subtraction blobs
   (see `examples/heatmap_tracker.py`) still produce usable heatmaps and tracks.
-- Zones missing? Propose them from `get_snapshot` frames and register with `create_zone`
+- Zones missing? Propose them from frames captured locally by the worker and register with `create_zone`
   (see "Zones from camera views"), or ask the user to draw them in **Store Map**.
   Calibration missing? Ask the user to calibrate, or fall back to `point_map` you
   compute yourself.

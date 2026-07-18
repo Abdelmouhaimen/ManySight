@@ -39,11 +39,19 @@ def summary(since: float | None = None, until: float | None = None):
         (db.now() - 300,))["n"]
     jobs_active = db.q1("SELECT COUNT(*) n FROM jobs WHERE status='active'")["n"]
     alerts_unacked = db.q1("SELECT COUNT(*) n FROM alerts WHERE acknowledged=0")["n"]
-    src = db.q1("SELECT COUNT(*) total, SUM(CASE WHEN status='online' THEN 1 ELSE 0 END) online FROM sources")
+    active_cutoff = db.now() - 30
+    src = db.q1(
+        "SELECT COUNT(*) total, "
+        "SUM(CASE WHEN last_ingestion_at>=? THEN 1 ELSE 0 END) active FROM sources",
+        (active_cutoff,),
+    )
     return {
         "since": since, "until": until, "events": events, "tracks": tracks,
         "active_tracks": active_tracks, "jobs_active": jobs_active, "alerts_unacked": alerts_unacked,
-        "sources_online": src["online"] or 0, "sources_total": src["total"],
+        # Keep the old response key for API compatibility; it now means observations
+        # were ingested in the last 30 seconds, never that the server opened a feed.
+        "sources_online": src["active"] or 0, "sources_active": src["active"] or 0,
+        "sources_total": src["total"],
         "zones": db.q1("SELECT COUNT(*) n FROM zones")["n"],
     }
 

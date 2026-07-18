@@ -32,7 +32,7 @@ traffic re-alerts only when the next batch arrives.
    - "more than N people at X" / "crowd forming" → `occupancy_exceeds` (window ≈ 30–120 s)
    - "fridge open more than 2 min" → `state_alert` with `min_seconds: 120`
    - "anyone enters the restricted area" → `event_match` `{event_type:"zone_enter", zone_id}`
-     (if the zone doesn't exist yet, create it first from a snapshot with `create_zone` —
+     (if the zone doesn't exist yet, create it first from a locally captured frame with `create_zone` —
      the zone label carries no behavior; this rule is what makes it alert)
    - "any woman enters the stockroom" → `event_match` `{event_type:"zone_enter", zone_id, attr_key:"gender", attr_value:"female"}`
 3. `create_alert_rule(name, kind, params, webhook_url?, cooldown_s?)` — resolve zone

@@ -65,7 +65,7 @@ def main():
     sl.register_job(f"Heatmap – {src['name']}", "person feet positions for spatial heatmap",
                     source_ids=[src["id"]], event_types=["detection"])
     sl.register_worker("heatmap-tracker", version="1")
-    cap = sl.open_capture(src)
+    cap = sl.open_capture(src, args.connection)
     tracker = CentroidTracker(max_distance=90)
     interval, last, last_heartbeat = 1.0 / args.fps, 0.0, 0.0
     n = 0

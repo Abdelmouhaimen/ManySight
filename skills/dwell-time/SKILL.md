@@ -18,7 +18,7 @@ and alerts. Never compute dwell seconds yourself.
 
 1. `get_store_map()` / `list_zones()` — find the target zones. If the zone doesn't
    exist, ask the user to draw it (Store Map tab) **or** propose a polygon yourself from
-   a `get_snapshot` frame and register it with `create_zone(name, ztype, polygon_px=...,
+   a frame captured locally by the worker and register it with `create_zone(name, ztype, polygon_px=...,
    source_id=...)` after user confirmation (the platform projects pixels to the map).
 2. `register_job("Dwell – <zone/scope>", event_types=["detection","zone_enter","zone_exit"])`.
 3. Detect + track people (see the `heatmap` skill for model options). For attribute
@@ -37,11 +37,11 @@ and alerts. Never compute dwell seconds yourself.
 ## Worker core (zone bookkeeping)
 
 ```python
-import time, sys
+import os, time, sys
 sys.path.insert(0, "sdk/python")
 from storelens import StoreLens, CentroidTracker
 
-sl = StoreLens("http://localhost:8000")
+sl = StoreLens(os.environ["STORELENS_URL"])
 src = sl.source(SOURCE_ID)
 zones = sl.zones()
 job = sl.register_job("Dwell by gender – Checkout", event_types=["zone_enter","zone_exit"])

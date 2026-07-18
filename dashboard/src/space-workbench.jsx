@@ -2,9 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Camera,
   CheckCircle2,
-  Crosshair,
   Eraser,
-  Layers3,
   MapPin,
   MousePointer2,
   Pencil,
@@ -17,8 +15,7 @@ import {
   Type,
   X,
 } from "lucide-react";
-import { api, assetUrl } from "./api.js";
-import { CameraGeometryModal } from "./camera-geometry.jsx";
+import { api } from "./api.js";
 import { Badge, EmptyState, Modal, Panel } from "./components.jsx";
 
 const ZONE_TYPES = [
@@ -259,8 +256,6 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
   const [zoneDraft, setZoneDraft] = useState(null);
   const [labelDraft, setLabelDraft] = useState(null);
   const [editingZone, setEditingZone] = useState(null);
-  const [calibrating, setCalibrating] = useState(null);
-  const [geometrySource, setGeometrySource] = useState(null);
   const [placementDraft, setPlacementDraft] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -305,7 +300,7 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
     label: "Click the map where the label should appear.",
     camera: selectedSource
       ? `Click the map to place ${selectedSource.name}.`
-      : "Add a stream before placing a camera.",
+      : "Register a source before placing a camera.",
     erase:
       "Select a wall or label on the map to remove it. Zones are managed in the list.",
   }[tool];
@@ -456,7 +451,7 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
     <div className="space-workbench stack">
       <Panel
         title="Floor map workbench"
-        subtitle="Draw geometry in metres, then place and calibrate each camera"
+        subtitle="Draw geometry in metres and place logical source markers"
       >
         <div
           className="workbench-toolbar"
@@ -605,8 +600,8 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
           </div>
         </Panel>
         <Panel
-          title={`Cameras · ${sources.length}`}
-          subtitle="Placement locates a camera; calibration converts pixels into map metres"
+          title={`Sources · ${sources.length}`}
+          subtitle="Map placement is descriptive; workers configure pixel geometry from locally captured frames"
         >
           <div className="data-list">
             {sources.map((source) => (
@@ -616,7 +611,7 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
                 onClick={() => setSelectedSourceId(source.id)}
               >
                 <span
-                  className={`status-light ${source.status === "online" ? "active" : "paused"}`}
+                  className={`status-light ${source.observation_status === "active" ? "active" : "paused"}`}
                 />
                 <span>
                   <strong>{source.name}</strong>
@@ -633,9 +628,9 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
               </button>
             ))}
             {!sources.length && (
-              <EmptyState title="Add a stream first">
-                Camera placement and calibration become available after a source
-                exists.
+              <EmptyState title="Register a source first">
+                An agent can create a logical source through StoreLens MCP before
+                placing it on the map.
               </EmptyState>
             )}
           </div>
@@ -727,22 +722,6 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
                       Save view
                     </button>
                     <button
-                      className="button button-dark"
-                      onClick={() => setCalibrating(selectedSource)}
-                    >
-                      <Crosshair size={14} />
-                      {selectedSource.calibrated
-                        ? "Review calibration"
-                        : "Calibrate camera"}
-                    </button>
-                    <button
-                      className="button button-secondary"
-                      onClick={() => setGeometrySource(selectedSource)}
-                    >
-                      <Layers3 size={14} />
-                      Zone views & planes
-                    </button>
-                    <button
                       className="button button-ghost danger"
                       onClick={clearPlacement}
                     >
@@ -750,6 +729,11 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
                       Unplace
                     </button>
                   </div>
+                  <p className="definition-note">
+                    Calibration, decision ROIs, and projection surfaces are configured
+                    by the agent from a frame captured on the worker device. The hosted
+                    dashboard does not request camera frames.
+                  </p>
                 </>
               )}
             </div>
@@ -785,35 +769,6 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
       )}
       {labelDraft && (
         <LabelModal onClose={() => setLabelDraft(null)} onSave={addLabel} />
-      )}
-      {calibrating && (
-        <CalibrationModal
-          source={
-            sources.find((item) => item.id === calibrating.id) || calibrating
-          }
-          store={store}
-          zones={zones}
-          sources={sources}
-          onClose={() => setCalibrating(null)}
-          onSaved={async () => {
-            await onRefresh();
-            notify(
-              "Calibration saved",
-              "Pixel detections can now be projected onto the floor map.",
-            );
-          }}
-        />
-      )}
-      {geometrySource && (
-        <CameraGeometryModal
-          source={
-            sources.find((item) => item.id === geometrySource.id) ||
-            geometrySource
-          }
-          zones={zones}
-          onClose={() => setGeometrySource(null)}
-          notify={notify}
-        />
       )}
     </div>
   );
@@ -953,321 +908,6 @@ function LabelModal({ onClose, onSave }) {
           placeholder="Staff only"
         />
       </label>
-      {error && (
-        <div className="form-error" role="alert">
-          {error}
-        </div>
-      )}
-    </Modal>
-  );
-}
-
-function CalibrationMap({
-  store,
-  zones,
-  sources,
-  svgRef,
-  onClick,
-  points,
-  pending,
-  testPoint,
-}) {
-  return (
-    <MapSurface
-      store={store}
-      zones={zones}
-      sources={sources}
-      draft={[]}
-      selectedSourceId={null}
-      tool="select"
-      onMapClick={onClick}
-      svgRef={svgRef}
-      testPoint={testPoint}
-    >
-      {points.map((pair, index) => (
-        <g key={index} className="calibration-map-point">
-          <circle cx={pair.map.x} cy={pair.map.y} r=".18" />
-          <text x={pair.map.x} y={pair.map.y + 0.07}>
-            {index + 1}
-          </text>
-        </g>
-      ))}
-      {pending && (
-        <text
-          x=".25"
-          y={Math.max(Number(store?.height_m) || 12, 1) - 0.25}
-          className="calibration-hint"
-        >
-          Click the matching map position
-        </text>
-      )}
-    </MapSurface>
-  );
-}
-
-function CalibrationModal({ source, store, zones, sources, onClose, onSaved }) {
-  const imageRef = useRef(null),
-    mapRef = useRef(null);
-  const existing = source.calibration?.points || [];
-  const [pairs, setPairs] = useState(existing);
-  const [pending, setPending] = useState(null);
-  const [frame, setFrame] = useState({
-    width: source.calibration?.frame_w || 0,
-    height: source.calibration?.frame_h || 0,
-  });
-  const [mode, setMode] = useState("pair");
-  const [testPoint, setTestPoint] = useState(null);
-  const [saving, setSaving] = useState(false),
-    [error, setError] = useState("");
-  const snapshot = useMemo(
-    () => assetUrl(`/sources/${source.id}/snapshot.jpg?t=${Date.now()}`),
-    [source.id],
-  );
-
-  const frameClick = async (event) => {
-    const image = imageRef.current;
-    if (!image) return;
-    const rect = image.getBoundingClientRect();
-    const point = {
-      x: ((event.clientX - rect.left) / rect.width) * image.naturalWidth,
-      y: ((event.clientY - rect.top) / rect.height) * image.naturalHeight,
-    };
-    if (mode === "test") {
-      setError("");
-      try {
-        const result = await api.post(`/sources/${source.id}/project`, {
-          points: [point],
-        });
-        setTestPoint(result.points[0]);
-      } catch (err) {
-        setError(err.message);
-      }
-    } else setPending(point);
-  };
-
-  const mapClick = (event) => {
-    if (!pending) return;
-    const point = eventPoint(event, mapRef.current);
-    if (!point) return;
-    setPairs((current) => [...current, { px: pending, map: point }]);
-    setPending(null);
-  };
-
-  const save = async () => {
-    setSaving(true);
-    setError("");
-    try {
-      if (pairs.length < 4)
-        throw new Error("Add at least four matching point pairs.");
-      await api.put(`/sources/${source.id}/calibration`, {
-        points: pairs,
-        frame_w: frame.width || null,
-        frame_h: frame.height || null,
-      });
-      await onSaved();
-      setMode("test");
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const clear = async () => {
-    if (!window.confirm(`Clear the saved calibration for ${source.name}?`))
-      return;
-    await api.del(`/sources/${source.id}/calibration`);
-    setPairs([]);
-    setPending(null);
-    setTestPoint(null);
-    await onSaved();
-    setMode("pair");
-  };
-
-  return (
-    <Modal
-      wide
-      title={`Calibrate ${source.name}`}
-      onClose={onClose}
-      footer={
-        <>
-          <button className="button button-secondary" onClick={onClose}>
-            Close
-          </button>
-          {source.calibrated && (
-            <button className="button button-ghost danger" onClick={clear}>
-              <Trash2 size={14} />
-              Clear saved calibration
-            </button>
-          )}
-          <button
-            className="button button-dark"
-            onClick={save}
-            disabled={saving || pairs.length < 4}
-          >
-            <Save size={14} />
-            {saving ? "Computing…" : "Compute & save"}
-          </button>
-        </>
-      }
-    >
-      <div className="calibration-intro">
-        <div>
-          <span className="tiny-label">Guided homography</span>
-          <h3>Match the same floor points in both views</h3>
-          <p>
-            Choose visible, fixed points spread across the usable floor—tile
-            corners and wall intersections work well. Four pairs is the minimum;
-            six or more usually makes errors easier to spot.
-          </p>
-        </div>
-        <Badge tone={pairs.length >= 4 ? "positive" : "warning"}>
-          {pairs.length}/4 minimum pairs
-        </Badge>
-      </div>
-      <div
-        className="calibration-mode"
-        role="tablist"
-        aria-label="Calibration mode"
-      >
-        <button
-          className={mode === "pair" ? "active" : ""}
-          onClick={() => {
-            setMode("pair");
-            setTestPoint(null);
-          }}
-          role="tab"
-          aria-selected={mode === "pair"}
-        >
-          1. Match points
-        </button>
-        <button
-          className={mode === "test" ? "active" : ""}
-          onClick={() => {
-            setMode("test");
-            setPending(null);
-          }}
-          role="tab"
-          aria-selected={mode === "test"}
-          disabled={!source.calibrated && !pairs.length}
-        >
-          2. Test projection
-        </button>
-      </div>
-      <div className="calibration-status" role="status">
-        {mode === "test"
-          ? "Click a floor position in the camera frame. The projected map point appears in orange."
-          : pending
-            ? "Camera point selected. Click the same physical location on the map."
-            : "Click a fixed floor point in the camera frame to begin a pair."}
-      </div>
-      <div className="calibration-grid">
-        <section>
-          <h4>Camera frame</h4>
-          <div
-            className={`calibration-frame ${pending ? "has-pending" : ""}`}
-            onClick={frameClick}
-          >
-            <img
-              ref={imageRef}
-              src={snapshot}
-              alt={`Calibration frame from ${source.name}`}
-              onLoad={(event) =>
-                setFrame({
-                  width: event.currentTarget.naturalWidth,
-                  height: event.currentTarget.naturalHeight,
-                })
-              }
-            />
-            {pairs.map((pair, index) => (
-              <span
-                key={index}
-                className="calibration-frame-point"
-                style={{
-                  left: `${(pair.px.x / (frame.width || 1)) * 100}%`,
-                  top: `${(pair.px.y / (frame.height || 1)) * 100}%`,
-                }}
-              >
-                {index + 1}
-              </span>
-            ))}
-            {pending && (
-              <span
-                className="calibration-frame-point pending"
-                style={{
-                  left: `${(pending.x / (frame.width || 1)) * 100}%`,
-                  top: `${(pending.y / (frame.height || 1)) * 100}%`,
-                }}
-              >
-                +
-              </span>
-            )}
-          </div>
-        </section>
-        <section>
-          <h4>Floor map</h4>
-          <CalibrationMap
-            store={store}
-            zones={zones}
-            sources={sources}
-            svgRef={mapRef}
-            onClick={mapClick}
-            points={pairs}
-            pending={pending}
-            testPoint={testPoint}
-          />
-        </section>
-      </div>
-      {!!pairs.length && (
-        <div className="calibration-pairs">
-          <div>
-            <strong>Point pairs</strong>
-            <span>
-              {frame.width} × {frame.height}px frame
-            </span>
-          </div>
-          <ol>
-            {pairs.map((pair, index) => (
-              <li key={index}>
-                <span>{index + 1}</span>
-                <code>
-                  px {Math.round(pair.px.x)}, {Math.round(pair.px.y)}
-                </code>
-                <code>
-                  map {pair.map.x.toFixed(2)}, {pair.map.y.toFixed(2)}m
-                </code>
-                <button
-                  className="icon-button"
-                  onClick={() =>
-                    setPairs((current) =>
-                      current.filter((_, itemIndex) => itemIndex !== index),
-                    )
-                  }
-                  aria-label={`Remove point pair ${index + 1}`}
-                >
-                  <X size={14} />
-                </button>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-      {source.calibrated && (
-        <div className="quality-note">
-          <CheckCircle2 size={15} />
-          <div>
-            <strong>
-              Saved reprojection error: ±
-              {Number(source.calibration?.error_m || 0).toFixed(2)}m
-            </strong>
-            <p>
-              Test several floor points before trusting automatic zone
-              assignment. Low mathematical error does not replace visual
-              validation.
-            </p>
-          </div>
-        </div>
-      )}
       {error && (
         <div className="form-error" role="alert">
           {error}

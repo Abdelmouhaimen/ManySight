@@ -1,138 +1,23 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   Check,
   Code2,
-  Copy,
   ExternalLink,
-  Eye,
-  EyeOff,
-  RefreshCw,
   Save,
   ScanSearch,
   ShieldAlert,
 } from "lucide-react";
 import { api, apiKey } from "./api.js";
-import { Badge, Modal, Panel } from "./components.jsx";
-
-export function ConnectionModal({ source, onClose, notify }) {
-  const [details, setDetails] = useState(null),
-    [revealed, setRevealed] = useState(false),
-    [loading, setLoading] = useState(false),
-    [error, setError] = useState("");
-  const reveal = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      setDetails(await api.get(`/sources/${source.id}?secrets=true`));
-      setRevealed(true);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-  const copy = async (value, label) => {
-    try {
-      await navigator.clipboard.writeText(value || "");
-      notify(`${label} copied`, "Treat camera credentials as sensitive.");
-    } catch {
-      notify("Copy failed", "Select and copy the value manually.", "error");
-    }
-  };
-  return (
-    <Modal title={`${source.name} connection`} onClose={onClose}>
-      <div className="sensitive-note">
-        <ShieldAlert size={18} />
-        <div>
-          <strong>Sensitive technical access</strong>
-          <p>
-            Only reveal this when configuring a trusted worker. Browser
-            dashboards do not continuously consume the feed, and adding a source
-            alone does not start analytics.
-          </p>
-        </div>
-      </div>
-      <dl className="connection-summary">
-        <div>
-          <dt>Protocol</dt>
-          <dd>{source.kind.toUpperCase()}</dd>
-        </div>
-        <div>
-          <dt>Source status</dt>
-          <dd>
-            <Badge tone={source.status === "online" ? "positive" : "neutral"}>
-              {source.status}
-            </Badge>
-          </dd>
-        </div>
-        <div>
-          <dt>Worker configuration</dt>
-          <dd>
-            <code>{JSON.stringify(source.extra || {})}</code>
-          </dd>
-        </div>
-      </dl>
-      {!revealed ? (
-        <button
-          className="button button-dark reveal-button"
-          onClick={reveal}
-          disabled={loading}
-        >
-          {loading ? (
-            <RefreshCw className="spin" size={14} />
-          ) : (
-            <Eye size={14} />
-          )}
-          {loading ? "Loading…" : "Reveal connection details"}
-        </button>
-      ) : (
-        <div className="secret-fields">
-          {[
-            ["Connect URL", details?.connect_url],
-            ["Configured URL", details?.url],
-            ["Username", details?.username],
-            ["Password", details?.password],
-          ].map(([label, value]) => (
-            <label className="field" key={label}>
-              <span>{label}</span>
-              <div className="copy-field">
-                <input
-                  readOnly
-                  type={label === "Password" ? "password" : "text"}
-                  value={value || ""}
-                  aria-label={label}
-                />
-                <button
-                  className="icon-button"
-                  onClick={() => copy(value, label)}
-                  aria-label={`Copy ${label}`}
-                >
-                  <Copy size={14} />
-                </button>
-              </div>
-            </label>
-          ))}
-          <button
-            className="button button-secondary"
-            onClick={() => setRevealed(false)}
-          >
-            <EyeOff size={14} />
-            Hide details
-          </button>
-        </div>
-      )}
-      {error && (
-        <div className="form-error" role="alert">
-          {error}
-        </div>
-      )}
-    </Modal>
-  );
-}
+import { Badge, Panel } from "./components.jsx";
 
 export function TechnicalConfig({ notify }) {
   const [key, setKey] = useState(apiKey());
+  const [endpoints, setEndpoints] = useState(null);
+
+  useEffect(() => {
+    api.get("/platform-config").then(setEndpoints).catch(() => setEndpoints(null));
+  }, []);
 
   const saveKey = () => {
     key
@@ -146,16 +31,16 @@ export function TechnicalConfig({ notify }) {
     <div className="stack">
       <Panel
         title="Agent analysis contract"
-        subtitle="What happens after a camera source is added"
+        subtitle="How an agent-local worker produces hosted insights"
       >
         <div className="agent-contract">
           <div className="agent-flow" aria-label="Analysis workflow">
             {[
-              ["1", "Connect", "Store a stream URL and capture a frame"],
+              ["1", "Register", "Create a logical source without camera credentials"],
               [
                 "2",
                 "Inspect",
-                "Codex checks snapshots, zones, and calibration",
+                "Codex opens the camera and inspects frames on the worker device",
               ],
               ["3", "Run", "An external worker subscribes and runs a model"],
               [
@@ -182,8 +67,8 @@ export function TechnicalConfig({ notify }) {
               </Badge>
               <ul>
                 <li>
-                  Inspect stored source metadata and snapshots through the API
-                  or MCP.
+                  Register and inspect non-secret logical source metadata through
+                  the API or MCP.
                 </li>
                 <li>
                   Choose or write a classifier/tracker worker for an approved
@@ -205,8 +90,8 @@ export function TechnicalConfig({ notify }) {
               </Badge>
               <ul>
                 <li>
-                  The dashboard itself does not subscribe to RTSP or run models
-                  continuously.
+                  StoreLens never subscribes to a webcam or RTSP feed and never
+                  stores camera credentials.
                 </li>
                 <li>
                   A job marked active is registration metadata, not proof that
@@ -270,7 +155,7 @@ export function TechnicalConfig({ notify }) {
           subtitle="Build and verify external analysis workers"
         >
           <div className="technical-links">
-            <a href="/docs" target="_blank" rel="noreferrer">
+            <a href={endpoints?.docs_url || "/docs"} target="_blank" rel="noreferrer">
               <Code2 />
               Interactive API documentation<span>OpenAPI</span>
               <ExternalLink />
@@ -280,13 +165,14 @@ export function TechnicalConfig({ notify }) {
             <Code2 />
             <h3>Codex / MCP</h3>
             <p>
-              Connect this repository's MCP server so Codex can discover
-              sources, inspect frames, follow a skill recipe, register a job,
-              and submit events.
+              Connect StoreLens MCP so Codex can register logical sources,
+              follow a skill recipe, register a job, and verify submitted
+              observations. Frames remain local to the worker.
             </p>
             <pre>
-              [mcp_servers.storelens]{"\n"}command = "python"{"\n"}args =
-              [".../mcp_server/server.py"]
+              {`Remote: ${endpoints?.mcp_url || "Loading…"}\n`}
+              {`REST: ${endpoints?.rest_url || "Loading…"}\n`}
+              {`Agent guide: ${endpoints?.agent_guide_url || "Loading…"}`}
             </pre>
           </div>
         </Panel>
