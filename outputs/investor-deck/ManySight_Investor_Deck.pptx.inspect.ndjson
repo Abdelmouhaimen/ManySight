@@ -1,0 +1,336 @@
+{"kind":"deck","id":"pr/cqdg10","name":"Deck"}
+{"kind":"layout","layoutId":"72bf0e6f-03c1-4cb1-9c0b-608314d3c1fa","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"20d614fb-9c43-46d0-a314-5a6d63c38e36","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/lxyj5d","slide":1,"title":"01","textShapes":6}
+{"kind":"textbox","id":"sh/43qt0vud","slide":1,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"shape","id":"sh/i1obylcn","slide":1,"bbox":[0,0,675,720]}
+{"kind":"textbox","id":"sh/dszux0ba","slide":1,"text":"MANY","textPreview":"MANY","textChars":4,"textLines":1,"bbox":[72,72,70,22]}
+{"kind":"textbox","id":"sh/srqt4vup","slide":1,"text":"SIGHT","textPreview":"SIGHT","textChars":5,"textLines":1,"bbox":[141,72,70,22]}
+{"kind":"textbox","id":"sh/rqhcvat4","slide":1,"text":"The spatial\nintelligence layer\nfor physical\nbusinesses","textPreview":"The spatial | intelligence layer | for physical | businesses","textChars":54,"textLines":4,"bbox":[72,128,565,350]}
+{"kind":"textbox","id":"sh/qp8b25cj","slide":1,"text":"Turn mapped spaces, existing cameras and AI workflows into persistent, explainable operational intelligence.","textPreview":"Turn mapped spaces, existing cameras and AI workflows into persistent, explainable operational intelligence.","textChars":108,"textLines":1,"bbox":[72,500,530,82]}
+{"kind":"textbox","id":"sh/1wju1kb6","slide":1,"text":"Investor deck · Product transition · July 2026","textPreview":"Investor deck · Product transition · July 2026","textChars":46,"textLines":1,"bbox":[72,646,420,20]}
+{"kind":"image","id":"im/2lkzuxc3","slide":1,"name":"","geometry":"rect","alt":"hero digital twin","bbox":[0,0,1280,720]}
+{"kind":"notes","id":"nt/lxyj5d","slide":1,"text":""}
+{"kind":"slide","id":"sl/29qcxx","slide":2,"title":"02","textShapes":13}
+{"kind":"textbox","id":"sh/pkvq9wfi","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"textbox","id":"sh/2x47yhwr","slide":2,"name":"eyebrow","text":"THE PROBLEM","textPreview":"THE PROBLEM","textChars":11,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/3yd87mxc","slide":2,"name":"slide-title","text":"Cameras record. Operations still guess.","textPreview":"Cameras record. Operations still guess.","textChars":39,"textLines":1,"bbox":[72,82,1040,68]}
+{"kind":"shape","id":"sh/cn6p4ret","slide":2,"bbox":[72,245,330,2]}
+{"kind":"textbox","id":"sh/dofqdwfe","slide":2,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[72,265,50,22]}
+{"kind":"textbox","id":"sh/ql4721wn","slide":2,"text":"Video is isolated","textPreview":"Video is isolated","textChars":17,"textLines":1,"bbox":[72,303,330,55]}
+{"kind":"textbox","id":"sh/rmd8b6x8","slide":2,"text":"Each feed stores pixels without a shared model of the physical space.","textPreview":"Each feed stores pixels without a shared model of the physical space.","textChars":69,"textLines":1,"bbox":[72,372,330,120]}
+{"kind":"shape","id":"sh/sr2ps7ep","slide":2,"bbox":[454,245,330,2]}
+{"kind":"textbox","id":"sh/tsbq1cfa","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[454,265,50,22]}
+{"kind":"textbox","id":"sh/h4vy5o7y","slide":2,"text":"Analysis forgets","textPreview":"Analysis forgets","textChars":16,"textLines":1,"bbox":[454,303,330,55]}
+{"kind":"textbox","id":"sh/g3mxwj6d","slide":2,"text":"One-off workers restart, lose context and produce metrics that are hard to replay.","textPreview":"One-off workers restart, lose context and produce metrics that are hard to replay.","textChars":82,"textLines":1,"bbox":[454,372,330,120]}
+{"kind":"shape","id":"sh/v2dg3eps","slide":2,"bbox":[836,245,330,2]}
+{"kind":"textbox","id":"sh/u14fu9o7","slide":2,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[836,265,50,22]}
+{"kind":"textbox","id":"sh/psfy9o7u","slide":2,"text":"Dashboards stop at charts","textPreview":"Dashboards stop at charts","textChars":25,"textLines":1,"bbox":[836,303,330,55]}
+{"kind":"textbox","id":"sh/476h0j69","slide":2,"text":"Users see aggregates, but not the spatial evidence, provenance or actions behind them.","textPreview":"Users see aggregates, but not the spatial evidence, provenance or actions behind them.","textChars":86,"textLines":1,"bbox":[836,372,330,120]}
+{"kind":"textbox","id":"sh/36dg7ypo","slide":2,"text":"The missing layer is spatial memory.","textPreview":"The missing layer is spatial memory.","textChars":36,"textLines":1,"bbox":[72,580,760,55]}
+{"kind":"notes","id":"nt/29qcxx","slide":2,"text":""}
+{"kind":"slide","id":"sl/psah74","slide":3,"title":"03","textShapes":23}
+{"kind":"textbox","id":"sh/z2dsnulk","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"textbox","id":"sh/k3mtgfm5","slide":3,"name":"eyebrow","text":"THE PRODUCT THESIS","textPreview":"THE PRODUCT THESIS","textChars":18,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/lovapk3q","slide":3,"name":"slide-title","text":"Map the space once. Keep asking better questions.","textPreview":"Map the space once. Keep asking better questions.","textChars":49,"textLines":1,"bbox":[72,82,1100,70]}
+{"kind":"shape","id":"sh/axkra543","slide":3,"bbox":[72,255,175,2]}
+{"kind":"textbox","id":"sh/bytsjalo","slide":3,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[72,273,44,20]}
+{"kind":"textbox","id":"sh/czm9cfmt","slide":3,"text":"Scan","textPreview":"Scan","textChars":4,"textLines":1,"bbox":[72,305,180,40]}
+{"kind":"textbox","id":"sh/x0valk3e","slide":3,"text":"Geometry + poses","textPreview":"Geometry + poses","textChars":16,"textLines":1,"bbox":[72,355,180,55]}
+{"kind":"textbox","id":"sh/2tkr654r","slide":3,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[258,317,25,30]}
+{"kind":"shape","id":"sh/nutsfalc","slide":3,"bbox":[297,255,175,2]}
+{"kind":"textbox","id":"sh/76dof61c","slide":3,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[297,273,44,20]}
+{"kind":"textbox","id":"sh/6547610r","slide":3,"text":"Understand","textPreview":"Understand","textChars":10,"textLines":1,"bbox":[297,305,180,40]}
+{"kind":"textbox","id":"sh/t8vqhgj2","slide":3,"text":"Objects + planes","textPreview":"Objects + planes","textChars":16,"textLines":1,"bbox":[297,355,180,55]}
+{"kind":"textbox","id":"sh/s7mp8bih","slide":3,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[483,317,25,30]}
+{"kind":"shape","id":"sh/fux8j618","slide":3,"bbox":[522,255,175,2]}
+{"kind":"textbox","id":"sh/u9o7a10n","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[522,273,44,20]}
+{"kind":"textbox","id":"sh/hwfqlgje","slide":3,"text":"Observe","textPreview":"Observe","textChars":7,"textLines":1,"bbox":[522,305,180,40]}
+{"kind":"textbox","id":"sh/gv6pcbit","slide":3,"text":"World coordinates","textPreview":"World coordinates","textChars":17,"textLines":1,"bbox":[522,355,180,55]}
+{"kind":"textbox","id":"sh/vyto7m14","slide":3,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[708,317,25,30]}
+{"kind":"shape","id":"sh/adk7yh0j","slide":3,"bbox":[747,255,175,2]}
+{"kind":"textbox","id":"sh/etsrmpk7","slide":3,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[747,273,44,20]}
+{"kind":"textbox","id":"sh/zu1sfuls","slide":3,"text":"Explain","textPreview":"Explain","textChars":7,"textLines":1,"bbox":[747,305,180,40]}
+{"kind":"textbox","id":"sh/0vatoz2x","slide":3,"text":"Replayable analytics","textPreview":"Replayable analytics","textChars":20,"textLines":1,"bbox":[747,355,180,55]}
+{"kind":"textbox","id":"sh/1wjah43i","slide":3,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[933,317,25,30]}
+{"kind":"shape","id":"sh/qp8ri5kv","slide":3,"bbox":[972,255,175,2]}
+{"kind":"textbox","id":"sh/rqhsbalg","slide":3,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[972,273,44,20]}
+{"kind":"textbox","id":"sh/crq9kf21","slide":3,"text":"Act","textPreview":"Act","textChars":3,"textLines":1,"bbox":[972,305,180,40]}
+{"kind":"textbox","id":"sh/dsjadk3m","slide":3,"text":"Questions + workflows","textPreview":"Questions + workflows","textChars":21,"textLines":1,"bbox":[972,355,180,55]}
+{"kind":"shape","id":"sh/218re5kz","slide":3,"bbox":[72,500,4,100]}
+{"kind":"textbox","id":"sh/32hs7alk","slide":3,"text":"A semantic digital twin becomes the common coordinate system for people, cameras, models and decisions.","textPreview":"A semantic digital twin becomes the common coordinate system for people, cameras, models and decisions.","textChars":103,"textLines":1,"bbox":[98,506,1000,86]}
+{"kind":"notes","id":"nt/psah74","slide":3,"text":""}
+{"kind":"slide","id":"sl/xvcsls","slide":4,"title":"04","textShapes":14}
+{"kind":"textbox","id":"sh/lg32lsba","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"textbox","id":"sh/ydcjadcz","slide":4,"name":"eyebrow","text":"WORKING PROOF","textPreview":"WORKING PROOF","textChars":13,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/zelkjit4","slide":4,"name":"slide-title","text":"StoreLens proves the observation-to-insight contract","textPreview":"StoreLens proves the observation-to-insight contract","textChars":52,"textLines":1,"bbox":[72,82,540,104]}
+{"kind":"textbox","id":"sh/83u1g7u1","slide":4,"text":"◆","textPreview":"◆","textChars":1,"textLines":1,"bbox":[72,229,16,20]}
+{"kind":"textbox","id":"sh/9432psbm","slide":4,"text":"Sources, floor maps, zones and camera calibration","textPreview":"Sources, floor maps, zones and camera calibration","textChars":49,"textLines":1,"bbox":[97,225,485,42]}
+{"kind":"textbox","id":"sh/mhcjexcv","slide":4,"text":"◆","textPreview":"◆","textChars":1,"textLines":1,"bbox":[72,288,16,20]}
+{"kind":"textbox","id":"sh/7ilkn2tg","slide":4,"text":"Named-plane projection with revision history","textPreview":"Named-plane projection with revision history","textChars":44,"textLines":1,"bbox":[97,284,485,42]}
+{"kind":"textbox","id":"sh/ona143uh","slide":4,"text":"◆","textPreview":"◆","textChars":1,"textLines":1,"bbox":[72,347,16,20]}
+{"kind":"textbox","id":"sh/p8j2d8b2","slide":4,"text":"Evidence-rich detections, counts, state and zone events","textPreview":"Evidence-rich detections, counts, state and zone events","textChars":55,"textLines":1,"bbox":[97,343,485,42]}
+{"kind":"textbox","id":"sh/lwj6psny","slide":4,"text":"◆","textPreview":"◆","textChars":1,"textLines":1,"bbox":[72,406,16,20]}
+{"kind":"textbox","id":"sh/kva5gn6d","slide":4,"text":"Heatmap, dwell, flow, alerts and dynamic insights","textPreview":"Heatmap, dwell, flow, alerts and dynamic insights","textChars":49,"textLines":1,"bbox":[97,402,485,42]}
+{"kind":"textbox","id":"sh/za1oni5s","slide":4,"text":"◆","textPreview":"◆","textChars":1,"textLines":1,"bbox":[72,465,16,20]}
+{"kind":"textbox","id":"sh/y9snedon","slide":4,"text":"MCP tools for discovery, configuration and publishing","textPreview":"MCP tools for discovery, configuration and publishing","textChars":53,"textLines":1,"bbox":[97,461,485,42]}
+{"kind":"shape","id":"sh/9036tsna","slide":4,"bbox":[72,553,500,54]}
+{"kind":"textbox","id":"sh/8zu5knmp","slide":4,"text":"Working 2D POC — not yet SLAM, 3D, annotation or training.","textPreview":"Working 2D POC — not yet SLAM, 3D, annotation or training.","textChars":58,"textLines":1,"bbox":[87,569,470,25]}
+{"kind":"shape","id":"sh/7ylori54","slide":4,"bbox":[625,124,575,476]}
+{"kind":"image","id":"im/h0nmtonm","slide":4,"name":"","geometry":"roundRect","alt":"storelens dashboard","bbox":[639,138,547,448]}
+{"kind":"notes","id":"nt/xvcsls","slide":4,"text":""}
+{"kind":"slide","id":"sl/rop95o","slide":5,"title":"05","textShapes":14}
+{"kind":"textbox","id":"sh/apsja9ov","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"shape","id":"sh/cra1cj61","slide":5,"bbox":[690,0,590,720]}
+{"kind":"textbox","id":"sh/zu1knepc","slide":5,"name":"eyebrow","text":"3D ONBOARDING","textPreview":"3D ONBOARDING","textChars":13,"textLines":1,"bbox":[760,60,430,24]}
+{"kind":"textbox","id":"sh/ytsje9o7","slide":5,"name":"slide-title","text":"Scanning becomes the setup workflow","textPreview":"Scanning becomes the setup workflow","textChars":35,"textLines":1,"bbox":[760,95,450,120]}
+{"kind":"shape","id":"sh/lw32po7i","slide":5,"bbox":[760,258,430,1]}
+{"kind":"textbox","id":"sh/kvu1gj6x","slide":5,"text":"Capture","textPreview":"Capture","textChars":7,"textLines":1,"bbox":[760,270,105,26]}
+{"kind":"textbox","id":"sh/fyh0bup8","slide":5,"text":"guided phone or LiDAR walk-through","textPreview":"guided phone or LiDAR walk-through","textChars":34,"textLines":1,"bbox":[870,270,320,38]}
+{"kind":"shape","id":"sh/ex8jipon","slide":5,"bbox":[760,324,430,1]}
+{"kind":"textbox","id":"sh/8fehczyh","slide":5,"text":"Recover","textPreview":"Recover","textChars":7,"textLines":1,"bbox":[760,336,105,26]}
+{"kind":"textbox","id":"sh/9gnil4z2","slide":5,"text":"geometry, intrinsics, poses and scale","textPreview":"geometry, intrinsics, poses and scale","textChars":37,"textLines":1,"bbox":[870,336,320,38]}
+{"kind":"shape","id":"sh/mdwzapgr","slide":5,"bbox":[760,390,430,1]}
+{"kind":"textbox","id":"sh/7e50juhw","slide":5,"text":"Segment","textPreview":"Segment","textChars":7,"textLines":1,"bbox":[760,402,105,26]}
+{"kind":"textbox","id":"sh/wjehgjyt","slide":5,"text":"planes, fixtures and operational objects","textPreview":"planes, fixtures and operational objects","textChars":40,"textLines":1,"bbox":[870,402,320,38]}
+{"kind":"shape","id":"sh/hk7ip4fe","slide":5,"bbox":[760,456,430,1]}
+{"kind":"textbox","id":"sh/uhwze9gn","slide":5,"text":"Align","textPreview":"Align","textChars":5,"textLines":1,"bbox":[760,468,105,26]}
+{"kind":"textbox","id":"sh/vi50neh8","slide":5,"text":"fixed cameras to the shared world frame","textPreview":"fixed cameras to the shared world frame","textChars":39,"textLines":1,"bbox":[870,468,320,38]}
+{"kind":"shape","id":"sh/cnuh4fy9","slide":5,"bbox":[760,522,430,1]}
+{"kind":"textbox","id":"sh/xo3idkzu","slide":5,"text":"Version","textPreview":"Version","textChars":7,"textLines":1,"bbox":[760,534,105,26]}
+{"kind":"textbox","id":"sh/dkvyhgry","slide":5,"text":"every scene and calibration change","textPreview":"every scene and calibration change","textChars":34,"textLines":1,"bbox":[870,534,320,38]}
+{"kind":"textbox","id":"sh/cjmx8bqd","slide":5,"text":"Capture pathway reference: Apple RoomPlan can produce structured room geometry and USD/USDZ assets.","textPreview":"Capture pathway reference: Apple RoomPlan can produce structured room geometry and USD/USDZ assets.","textChars":99,"textLines":1,"bbox":[72,674,1050,18]}
+{"kind":"image","id":"im/wzmp8vax","slide":5,"name":"","geometry":"rect","alt":"slam scan","bbox":[0,0,1280,720]}
+{"kind":"notes","id":"nt/rop95o","slide":5,"text":""}
+{"kind":"slide","id":"sl/g4sqzk","slide":6,"title":"06","textShapes":7}
+{"kind":"textbox","id":"sh/ip0rupgf","slide":6,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"textbox","id":"sh/5srq54zq","slide":6,"name":"eyebrow","text":"INTERACTIVE DIGITAL TWIN","textPreview":"INTERACTIVE DIGITAL TWIN","textChars":24,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/4ri9wzyl","slide":6,"name":"slide-title","text":"Every observation lands on the same spatial truth","textPreview":"Every observation lands on the same spatial truth","textChars":49,"textLines":1,"bbox":[72,82,515,118]}
+{"kind":"textbox","id":"sh/ruts7ehw","slide":6,"text":"Rotate the model, enter walk mode, click objects and toggle spatial layers in the companion deck.","textPreview":"Rotate the model, enter walk mode, click objects and toggle spatial layers in the companion deck.","textChars":97,"textLines":1,"bbox":[72,225,475,82]}
+{"kind":"shape","id":"sh/qt0ry9gb","slide":6,"bbox":[72,332,260,44]}
+{"kind":"textbox","id":"sh/dwba9oz2","slide":6,"text":"OPEN INTERACTIVE TWIN  ↗","textPreview":"OPEN INTERACTIVE TWIN  ↗","textChars":24,"textLines":1,"bbox":[86,343,232,24]}
+{"kind":"textbox","id":"sh/sv290jyh","slide":6,"text":"PowerPoint is the offline narrative. The browser companion is the live product experience.","textPreview":"PowerPoint is the offline narrative. The browser companion is the live product experience.","textChars":90,"textLines":1,"bbox":[72,405,465,90]}
+{"kind":"shape","id":"sh/7yp8vahs","slide":6,"bbox":[590,77,620,535]}
+{"kind":"textbox","id":"sh/crapsr2t","slide":6,"text":"Live Three.js companion","textPreview":"Live Three.js companion","textChars":23,"textLines":1,"bbox":[930,622,266,24]}
+{"kind":"image","id":"im/3ap8j250","slide":6,"name":"","geometry":"roundRect","alt":"interactive twin","bbox":[604,91,592,507]}
+{"kind":"notes","id":"nt/g4sqzk","slide":6,"text":""}
+{"kind":"slide","id":"sl/bhz3jy","slide":7,"title":"07","textShapes":14}
+{"kind":"textbox","id":"sh/6d8f65s7","slide":7,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"textbox","id":"sh/tgzy1kri","slide":7,"name":"eyebrow","text":"BEACHHEAD → PLATFORM","textPreview":"BEACHHEAD → PLATFORM","textChars":20,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/8fqx8fax","slide":7,"name":"slide-title","text":"Win retail operations first; expand through the same spatial core","textPreview":"Win retail operations first; expand through the same spatial core","textChars":65,"textLines":1,"bbox":[72,82,1110,105]}
+{"kind":"shape","id":"sh/vi1g3a9o","slide":7,"bbox":[72,232,370,300]}
+{"kind":"textbox","id":"sh/uhsfaps3","slide":7,"text":"FIRST WEDGE","textPreview":"FIRST WEDGE","textChars":11,"textLines":1,"bbox":[98,258,230,20]}
+{"kind":"textbox","id":"sh/h4jy5kru","slide":7,"text":"Retail operations","textPreview":"Retail operations","textChars":17,"textLines":1,"bbox":[98,294,300,45]}
+{"kind":"textbox","id":"sh/gjaxcfa9","slide":7,"text":"Entry and zone traffic\nQueue pressure\nAnonymous flow and dwell\nLayout comparison","textPreview":"Entry and zone traffic | Queue pressure | Anonymous flow and dwell | Layout comparison","textChars":80,"textLines":4,"bbox":[98,355,285,145]}
+{"kind":"shape","id":"sh/bmxwrqtk","slide":7,"bbox":[486,280,210,210]}
+{"kind":"textbox","id":"sh/alofylsz","slide":7,"text":"SHARED CORE","textPreview":"SHARED CORE","textChars":11,"textLines":1,"bbox":[526,327,130,20]}
+{"kind":"textbox","id":"sh/w32dgfqt","slide":7,"text":"Semantic scene\nObservation ledger\nEdge runtime\nInsight engine","textPreview":"Semantic scene | Observation ledger | Edge runtime | Insight engine","textChars":61,"textLines":4,"bbox":[511,363,160,98]}
+{"kind":"shape","id":"sh/h4bu9kre","slide":7,"bbox":[755,222,430,1]}
+{"kind":"textbox","id":"sh/a1kve58n","slide":7,"text":"Warehouses","textPreview":"Warehouses","textChars":10,"textLines":1,"bbox":[755,239,180,30]}
+{"kind":"textbox","id":"sh/v2tc7a98","slide":7,"text":"Flow, shelf state and asset reconciliation","textPreview":"Flow, shelf state and asset reconciliation","textChars":42,"textLines":1,"bbox":[930,237,255,56]}
+{"kind":"shape","id":"sh/47mdkfqp","slide":7,"bbox":[755,340,430,1]}
+{"kind":"textbox","id":"sh/58vudk7a","slide":7,"text":"Schools","textPreview":"Schools","textChars":7,"textLines":1,"bbox":[755,357,180,30]}
+{"kind":"textbox","id":"sh/i54vip8z","slide":7,"text":"Anonymous space utilization and safety workflows","textPreview":"Anonymous space utilization and safety workflows","textChars":48,"textLines":1,"bbox":[930,355,255,56]}
+{"kind":"shape","id":"sh/j6dcba9k","slide":7,"bbox":[755,458,430,1]}
+{"kind":"textbox","id":"sh/0bit8vql","slide":7,"text":"Offices","textPreview":"Offices","textChars":7,"textLines":1,"bbox":[755,475,180,30]}
+{"kind":"textbox","id":"sh/lcru10r6","slide":7,"text":"Occupancy, room usage and facility operations","textPreview":"Occupancy, room usage and facility operations","textChars":45,"textLines":1,"bbox":[930,473,255,56]}
+{"kind":"notes","id":"nt/bhz3jy","slide":7,"text":""}
+{"kind":"slide","id":"sl/qd34lp","slide":8,"title":"08","textShapes":12}
+{"kind":"textbox","id":"sh/gvihcji9","slide":8,"text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"textbox","id":"sh/fu9gje1o","slide":8,"name":"eyebrow","text":"WHY NOW","textPreview":"WHY NOW","textChars":7,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/ut0za90j","slide":8,"name":"slide-title","text":"The enabling stack has moved from research to product infrastructure","textPreview":"The enabling stack has moved from research to product infrastructure","textChars":68,"textLines":1,"bbox":[72,82,1120,103]}
+{"kind":"shape","id":"sh/p0bip8j6","slide":8,"bbox":[72,230,1136,1]}
+{"kind":"textbox","id":"sh/4z2hg3il","slide":8,"text":"Mobile spatial capture","textPreview":"Mobile spatial capture","textChars":22,"textLines":1,"bbox":[72,248,310,35]}
+{"kind":"textbox","id":"sh/3ytgny10","slide":8,"text":"RoomPlan already turns LiDAR-equipped iPhone/iPad scans into structured room geometry and USD/USDZ assets.","textPreview":"RoomPlan already turns LiDAR-equipped iPhone/iPad scans into structured room geometry and USD/USDZ assets.","textChars":106,"textLines":1,"bbox":[405,247,770,55]}
+{"kind":"shape","id":"sh/2xkzet0f","slide":8,"bbox":[72,322,1136,1]}
+{"kind":"textbox","id":"sh/547yd4jm","slide":8,"text":"Composable scene standards","textPreview":"Composable scene standards","textChars":26,"textLines":1,"bbox":[72,340,310,35]}
+{"kind":"textbox","id":"sh/k3yh4zi1","slide":8,"text":"OpenUSD provides layerable scenes; glTF provides efficient browser delivery.","textPreview":"OpenUSD provides layerable scenes; glTF provides efficient browser delivery.","textChars":76,"textLines":1,"bbox":[405,339,770,55]}
+{"kind":"shape","id":"sh/axcbytkb","slide":8,"bbox":[72,414,1136,1]}
+{"kind":"textbox","id":"sh/bylcrylw","slide":8,"text":"Browser-native 3D","textPreview":"Browser-native 3D","textChars":17,"textLines":1,"bbox":[72,432,310,35]}
+{"kind":"textbox","id":"sh/cjut032h","slide":8,"text":"Three.js renders and interacts with the twin without specialist desktop software.","textPreview":"Three.js renders and interacts with the twin without specialist desktop software.","textChars":81,"textLines":1,"bbox":[405,431,770,55]}
+{"kind":"shape","id":"sh/xk3ut832","slide":8,"bbox":[72,506,1136,1]}
+{"kind":"textbox","id":"sh/ylcb2dkn","slide":8,"text":"Agentic software","textPreview":"Agentic software","textChars":16,"textLines":1,"bbox":[72,524,310,35]}
+{"kind":"textbox","id":"sh/zmlcvyl8","slide":8,"text":"Governed tools let AI agents inspect context, configure analyses and return evidence-backed results.","textPreview":"Governed tools let AI agents inspect context, configure analyses and return evidence-backed results.","textChars":100,"textLines":1,"bbox":[405,523,770,55]}
+{"kind":"textbox","id":"sh/knut432t","slide":8,"text":"Sources: developer.apple.com/augmented-reality/roomplan · openusd.org · threejs.org","textPreview":"Sources: developer.apple.com/augmented-reality/roomplan · openusd.org · threejs.org","textChars":83,"textLines":1,"bbox":[72,674,1050,18]}
+{"kind":"notes","id":"nt/qd34lp","slide":8,"text":""}
+{"kind":"slide","id":"sl/3dlbh5","slide":9,"title":"09","textShapes":15}
+{"kind":"textbox","id":"sh/cnetcr69","slide":9,"text":"09","textPreview":"09","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"textbox","id":"sh/bm5c3mpo","slide":9,"name":"eyebrow","text":"POSITIONING","textPreview":"POSITIONING","textChars":11,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/alwbaho3","slide":9,"name":"slide-title","text":"ManySight is designed to connect three product categories","textPreview":"ManySight is designed to connect three product categories","textChars":57,"textLines":1,"bbox":[72,82,1100,70]}
+{"kind":"shape","id":"sh/pk3u1w7y","slide":9,"bbox":[72,238,250,2]}
+{"kind":"textbox","id":"sh/ojut8r6d","slide":9,"text":"Camera analytics","textPreview":"Camera analytics","textChars":16,"textLines":1,"bbox":[72,262,250,62]}
+{"kind":"textbox","id":"sh/nilczmps","slide":9,"text":"Operational video and search, often tied to a camera stack.","textPreview":"Operational video and search, often tied to a camera stack.","textChars":59,"textLines":1,"bbox":[72,338,250,125]}
+{"kind":"textbox","id":"sh/2xcb6ho7","slide":9,"text":"Category example: Verkada","textPreview":"Category example: Verkada","textChars":25,"textLines":1,"bbox":[72,490,250,35]}
+{"kind":"shape","id":"sh/tg7udg72","slide":9,"bbox":[364,238,250,2]}
+{"kind":"textbox","id":"sh/8fydkb6h","slide":9,"text":"Digital twins","textPreview":"Digital twins","textChars":13,"textLines":1,"bbox":[364,262,250,62]}
+{"kind":"textbox","id":"sh/25cz6ton","slide":9,"text":"Rich scene composition and simulation, often heavy for daily camera intelligence.","textPreview":"Rich scene composition and simulation, often heavy for daily camera intelligence.","textChars":81,"textLines":1,"bbox":[364,338,250,125]}
+{"kind":"textbox","id":"sh/36lgzyp8","slide":9,"text":"Category example: NVIDIA Omniverse","textPreview":"Category example: NVIDIA Omniverse","textChars":34,"textLines":1,"bbox":[364,490,250,35]}
+{"kind":"shape","id":"sh/o7eh836t","slide":9,"bbox":[656,238,250,2]}
+{"kind":"textbox","id":"sh/p8ny1o7e","slide":9,"text":"CV MLOps","textPreview":"CV MLOps","textChars":8,"textLines":1,"bbox":[656,262,250,62]}
+{"kind":"textbox","id":"sh/e1cz29or","slide":9,"text":"Annotation, datasets, training and deployment with limited spatial operating context.","textPreview":"Annotation, datasets, training and deployment with limited spatial operating context.","textChars":85,"textLines":1,"bbox":[656,338,250,125]}
+{"kind":"textbox","id":"sh/f2lgbepc","slide":9,"text":"Category example: Roboflow","textPreview":"Category example: Roboflow","textChars":26,"textLines":1,"bbox":[656,490,250,35]}
+{"kind":"shape","id":"sh/g3uh4j6x","slide":9,"bbox":[948,218,260,330]}
+{"kind":"textbox","id":"sh/143yxo7i","slide":9,"text":"MANY\nSIGHT","textPreview":"MANY | SIGHT","textChars":10,"textLines":2,"bbox":[974,248,160,78]}
+{"kind":"textbox","id":"sh/yxwzedov","slide":9,"text":"A persistent spatial model connecting live observations, governed AI workflows and operational decisions.","textPreview":"A persistent spatial model connecting live observations, governed AI workflows and operational decisions.","textChars":105,"textLines":1,"bbox":[974,350,208,145]}
+{"kind":"textbox","id":"sh/zyp07i5g","slide":9,"text":"Category references: verkada.com · docs.omniverse.nvidia.com · docs.roboflow.com","textPreview":"Category references: verkada.com · docs.omniverse.nvidia.com · docs.roboflow.com","textChars":80,"textLines":1,"bbox":[72,674,1050,18]}
+{"kind":"notes","id":"nt/3dlbh5","slide":9,"text":""}
+{"kind":"slide","id":"sl/5ow8sx","slide":10,"title":"10","textShapes":14}
+{"kind":"textbox","id":"sh/21w3u5k3","slide":10,"text":"10","textPreview":"10","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"shape","id":"sh/onelwf29","slide":10,"bbox":[0,0,560,720]}
+{"kind":"textbox","id":"sh/fy5kzq1c","slide":10,"name":"eyebrow","text":"DATA FLYWHEEL","textPreview":"DATA FLYWHEEL","textChars":13,"textLines":1,"bbox":[72,55,420,24]}
+{"kind":"textbox","id":"sh/exw3qlk7","slide":10,"name":"slide-title","text":"Each deployment improves the next model—without losing provenance","textPreview":"Each deployment improves the next model—without losing provenance","textChars":65,"textLines":1,"bbox":[72,92,450,165]}
+{"kind":"textbox","id":"sh/10nm10ji","slide":10,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[72,304,28,22]}
+{"kind":"textbox","id":"sh/gzelsv2x","slide":10,"text":"Sample uncertain or high-value frames","textPreview":"Sample uncertain or high-value frames","textChars":37,"textLines":1,"bbox":[112,298,390,39]}
+{"kind":"textbox","id":"sh/zup4bu1w","slide":10,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[72,360,28,22]}
+{"kind":"textbox","id":"sh/ytg32pkb","slide":10,"text":"Annotate with review and quality control","textPreview":"Annotate with review and quality control","textChars":40,"textLines":1,"bbox":[112,354,390,39]}
+{"kind":"textbox","id":"sh/w361cfa5","slide":10,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[72,416,28,22]}
+{"kind":"textbox","id":"sh/h4fi5kbq","slide":10,"text":"Freeze versioned datasets","textPreview":"Freeze versioned datasets","textChars":25,"textLines":1,"bbox":[112,410,390,39]}
+{"kind":"textbox","id":"sh/u1ozapsz","slide":10,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[72,472,28,22]}
+{"kind":"textbox","id":"sh/v2x03atk","slide":10,"text":"Evaluate by camera condition and workflow","textPreview":"Evaluate by camera condition and workflow","textChars":41,"textLines":1,"bbox":[112,466,390,39]}
+{"kind":"textbox","id":"sh/8z6h8fut","slide":10,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[72,528,28,22]}
+{"kind":"textbox","id":"sh/90fi1kbe","slide":10,"text":"Deploy, monitor, compare and roll back","textPreview":"Deploy, monitor, compare and roll back","textChars":38,"textLines":1,"bbox":[112,522,390,39]}
+{"kind":"textbox","id":"sh/md4z65c3","slide":10,"text":"Dataset-versioning reference: docs.roboflow.com/datasets/dataset-versions","textPreview":"Dataset-versioning reference: docs.roboflow.com/datasets/dataset-versions","textChars":73,"textLines":1,"bbox":[72,674,1050,18]}
+{"kind":"image","id":"im/kz6h8fi5","slide":10,"name":"","geometry":"rect","alt":"annotation training","bbox":[0,0,1280,720]}
+{"kind":"notes","id":"nt/5ow8sx","slide":10,"text":""}
+{"kind":"slide","id":"sl/chcx5b","slide":11,"title":"11","textShapes":17}
+{"kind":"textbox","id":"sh/b6ls36t8","slide":11,"text":"11","textPreview":"11","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"textbox","id":"sh/w7u9wrut","slide":11,"name":"eyebrow","text":"CONVERSATIONAL OPERATIONS","textPreview":"CONVERSATIONAL OPERATIONS","textChars":25,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/x83a5wbe","slide":11,"name":"slide-title","text":"Users ask a business question; the platform answers with spatial evidence","textPreview":"Users ask a business question; the platform answers with spatial evidence","textChars":73,"textLines":1,"bbox":[72,82,1130,102]}
+{"kind":"shape","id":"sh/y9wry1cz","slide":11,"bbox":[72,210,1136,90]}
+{"kind":"textbox","id":"sh/ja5s76tk","slide":11,"text":"“Compare queue pressure before and after the layout change—and show me where the difference happened.”","textPreview":"“Compare queue pressure before and after the layout change—and show me where the difference happened.”","textChars":102,"textLines":1,"bbox":[100,232,1080,48]}
+{"kind":"shape","id":"sh/kbe90bu5","slide":11,"bbox":[72,360,240,1]}
+{"kind":"textbox","id":"sh/lcna9gba","slide":11,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[72,379,30,22]}
+{"kind":"textbox","id":"sh/edsrmhcv","slide":11,"text":"Interpret","textPreview":"Interpret","textChars":9,"textLines":1,"bbox":[72,410,220,38]}
+{"kind":"textbox","id":"sh/ze18vmt0","slide":11,"text":"Resolve sites, zones, time ranges and definitions.","textPreview":"Resolve sites, zones, time ranges and definitions.","textChars":50,"textLines":1,"bbox":[72,458,235,75]}
+{"kind":"shape","id":"sh/j6lk3yxo","slide":11,"bbox":[356,360,240,1]}
+{"kind":"textbox","id":"sh/y5sjatg3","slide":11,"text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[356,379,30,22]}
+{"kind":"textbox","id":"sh/ls3258fu","slide":11,"text":"Query","textPreview":"Query","textChars":5,"textLines":1,"bbox":[356,410,220,38]}
+{"kind":"textbox","id":"sh/kru1c3y9","slide":11,"text":"Use permissioned MCP/API tools.","textPreview":"Use permissioned MCP/API tools.","textChars":31,"textLines":1,"bbox":[356,458,235,75]}
+{"kind":"shape","id":"sh/b210zyhs","slide":11,"bbox":[640,360,240,1]}
+{"kind":"textbox","id":"sh/a1sj6tg7","slide":11,"text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[640,379,30,22]}
+{"kind":"textbox","id":"sh/x4j21ozi","slide":11,"text":"Verify","textPreview":"Verify","textChars":6,"textLines":1,"bbox":[640,410,220,38]}
+{"kind":"textbox","id":"sh/w3a18jyx","slide":11,"text":"Check freshness, provenance and limitations.","textPreview":"Check freshness, provenance and limitations.","textChars":44,"textLines":1,"bbox":[640,458,235,75]}
+{"kind":"shape","id":"sh/nyh0vehg","slide":11,"bbox":[924,360,240,1]}
+{"kind":"textbox","id":"sh/mx8j29gv","slide":11,"text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[924,379,30,22]}
+{"kind":"textbox","id":"sh/q98je90n","slide":11,"text":"Answer","textPreview":"Answer","textChars":6,"textLines":1,"bbox":[924,410,220,38]}
+{"kind":"textbox","id":"sh/ruhkne18","slide":11,"text":"Return a chart, 3D overlay and supporting evidence.","textPreview":"Return a chart, 3D overlay and supporting evidence.","textChars":51,"textLines":1,"bbox":[924,458,235,75]}
+{"kind":"shape","id":"sh/cvqlgjit","slide":11,"bbox":[72,575,1136,44]}
+{"kind":"textbox","id":"sh/dwz2poje","slide":11,"text":"StoreLens already exposes governed MCP tools; the customer-facing conversational layer is roadmap.","textPreview":"StoreLens already exposes governed MCP tools; the customer-facing conversational layer is roadmap.","textChars":98,"textLines":1,"bbox":[90,588,1100,22]}
+{"kind":"notes","id":"nt/chcx5b","slide":11,"text":""}
+{"kind":"slide","id":"sl/x73zw0","slide":12,"title":"12","textShapes":15}
+{"kind":"textbox","id":"sh/za9cr61w","slide":12,"text":"12","textPreview":"12","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"textbox","id":"sh/0bit0bi1","slide":12,"name":"eyebrow","text":"TARGET ARCHITECTURE","textPreview":"TARGET ARCHITECTURE","textChars":19,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/lcbutgjm","slide":12,"name":"slide-title","text":"Separate camera access from the customer control plane","textPreview":"Separate camera access from the customer control plane","textChars":54,"textLines":1,"bbox":[72,82,1100,68]}
+{"kind":"shape","id":"sh/mdkb2107","slide":12,"bbox":[72,235,330,300]}
+{"kind":"textbox","id":"sh/netcv61s","slide":12,"text":"ON SITE","textPreview":"ON SITE","textChars":7,"textLines":1,"bbox":[96,262,280,20]}
+{"kind":"textbox","id":"sh/8f2t4bid","slide":12,"text":"ManySight Edge","textPreview":"ManySight Edge","textChars":14,"textLines":1,"bbox":[96,303,280,62]}
+{"kind":"textbox","id":"sh/9gbuxgjy","slide":12,"text":"Camera connectors\nLocal secrets\nSupervised workers\nOffline buffer + checkpoints","textPreview":"Camera connectors | Local secrets | Supervised workers | Offline buffer + checkpoints","textChars":79,"textLines":4,"bbox":[96,385,280,130]}
+{"kind":"textbox","id":"sh/ahkb6l0j","slide":12,"text":"⇄","textPreview":"⇄","textChars":1,"textLines":1,"bbox":[416,356,40,30]}
+{"kind":"shape","id":"sh/vitczq1o","slide":12,"bbox":[467,235,330,300]}
+{"kind":"textbox","id":"sh/zi9krix0","slide":12,"text":"CLOUD CONTROL PLANE","textPreview":"CLOUD CONTROL PLANE","textChars":19,"textLines":1,"bbox":[491,262,280,20]}
+{"kind":"textbox","id":"sh/ex0jidgf","slide":12,"text":"Spatial intelligence core","textPreview":"Spatial intelligence core","textChars":25,"textLines":1,"bbox":[491,303,280,62]}
+{"kind":"textbox","id":"sh/1kr2tsf6","slide":12,"text":"Tenancy + scene graph\nObservation ledger + state\nInsights + review\nGovernance + audit","textPreview":"Tenancy + scene graph | Observation ledger + state | Insights + review | Governance + audit","textChars":85,"textLines":4,"bbox":[491,385,280,130]}
+{"kind":"textbox","id":"sh/0ji1knyl","slide":12,"text":"⇄","textPreview":"⇄","textChars":1,"textLines":1,"bbox":[811,356,40,30]}
+{"kind":"shape","id":"sh/ru90nih4","slide":12,"bbox":[862,235,330,300]}
+{"kind":"textbox","id":"sh/qt0jedgj","slide":12,"text":"EXPERIENCE","textPreview":"EXPERIENCE","textChars":10,"textLines":1,"bbox":[886,262,280,20]}
+{"kind":"textbox","id":"sh/dwripsfu","slide":12,"text":"3D + operational UI","textPreview":"3D + operational UI","textChars":19,"textLines":1,"bbox":[886,303,280,62]}
+{"kind":"textbox","id":"sh/cvi1gny9","slide":12,"text":"Digital twin\nDashboards + conversation\nAlerts + annotation\nAdministration","textPreview":"Digital twin | Dashboards + conversation | Alerts + annotation | Administration","textChars":73,"textLines":4,"bbox":[886,385,280,130]}
+{"kind":"textbox","id":"sh/bqtkj2x8","slide":12,"text":"Camera credentials stay at the edge. The cloud stores spatial truth and approved evidence.","textPreview":"Camera credentials stay at the edge. The cloud stores spatial truth and approved evidence.","textChars":90,"textLines":1,"bbox":[72,584,1136,42]}
+{"kind":"notes","id":"nt/x73zw0","slide":12,"text":""}
+{"kind":"slide","id":"sl/ptiiv5","slide":13,"title":"13","textShapes":21}
+{"kind":"textbox","id":"sh/f65kv6hw","slide":13,"text":"13","textPreview":"13","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"textbox","id":"sh/07el4byh","slide":13,"name":"eyebrow","text":"FEATURES STILL MISSING","textPreview":"FEATURES STILL MISSING","textChars":22,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/18n2xwfm","slide":13,"name":"slide-title","text":"The vision is compelling; the remaining work is product infrastructure","textPreview":"The vision is compelling; the remaining work is product infrastructure","textChars":70,"textLines":1,"bbox":[72,82,1120,85]}
+{"kind":"shape","id":"sh/q1c3yhgz","slide":13,"bbox":[72,235,330,1]}
+{"kind":"textbox","id":"sh/r25krmhk","slide":13,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[72,253,36,20]}
+{"kind":"textbox","id":"sh/s3el0ry5","slide":13,"text":"3D capture core","textPreview":"3D capture core","textChars":15,"textLines":1,"bbox":[72,283,330,38]}
+{"kind":"textbox","id":"sh/d4n2twzq","slide":13,"text":"Guided scan app, SLAM, scene graph, versions, camera alignment and drift checks.","textPreview":"Guided scan app, SLAM, scene graph, versions, camera alignment and drift checks.","textChars":80,"textLines":1,"bbox":[72,329,330,78]}
+{"kind":"shape","id":"sh/ixcjuhg3","slide":13,"bbox":[454,235,330,1]}
+{"kind":"textbox","id":"sh/3ylknmho","slide":13,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[454,253,36,20]}
+{"kind":"textbox","id":"sh/fmd0zqh0","slide":13,"text":"Supervised edge","textPreview":"Supervised edge","textChars":15,"textLines":1,"bbox":[454,283,330,38]}
+{"kind":"textbox","id":"sh/el4jqlgv","slide":13,"text":"Enrollment, secrets, offline buffering, checkpoints, logs, updates and rollback.","textPreview":"Enrollment, secrets, offline buffering, checkpoints, logs, updates and rollback.","textChars":80,"textLines":1,"bbox":[454,329,330,78]}
+{"kind":"shape","id":"sh/1ofi1gz6","slide":13,"bbox":[836,235,330,1]}
+{"kind":"textbox","id":"sh/0nm1svyl","slide":13,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[836,253,36,20]}
+{"kind":"textbox","id":"sh/nqx03qhc","slide":13,"text":"Data & model lifecycle","textPreview":"Data & model lifecycle","textChars":22,"textLines":1,"bbox":[836,283,330,38]}
+{"kind":"textbox","id":"sh/2pojulgr","slide":13,"text":"Evidence storage, annotation QA, dataset/model registry, evaluation and deployment.","textPreview":"Evidence storage, annotation QA, dataset/model registry, evaluation and deployment.","textChars":83,"textLines":1,"bbox":[836,329,330,78]}
+{"kind":"shape","id":"sh/psfi50zi","slide":13,"bbox":[72,423,330,1]}
+{"kind":"textbox","id":"sh/or61wvyx","slide":13,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[72,441,36,20]}
+{"kind":"textbox","id":"sh/jut0r6h8","slide":13,"text":"Customer platform","textPreview":"Customer platform","textChars":17,"textLines":1,"bbox":[72,471,330,38]}
+{"kind":"textbox","id":"sh/itkzi1gn","slide":13,"text":"Organizations, sites, RBAC, billing, integrations, exports and support tooling.","textPreview":"Organizations, sites, RBAC, billing, integrations, exports and support tooling.","textChars":79,"textLines":1,"bbox":[72,517,330,78]}
+{"kind":"shape","id":"sh/m9s3q90v","slide":13,"bbox":[454,423,330,1]}
+{"kind":"textbox","id":"sh/7a14ze1g","slide":13,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[454,441,36,20]}
+{"kind":"textbox","id":"sh/8balsji1","slide":13,"text":"Trust & governance","textPreview":"Trust & governance","textChars":18,"textLines":1,"bbox":[454,471,330,38]}
+{"kind":"textbox","id":"sh/9cjm14jm","slide":13,"text":"Purpose, retention, audit, quality gates, uncertainty, privacy and incident operations.","textPreview":"Purpose, retention, audit, quality gates, uncertainty, privacy and incident operations.","textChars":87,"textLines":1,"bbox":[454,517,330,78]}
+{"kind":"shape","id":"sh/yl83mp0z","slide":13,"bbox":[836,423,330,1]}
+{"kind":"textbox","id":"sh/zmhkvu1k","slide":13,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[836,441,36,20]}
+{"kind":"textbox","id":"sh/knqlozi5","slide":13,"text":"Conversational semantics","textPreview":"Conversational semantics","textChars":24,"textLines":1,"bbox":[836,471,330,38]}
+{"kind":"textbox","id":"sh/lojmx4jq","slide":13,"text":"Business ontology, query planner, permissions, citations, memory and action confirmation.","textPreview":"Business ontology, query planner, permissions, citations, memory and action confirmation.","textChars":89,"textLines":1,"bbox":[836,517,330,78]}
+{"kind":"notes","id":"nt/ptiiv5","slide":13,"text":""}
+{"kind":"slide","id":"sl/ujq1wg","slide":14,"title":"14","textShapes":19}
+{"kind":"textbox","id":"sh/ra9o7ihs","slide":14,"text":"14","textPreview":"14","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"textbox","id":"sh/sbi5gnid","slide":14,"name":"eyebrow","text":"12-MONTH EXECUTION","textPreview":"12-MONTH EXECUTION","textChars":18,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/tcr69szy","slide":14,"name":"slide-title","text":"Build toward repeatability through measurable gates","textPreview":"Build toward repeatability through measurable gates","textChars":51,"textLines":1,"bbox":[72,82,1050,68]}
+{"kind":"shape","id":"sh/edk7ix03","slide":14,"bbox":[90,270,1080,2]}
+{"kind":"shape","id":"sh/fetob2ho","slide":14,"bbox":[85,261,18,18]}
+{"kind":"textbox","id":"sh/gf2pk7i9","slide":14,"text":"NOW","textPreview":"NOW","textChars":3,"textLines":1,"bbox":[72,300,240,20]}
+{"kind":"textbox","id":"sh/1gb6dszu","slide":14,"text":"POC proof","textPreview":"POC proof","textChars":9,"textLines":1,"bbox":[72,337,250,40]}
+{"kind":"textbox","id":"sh/uhgn6t0z","slide":14,"text":"2D geometry, observations, analytics, alerts, insights and MCP.","textPreview":"2D geometry, observations, analytics, alerts, insights and MCP.","textChars":63,"textLines":1,"bbox":[72,390,250,112]}
+{"kind":"textbox","id":"sh/vipozy1k","slide":14,"text":"Gate: honest demo","textPreview":"Gate: honest demo","textChars":17,"textLines":1,"bbox":[72,530,250,30]}
+{"kind":"shape","id":"sh/fehob29k","slide":14,"bbox":[369,261,18,18]}
+{"kind":"textbox","id":"sh/ed87ix8z","slide":14,"text":"BY MONTH 3","textPreview":"BY MONTH 3","textChars":10,"textLines":1,"bbox":[356,300,240,20]}
+{"kind":"textbox","id":"sh/1gzqdcrq","slide":14,"text":"Pilot core","textPreview":"Pilot core","textChars":10,"textLines":1,"bbox":[356,337,250,40]}
+{"kind":"textbox","id":"sh/gfqpk7q5","slide":14,"text":"Tenancy, PostgreSQL, idempotency, supervised edge and evaluation.","textPreview":"Tenancy, PostgreSQL, idempotency, supervised edge and evaluation.","textChars":65,"textLines":1,"bbox":[356,390,250,112]}
+{"kind":"textbox","id":"sh/rqho729o","slide":14,"text":"Gate: 7 days unattended","textPreview":"Gate: 7 days unattended","textChars":23,"textLines":1,"bbox":[356,530,250,30]}
+{"kind":"shape","id":"sh/6po7ex83","slide":14,"bbox":[653,261,18,18]}
+{"kind":"textbox","id":"sh/tsz69sre","slide":14,"text":"BY MONTH 6","textPreview":"BY MONTH 6","textChars":10,"textLines":1,"bbox":[640,300,240,20]}
+{"kind":"textbox","id":"sh/srqpg7q9","slide":14,"text":"Spatial onboarding","textPreview":"Spatial onboarding","textChars":18,"textLines":1,"bbox":[640,337,250,40]}
+{"kind":"textbox","id":"sh/jmxo3i9c","slide":14,"text":"Scan app, 3D scene graph, auto-calibration, twin and annotation.","textPreview":"Scan app, 3D scene graph, auto-calibration, twin and annotation.","textChars":64,"textLines":1,"bbox":[640,390,250,112]}
+{"kind":"textbox","id":"sh/ilo7ad8r","slide":14,"text":"Gate: one repeatable install","textPreview":"Gate: one repeatable install","textChars":28,"textLines":1,"bbox":[640,530,250,30]}
+{"kind":"shape","id":"sh/mh47mdcz","slide":14,"bbox":[937,261,18,18]}
+{"kind":"textbox","id":"sh/7id8fitk","slide":14,"text":"BY MONTH 12","textPreview":"BY MONTH 12","textChars":11,"textLines":1,"bbox":[924,300,240,20]}
+{"kind":"textbox","id":"sh/8j6ponup","slide":14,"text":"Closed-loop product","textPreview":"Closed-loop product","textChars":19,"textLines":1,"bbox":[924,337,250,40]}
+{"kind":"textbox","id":"sh/9kfqhsba","slide":14,"text":"Model registry, rollout/rollback, conversation and multi-site operations.","textPreview":"Model registry, rollout/rollback, conversation and multi-site operations.","textChars":73,"textLines":1,"bbox":[924,390,250,112]}
+{"kind":"textbox","id":"sh/ulo7qxcv","slide":14,"text":"Gate: paid expansion","textPreview":"Gate: paid expansion","textChars":20,"textLines":1,"bbox":[924,530,250,30]}
+{"kind":"notes","id":"nt/ujq1wg","slide":14,"text":""}
+{"kind":"slide","id":"sl/fvqybn","slide":15,"title":"15","textShapes":18}
+{"kind":"textbox","id":"sh/cz6hc3u9","slide":15,"text":"15","textPreview":"15","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"textbox","id":"sh/byx0jydo","slide":15,"name":"eyebrow","text":"GO-TO-MARKET","textPreview":"GO-TO-MARKET","textChars":12,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/qx4zatc3","slide":15,"name":"slide-title","text":"Start with one operational question at one site","textPreview":"Start with one operational question at one site","textChars":47,"textLines":1,"bbox":[72,82,1080,68]}
+{"kind":"shape","id":"sh/pwvihovi","slide":15,"bbox":[72,235,240,2]}
+{"kind":"textbox","id":"sh/ovmh83ud","slide":15,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[72,260,240,85]}
+{"kind":"textbox","id":"sh/3ud0fyds","slide":15,"text":"store","textPreview":"store","textChars":5,"textLines":1,"bbox":[72,355,240,30]}
+{"kind":"shape","id":"sh/2t4z6tc7","slide":15,"bbox":[356,235,240,2]}
+{"kind":"textbox","id":"sh/9szitsb2","slide":15,"text":"2–5","textPreview":"2–5","textChars":3,"textLines":1,"bbox":[356,260,240,85]}
+{"kind":"textbox","id":"sh/8rqhknuh","slide":15,"text":"existing cameras","textPreview":"existing cameras","textChars":16,"textLines":1,"bbox":[356,355,240,30]}
+{"kind":"shape","id":"sh/m50vyxwn","slide":15,"bbox":[640,235,240,2]}
+{"kind":"textbox","id":"sh/76tw72x8","slide":15,"text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[640,260,240,85]}
+{"kind":"textbox","id":"sh/872d07ed","slide":15,"text":"weeks","textPreview":"weeks","textChars":5,"textLines":1,"bbox":[640,355,240,30]}
+{"kind":"shape","id":"sh/98be9cfy","slide":15,"bbox":[924,235,240,2]}
+{"kind":"textbox","id":"sh/yh0vuxwb","slide":15,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[924,260,240,85]}
+{"kind":"textbox","id":"sh/zi9c32xw","slide":15,"text":"decision to improve","textPreview":"decision to improve","textChars":19,"textLines":1,"bbox":[924,355,240,30]}
+{"kind":"textbox","id":"sh/kjidw7eh","slide":15,"text":"Technical","textPreview":"Technical","textChars":9,"textLines":1,"bbox":[72,456,330,35]}
+{"kind":"textbox","id":"sh/lkru5sf2","slide":15,"text":"Accuracy, uptime, latency, gaps and recovery","textPreview":"Accuracy, uptime, latency, gaps and recovery","textChars":44,"textLines":1,"bbox":[72,502,330,70]}
+{"kind":"textbox","id":"sh/id4v6hwv","slide":15,"text":"Operational","textPreview":"Operational","textChars":11,"textLines":1,"bbox":[454,456,330,35]}
+{"kind":"textbox","id":"sh/jedwfmx0","slide":15,"text":"Manager usage, reviewed signals and actions influenced","textPreview":"Manager usage, reviewed signals and actions influenced","textChars":54,"textLines":1,"bbox":[454,502,330,70]}
+{"kind":"textbox","id":"sh/fi5sreds","slide":15,"text":"Economic","textPreview":"Economic","textChars":8,"textLines":1,"bbox":[836,456,330,35]}
+{"kind":"textbox","id":"sh/ehwry9c7","slide":15,"text":"Installation time, support burden and compute cost per camera","textPreview":"Installation time, support burden and compute cost per camera","textChars":61,"textLines":1,"bbox":[836,502,330,70]}
+{"kind":"shape","id":"sh/1knatovi","slide":15,"bbox":[72,602,1136,42]}
+{"kind":"textbox","id":"sh/gjet0jux","slide":15,"text":"No fabricated traction or pricing: those become investor-grade only after design-partner evidence.","textPreview":"No fabricated traction or pricing: those become investor-grade only after design-partner evidence.","textChars":98,"textLines":1,"bbox":[90,614,1100,20]}
+{"kind":"notes","id":"nt/fvqybn","slide":15,"text":""}
+{"kind":"slide","id":"sl/4m9j8p","slide":16,"title":"16","textShapes":11}
+{"kind":"textbox","id":"sh/u58nudwv","slide":16,"text":"16","textPreview":"16","textChars":2,"textLines":1,"bbox":[1195,669,35,18]}
+{"kind":"shape","id":"sh/h8zmpsv6","slide":16,"bbox":[560,0,720,720]}
+{"kind":"textbox","id":"sh/w7q5wnel","slide":16,"name":"eyebrow","text":"THE INVESTMENT THESIS","textPreview":"THE INVESTMENT THESIS","textChars":21,"textLines":1,"bbox":[72,48,760,24]}
+{"kind":"textbox","id":"sh/72x4jyd4","slide":16,"text":"A digital twin that\nanswers back","textPreview":"A digital twin that | answers back","textChars":32,"textLines":2,"bbox":[72,104,920,170]}
+{"kind":"shape","id":"sh/mho3qdwj","slide":16,"bbox":[72,350,330,1]}
+{"kind":"textbox","id":"sh/94fml8va","slide":16,"text":"Proof exists","textPreview":"Proof exists","textChars":12,"textLines":1,"bbox":[72,375,330,34]}
+{"kind":"textbox","id":"sh/8365s3ep","slide":16,"text":"StoreLens validates the observation, geometry, insight and MCP foundations.","textPreview":"StoreLens validates the observation, geometry, insight and MCP foundations.","textChars":75,"textLines":1,"bbox":[72,417,330,96]}
+{"kind":"shape","id":"sh/ry14v2d8","slide":16,"bbox":[454,350,330,1]}
+{"kind":"textbox","id":"sh/6xsn2xwn","slide":16,"text":"The wedge is disciplined","textPreview":"The wedge is disciplined","textChars":24,"textLines":1,"bbox":[454,375,330,34]}
+{"kind":"textbox","id":"sh/svy9czad","slide":16,"text":"Retail operations creates a measurable first use case without limiting the architecture.","textPreview":"Retail operations creates a measurable first use case without limiting the architecture.","textChars":88,"textLines":1,"bbox":[454,417,330,96]}
+{"kind":"shape","id":"sh/tw7al4ry","slide":16,"bbox":[836,350,330,1]}
+{"kind":"textbox","id":"sh/6twraps7","slide":16,"text":"The roadmap is concrete","textPreview":"The roadmap is concrete","textChars":23,"textLines":1,"bbox":[836,375,330,34]}
+{"kind":"textbox","id":"sh/7u5sju9s","slide":16,"text":"3D onboarding, reliable edge execution and a closed-loop model lifecycle turn the POC into a customer platform.","textPreview":"3D onboarding, reliable edge execution and a closed-loop model lifecycle turn the POC into a customer platform.","textChars":111,"textLines":1,"bbox":[836,417,330,96]}
+{"kind":"textbox","id":"sh/k7e98za1","slide":16,"text":"The next milestone: one site running for 30 days, producing trusted operational value, with an installation that can be repeated.","textPreview":"The next milestone: one site running for 30 days, producing trusted operational value, with an installation that can be repeated.","textChars":129,"textLines":1,"bbox":[72,565,1090,72]}
+{"kind":"textbox","id":"sh/5snahkrm","slide":16,"text":"ManySight · Spatial intelligence for the physical world","textPreview":"ManySight · Spatial intelligence for the physical world","textChars":55,"textLines":1,"bbox":[72,655,500,18]}
+{"kind":"notes","id":"nt/4m9j8p","slide":16,"text":""}

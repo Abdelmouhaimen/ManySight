@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ManySight — Spatial intelligence platform</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="deck" aria-live="polite">
+      <section class="slide cover platform-cover active" data-slide="1">
+        <header class="brand"><span class="brand-mark"><i></i></span><strong>ManySight</strong></header>
+        <div class="cover-copy platform-cover-copy">
+          <p class="kicker">AI-NATIVE SPATIAL INTELLIGENCE</p>
+          <h1>Understand every physical space.</h1>
+          <p>ManySight turns mapped environments and camera observations into live operations, explainable insights, and custom AI models.</p>
+          <div class="platform-pillars" aria-label="Platform workflow"><span>Digitize</span><i></i><span>Observe</span><i></i><span>Understand</span><i></i><span>Train</span></div>
+        </div>
+        <figure class="platform-cover-visual"><img src="./assets/platform-cover-hero.png" alt="Semantic digital twin with cameras, activity paths, and spatial analytics"></figure>
+      </section>
+
+      <section class="slide workspace-slide" data-slide="2">
+        <div class="app-frame">
+          <header class="app-header">
+            <div class="app-brand"><span class="brand-mark small"><i></i></span><strong>ManySight</strong></div>
+            <div class="project-title"><span>PROJECT</span><strong>Market Central</strong></div>
+            <div class="header-status"><i></i> Space setup</div>
+          </header>
+
+          <div class="app-body">
+            <aside class="side-rail">
+              <button class="rail-button active" aria-label="Space setup"><span>⌂</span><small>Setup</small></button>
+              <button class="rail-button" aria-label="Objects"><span>◇</span><small>Objects</small></button>
+              <button class="rail-button" aria-label="Settings"><span>· · ·</span><small>More</small></button>
+            </aside>
+
+            <section class="setup-workspace">
+              <div class="workspace-heading">
+                <div>
+                  <p class="kicker">STORE ONBOARDING</p>
+                  <h2>Build the spatial model</h2>
+                </div>
+                <div class="completion"><span>2 of 3 complete</span><i><b></b></i></div>
+              </div>
+
+              <nav class="step-tabs" aria-label="Setup steps">
+                <button class="step-tab active" data-step="scan"><span>1</span><div><small>STEP ONE</small><strong>Scan store</strong></div><b>✓</b></button>
+                <button class="step-tab" data-step="cameras"><span>2</span><div><small>STEP TWO</small><strong>Link cameras</strong></div><b>6</b></button>
+                <button class="step-tab" data-step="model"><span>3</span><div><small>STEP THREE</small><strong>Explore 3D</strong></div><b>→</b></button>
+              </nav>
+
+              <div class="step-panel active" data-panel="scan">
+                <div class="scan-copy">
+                  <div class="success-icon">✓</div>
+                  <p class="kicker">SCAN COMPLETE</p>
+                  <h3>Your store is ready.</h3>
+                  <p>The walkthrough produced a clean shell, fixtures, seven operating zones and a coordinate system for the cameras.</p>
+                  <div class="scan-stats">
+                    <div><strong>1,286 m²</strong><span>mapped area</span></div>
+                    <div><strong>96%</strong><span>scan coverage</span></div>
+                    <div><strong>07</strong><span>zones found</span></div>
+                  </div>
+                  <div class="button-row">
+                    <button class="primary-action" data-go="cameras">Continue to cameras <span>→</span></button>
+                    <button class="secondary-action">Replace scan</button>
+                  </div>
+                </div>
+                <figure class="scan-visual">
+                  <img src="./assets/store-scan-wide.png" alt="Person scanning the complete store with a phone" />
+                  <figcaption><span><i></i> Processing complete</span><strong>Walkthrough · 03:42</strong></figcaption>
+                </figure>
+              </div>
+
+              <div class="step-panel cameras-panel" data-panel="cameras">
+                <div class="panel-intro">
+                  <div><p class="kicker">CAMERA SOURCES</p><h3>Six cameras are aligned.</h3><p>Select a source to inspect its calibration and store coverage.</p></div>
+                  <button class="primary-action compact">+ Add camera</button>
+                </div>
+                <div class="camera-layout">
+                  <div class="camera-list" id="cameraList">
+                    <button class="camera-card active" data-camera="CAM-01" data-area="Entry" data-coverage="Entry · Zone A" data-pose="2.8 m · 28°" data-quality="Excellent"><span class="camera-glyph"></span><div><strong>CAM-01</strong><small>Entry</small></div><b>Calibrated</b></button>
+                    <button class="camera-card" data-camera="CAM-02" data-area="Fresh zone" data-coverage="Fresh · Aisle A" data-pose="3.2 m · 34°" data-quality="Excellent"><span class="camera-glyph"></span><div><strong>CAM-02</strong><small>Fresh zone</small></div><b>Calibrated</b></button>
+                    <button class="camera-card" data-camera="CAM-03" data-area="Zone A" data-coverage="Aisles A–C" data-pose="3.4 m · 41°" data-quality="Good"><span class="camera-glyph"></span><div><strong>CAM-03</strong><small>Zone A</small></div><b>Calibrated</b></button>
+                    <button class="camera-card" data-camera="CAM-04" data-area="Zone B" data-coverage="Aisles D–F" data-pose="3.4 m · 39°" data-quality="Good"><span class="camera-glyph"></span><div><strong>CAM-04</strong><small>Zone B</small></div><b>Calibrated</b></button>
+                    <button class="camera-card" data-camera="CAM-05" data-area="Checkout 1" data-coverage="Checkout 1 · Queue" data-pose="2.9 m · 24°" data-quality="Excellent"><span class="camera-glyph"></span><div><strong>CAM-05</strong><small>Checkout 1</small></div><b>Calibrated</b></button>
+                    <button class="camera-card" data-camera="CAM-06" data-area="Checkout 2" data-coverage="Checkout 2 · Exit" data-pose="2.9 m · 26°" data-quality="Excellent"><span class="camera-glyph"></span><div><strong>CAM-06</strong><small>Checkout 2</small></div><b>Calibrated</b></button>
+                  </div>
+                  <aside class="calibration-card">
+                    <div class="calibration-head"><span class="camera-glyph large"></span><div><small>SELECTED SOURCE</small><strong id="selectedCamera">CAM-01</strong></div><b>✓</b></div>
+                    <div class="calibration-preview"><span class="view-line one"></span><span class="view-line two"></span><span class="view-line three"></span><i>Entry view</i></div>
+                    <dl>
+                      <div><dt>Area</dt><dd id="selectedArea">Entry</dd></div>
+                      <div><dt>Coverage</dt><dd id="selectedCoverage">Entry · Zone A</dd></div>
+                      <div><dt>Pose</dt><dd id="selectedPose">2.8 m · 28°</dd></div>
+                      <div><dt>Quality</dt><dd id="selectedQuality">Excellent</dd></div>
+                    </dl>
+                    <button class="secondary-action full">Review calibration</button>
+                  </aside>
+                </div>
+                <button class="primary-action next-model" data-go="model">Open 3D store <span>→</span></button>
+              </div>
+
+              <div class="step-panel model-panel" data-panel="model">
+                <div id="storeViewport" class="store-viewport" aria-label="Interactive 3D store model"></div>
+                <div class="model-toolbar">
+                  <button class="on" data-layer="zones">Zones</button>
+                  <button class="on" data-layer="cameras">Cameras</button>
+                  <button class="on" data-layer="labels">Labels</button>
+                  <button id="resetStore">Reset view</button>
+                </div>
+                <aside class="zone-panel">
+                  <div class="zone-panel-head"><div><small>3D STORE</small><strong>Market Central</strong></div><span>100%</span></div>
+                  <p>Drag to rotate · scroll to zoom · click an object</p>
+                  <div class="zone-list">
+                    <button data-focus="entry"><i class="zone-entry"></i><span>Entry</span><b>01</b></button>
+                    <button data-focus="fresh"><i class="zone-fresh"></i><span>Fresh zone</span><b>02</b></button>
+                    <button data-focus="zone-a"><i class="zone-a"></i><span>Zone A</span><b>03</b></button>
+                    <button data-focus="zone-b"><i class="zone-b"></i><span>Zone B</span><b>04</b></button>
+                    <button data-focus="checkout-1"><i class="zone-checkout"></i><span>Checkout 1</span><b>05</b></button>
+                    <button data-focus="checkout-2"><i class="zone-checkout"></i><span>Checkout 2</span><b>06</b></button>
+                    <button data-focus="exit"><i class="zone-exit"></i><span>Exit</span><b>07</b></button>
+                  </div>
+                  <div id="objectInspector" class="object-inspector"><small>SELECTED</small><strong>Store overview</strong><span>42 fixtures · 6 calibrated cameras</span></div>
+                </aside>
+                <div class="model-status"><i></i><span>6 / 6 cameras calibrated</span><b>Scene v1</b></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide workspace-slide analysis-slide" data-slide="3">
+        <div class="app-frame">
+          <header class="app-header">
+            <div class="app-brand"><span class="brand-mark small"><i></i></span><strong>ManySight</strong></div>
+            <div class="project-title"><span>PROJECT</span><strong>Market Central</strong></div>
+            <div class="header-status"><i></i> Live analysis</div>
+          </header>
+
+          <div class="app-body">
+            <aside class="side-rail analysis-rail">
+              <button class="rail-button" data-slide-target="2" aria-label="Space setup"><span>⌂</span><small>Setup</small></button>
+              <button class="rail-button" aria-label="Objects"><span>◇</span><small>Objects</small></button>
+              <button class="rail-button active" aria-label="Analysis"><span>⌁</span><small>Analysis</small></button>
+              <button class="rail-button" aria-label="Settings"><span>· · ·</span><small>More</small></button>
+            </aside>
+
+            <section class="analysis-workspace">
+              <header class="analysis-heading">
+                <div><p class="kicker">STORE ANALYSIS</p><h2>Tuesday, 14 July</h2></div>
+                <nav class="analysis-tabs" aria-label="Analysis views">
+                  <button class="active" data-analysis-view="overview">Overview</button>
+                  <button data-analysis-view="spatial">Spatial &amp; queues</button>
+                  <button data-analysis-view="insights3d">3D insights</button>
+                </nav>
+                <button class="period-button">Today <span>⌄</span></button>
+              </header>
+
+              <div class="analysis-view active" data-analysis-panel="overview">
+                <div class="metric-row">
+                  <article class="metric-card primary"><small>Customers</small><strong>2,418</strong><span>↑ 12.4% vs. last Tuesday</span></article>
+                  <article class="metric-card"><small>Revenue · CA</small><strong>€38,640</strong><span>↑ 8.7% today</span></article>
+                  <article class="metric-card"><small>Conversion</small><strong>31.6%</strong><span>↑ 2.1 pts</span></article>
+                  <article class="metric-card"><small>Average basket</small><strong>€50.72</strong><span>↑ €1.84</span></article>
+                </div>
+
+                <div class="overview-grid">
+                  <article class="analysis-card revenue-card">
+                    <header><div><small>REVENUE TODAY</small><strong>CA by hour</strong></div><span>+8.7%</span></header>
+                    <svg class="revenue-chart" viewBox="0 0 700 170" role="img" aria-label="Revenue by hour line chart">
+                      <defs><linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e66d4e" stop-opacity=".24"/><stop offset="1" stop-color="#e66d4e" stop-opacity="0"/></linearGradient></defs>
+                      <g class="chart-grid"><line x1="40" y1="25" x2="680" y2="25"/><line x1="40" y1="70" x2="680" y2="70"/><line x1="40" y1="115" x2="680" y2="115"/></g>
+                      <path class="area" d="M40 125 L96 117 L152 120 L208 98 L264 105 L320 72 L376 83 L432 50 L488 62 L544 38 L600 48 L656 28 L680 35 L680 145 L40 145 Z"/>
+                      <path class="line" d="M40 125 L96 117 L152 120 L208 98 L264 105 L320 72 L376 83 L432 50 L488 62 L544 38 L600 48 L656 28 L680 35"/>
+                      <circle cx="656" cy="28" r="6"/><g class="axis-labels"><text x="40" y="162">08:00</text><text x="242" y="162">12:00</text><text x="455" y="162">16:00</text><text x="642" y="162">20:00</text></g>
+                    </svg>
+                  </article>
+
+                  <article class="analysis-card mix-card">
+                    <header><div><small>CUSTOMER MIX</small><strong>Visits by segment</strong></div></header>
+                    <div class="mix-content">
+                      <div class="donut"><span><strong>2,418</strong><small>customers</small></span></div>
+                      <div class="mix-legend"><p><i class="mix-new"></i><span>New</span><b>44%</b></p><p><i class="mix-return"></i><span>Returning</span><b>39%</b></p><p><i class="mix-loyal"></i><span>Loyalty</span><b>17%</b></p></div>
+                    </div>
+                  </article>
+
+                  <article class="analysis-card flow-card">
+                    <header><div><small>ZONE FLOW</small><strong>Where customers went next</strong></div><span>2,418 entries</span></header>
+                    <div class="sankey-wrap">
+                      <svg class="sankey" viewBox="0 0 920 150" role="img" aria-label="Customer flow from entry through zones and checkouts">
+                        <g class="flows">
+                          <path class="flow fresh" d="M68 38 C170 38 160 28 274 28"/><path class="flow zone-a" d="M68 56 C170 56 160 67 274 67"/><path class="flow zone-b" d="M68 77 C170 77 160 106 274 106"/>
+                          <path class="flow a1" d="M306 28 C420 28 402 38 508 38"/><path class="flow a2" d="M306 28 C420 28 402 85 508 85"/>
+                          <path class="flow b1" d="M306 67 C420 67 402 45 508 45"/><path class="flow b2" d="M306 67 C420 67 402 94 508 94"/>
+                          <path class="flow c1" d="M306 106 C420 106 402 52 508 52"/><path class="flow c2" d="M306 106 C420 106 402 103 508 103"/>
+                          <path class="flow exit1" d="M540 43 C650 43 648 57 750 57"/><path class="flow exit2" d="M540 94 C650 94 648 75 750 75"/>
+                        </g>
+                        <g class="nodes">
+                          <rect x="38" y="25" width="30" height="72" rx="5" class="node-entry"/><rect x="274" y="16" width="32" height="25" rx="4" class="node-fresh"/><rect x="274" y="54" width="32" height="25" rx="4" class="node-a"/><rect x="274" y="93" width="32" height="25" rx="4" class="node-b"/>
+                          <rect x="508" y="27" width="32" height="34" rx="4" class="node-checkout"/><rect x="508" y="80" width="32" height="34" rx="4" class="node-checkout second"/><rect x="750" y="45" width="32" height="43" rx="4" class="node-exit"/>
+                        </g>
+                        <g class="sankey-labels"><text x="28" y="117">Entry</text><text x="262" y="140">Fresh · Zone A · Zone B</text><text x="475" y="140">Checkout 1 · Checkout 2</text><text x="744" y="111">Exit</text></g>
+                      </svg>
+                      <div class="flow-summary"><p><strong>34%</strong><span>Entry → Zone A</span></p><p><strong>29%</strong><span>Zone A → Checkout 1</span></p><p><strong>18%</strong><span>Fresh → Checkout 2</span></p></div>
+                    </div>
+                  </article>
+                </div>
+                <p class="demo-note">Illustrative demo data</p>
+              </div>
+
+              <div class="analysis-view" data-analysis-panel="spatial">
+                <div class="spatial-grid">
+                  <article class="analysis-card heatmap-card">
+                    <header><div><small>STORE HEATMAP</small><strong>Customer activity by zone</strong></div><span>Last 60 minutes</span></header>
+                    <div class="heatmap-floor">
+                      <div class="heat-zone fresh"><span>Fresh zone</span></div><div class="heat-zone a"><span>Zone A</span></div><div class="heat-zone b"><span>Zone B</span></div><div class="heat-zone checkout-one"><span>Checkout 1</span></div><div class="heat-zone checkout-two"><span>Checkout 2</span></div><div class="heat-zone entry"><span>Entry</span></div><div class="heat-zone exit"><span>Exit</span></div>
+                      <i class="hotspot hot-a"></i><i class="hotspot hot-b"></i><i class="hotspot hot-checkout"></i><i class="hotspot warm-entry"></i>
+                      <div class="heat-scale"><span></span>More activity</div>
+                    </div>
+                  </article>
+
+                  <div class="queue-column">
+                    <div class="queue-metrics"><article><small>Peak queue</small><strong>9</strong><span>Checkout 1 · 17:35</span></article><article><small>Average wait</small><strong>03:42</strong><span>Across both checkouts</span></article></div>
+                    <article class="analysis-card queue-chart-card">
+                      <header><div><small>QUEUE PRESSURE</small><strong>People waiting by checkout</strong></div></header>
+                      <svg class="queue-chart" viewBox="0 0 500 230" role="img" aria-label="Queue length lines for checkout 1 and checkout 2">
+                        <g class="chart-grid"><line x1="42" y1="35" x2="480" y2="35"/><line x1="42" y1="85" x2="480" y2="85"/><line x1="42" y1="135" x2="480" y2="135"/><line x1="42" y1="185" x2="480" y2="185"/></g>
+                        <line class="queue-threshold" x1="42" y1="85" x2="480" y2="85"/>
+                        <polyline class="queue-one" points="42,170 92,155 142,165 192,130 242,145 292,92 342,68 392,105 442,52 480,78"/>
+                        <polyline class="queue-two" points="42,182 92,175 142,150 192,165 242,125 292,138 342,105 392,118 442,94 480,112"/>
+                        <g class="axis-labels"><text x="42" y="218">10:00</text><text x="180" y="218">13:00</text><text x="320" y="218">16:00</text><text x="445" y="218">19:00</text></g>
+                      </svg>
+                      <div class="queue-legend"><span><i></i>Checkout 1</span><span><i></i>Checkout 2</span><b>Review threshold · 7</b></div>
+                    </article>
+                  </div>
+                </div>
+                <p class="demo-note">Illustrative demo data</p>
+              </div>
+
+              <div class="analysis-view insights3d-view" data-analysis-panel="insights3d">
+                <div class="insights3d-layout">
+                  <div class="insights3d-stage">
+                    <div id="analysis3dViewport" class="analysis3d-viewport" aria-label="Interactive 3D shelf and flow analysis"></div>
+                    <div class="insights3d-toolbar">
+                      <div class="metric-switch" aria-label="Shelf metric">
+                        <button class="active" data-shelf-metric="impressions">Impressions</button>
+                        <button data-shelf-metric="attention">Avg. attention</button>
+                        <button data-shelf-metric="buys">Buys</button>
+                      </div>
+                      <div class="layer-switch">
+                        <button class="active" data-analysis-layer="heatmap">Heatmap</button>
+                        <button class="active" data-analysis-layer="flows">Flows</button>
+                        <button id="resetAnalysis3d">Reset view</button>
+                      </div>
+                    </div>
+                    <div class="metric-scale"><span>Low</span><i></i><span>High</span></div>
+                    <div class="heatmap-scale"><span>Store activity</span><i></i><small>Low</small><small>High</small></div>
+                    <div id="shelfMetricTooltip" class="shelf-tooltip" aria-live="polite"></div>
+                  </div>
+                  <aside class="insights3d-panel">
+                    <div><p class="kicker">3D ANALYSIS</p><h3>Performance in context</h3><p>Every shelf face carries its own metrics. Hover a colored cell to inspect it.</p></div>
+                    <div class="selected-shelf" id="selectedShelfMetric"><small>SELECTED</small><strong>Store overview</strong><span>Impressions mapped across 72 shelf cells</span></div>
+                    <div class="insight-readouts"><p><span>Highest impressions</span><strong>Row 04 · C3</strong></p><p><span>Longest attention</span><strong>Row 02 · C2</strong></p><p><span>Most buys</span><strong>Row 05 · C4</strong></p></div>
+                    <div class="flow-key"><small>AGGREGATE FLOW</small><p><i></i>Thicker lines represent more visitors</p><p><i></i>Paths split after entry and merge before exit</p></div>
+                    <p class="demo-note inline">Illustrative demo data</p>
+                  </aside>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide workspace-slide live-slide" data-slide="4">
+        <div class="app-frame">
+          <header class="app-header">
+            <div class="app-brand"><span class="brand-mark small"><i></i></span><strong>ManySight</strong></div>
+            <div class="project-title"><span>PROJECT</span><strong>Market Central</strong></div>
+            <div class="header-status live"><i></i> Live now</div>
+          </header>
+          <div class="app-body">
+            <aside class="side-rail">
+              <button class="rail-button" data-slide-target="2" aria-label="Space setup"><span>⌂</span><small>Setup</small></button>
+              <button class="rail-button" aria-label="Objects"><span>◇</span><small>Objects</small></button>
+              <button class="rail-button" data-slide-target="3" aria-label="Analysis"><span>⌁</span><small>Analysis</small></button>
+              <button class="rail-button active" aria-label="Live store"><span>◉</span><small>Live</small></button>
+            </aside>
+            <section class="live-workspace">
+              <header class="live-heading">
+                <div><p class="kicker">LIVE STORE</p><h2>The store, right now</h2></div>
+                <div class="live-clock"><i></i><span>Updating continuously</span><strong id="liveClock">14:32:18</strong></div>
+              </header>
+              <div class="live-stage">
+                <div id="liveViewport" class="live-viewport" aria-label="Dynamic live 3D store"></div>
+                <div class="live-toolbar">
+                  <button class="active" data-live-layer="tracks">Tracks</button>
+                  <button class="active" data-live-layer="cameras">Cameras</button>
+                  <button class="active" data-live-layer="states">States</button>
+                  <button id="pauseLive">Pause</button>
+                  <button id="resetLive">Reset view</button>
+                </div>
+                <aside class="live-panel">
+                  <header><div><small>CURRENT STATE</small><strong>Market Central</strong></div><span>Healthy</span></header>
+                  <div class="live-state-list">
+                    <article><i class="state-green"></i><div><strong>Cameras</strong><span>6 of 6 online</span></div><b>Online</b></article>
+                    <article><i class="state-green"></i><div><strong>Entrance gate</strong><span>Open · receiving visitors</span></div><b>Open</b></article>
+                    <article><i class="state-green"></i><div><strong>Checkout 1</strong><span>Operator present</span></div><b>Open</b></article>
+                    <article><i class="state-green"></i><div><strong>Checkout 2</strong><span>Operator present</span></div><b>Open</b></article>
+                    <article><i class="state-blue"></i><div><strong>Fresh cabinets</strong><span>3.2°C · stable</span></div><b>Normal</b></article>
+                    <article><i class="state-green"></i><div><strong>Exit lane</strong><span>Clear</span></div><b>Clear</b></article>
+                  </div>
+                  <div class="live-events"><small>LIVE EVENTS</small><p><span>14:32:17</span><b>Track 108 entered Zone A</b></p><p><span>14:32:14</span><b>Track 104 reached Checkout 2</b></p><p><span>14:32:09</span><b>Fresh cabinet state confirmed</b></p></div>
+                </aside>
+                <div class="live-legend"><span><i class="track-one"></i>Individual live track</span><span><i class="camera-live-dot"></i>Camera online</span><b>No historical aggregation</b></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide workspace-slide annotation-slide" data-slide="5">
+        <div class="app-frame">
+          <header class="app-header">
+            <div class="app-brand"><span class="brand-mark small"><i></i></span><strong>ManySight</strong></div>
+            <div class="project-title"><span>PROJECT</span><strong>Market Central</strong></div>
+            <div class="header-status"><i></i> Annotation ready</div>
+          </header>
+          <div class="app-body">
+            <aside class="side-rail">
+              <button class="rail-button" data-slide-target="2"><span>⌂</span><small>Setup</small></button>
+              <button class="rail-button" data-slide-target="3"><span>⌁</span><small>Analysis</small></button>
+              <button class="rail-button" data-slide-target="4"><span>◉</span><small>Live</small></button>
+              <button class="rail-button active"><span>✎</span><small>Annotate</small></button>
+            </aside>
+            <section class="annotation-workspace">
+              <header class="annotation-heading">
+                <div><p class="kicker">HUMAN-IN-THE-LOOP DATA</p><h2>Turn real moments into training data</h2><p>Anyone on site can save the right frame while the event is still visible.</p></div>
+                <div class="annotation-tabs"><button class="active" data-annotation-view="capture">Capture on phone</button><button data-annotation-view="dataset">Training data <b id="datasetBadge">24</b></button></div>
+              </header>
+              <div class="annotation-view active" data-annotation-panel="capture">
+                <div class="annotation-capture-layout">
+                  <div class="phone-shell">
+                    <div class="phone-speaker"></div>
+                    <div class="phone-screen">
+                      <div class="mobile-status"><span>09:41</span><b>● ● ●</b></div>
+                      <header class="mobile-header"><button>‹</button><div><small>ANNOTATE</small><strong>Save a useful frame</strong></div><i></i></header>
+                      <div class="mobile-camera-switch"><button class="active" data-annotation-scene="fridge" data-camera="CAM-02">CAM-02</button><button data-annotation-scene="wetfloor" data-camera="CAM-05">CAM-05</button></div>
+                      <div class="mobile-frame"><img id="annotationScene" src="./assets/fridge-open.png" alt="Open refrigerator camera frame"><span>LIVE</span><time id="annotationTime">14:32:18.420</time><i></i></div>
+                      <div class="mobile-field"><small>WHAT DO YOU SEE?</small><div class="label-chips"><button class="active" data-annotation-label="fridge_open">Fridge open</button><button data-annotation-label="wet_floor">Wet floor</button><button data-annotation-label="other">Other</button></div></div>
+                      <div class="frame-summary"><span>Source<strong id="annotationCamera">CAM-02 · Fresh cabinets</strong></span><span>Frame quality<strong>Sharp · 1080p</strong></span></div>
+                      <button id="saveFrame" class="save-frame-button">Save frame for training</button>
+                      <p class="mobile-privacy">Only this selected frame is retained.</p>
+                    </div>
+                  </div>
+                  <div class="annotation-story">
+                    <div class="annotation-copy"><p class="kicker">SIMPLE BY DESIGN</p><h3>The person who sees the event labels it in seconds.</h3><p>No annotation workstation is required. Choose the camera, name what happened, and save one traceable frame.</p></div>
+                    <div class="annotation-steps"><article><b>01</b><span><strong>Choose the scene</strong><small>Select the camera that can see it.</small></span></article><article><b>02</b><span><strong>Apply a simple label</strong><small>Use a known class or create a new one.</small></span></article><article><b>03</b><span><strong>Grow a useful dataset</strong><small>Every frame keeps camera and timestamp provenance.</small></span></article></div>
+                    <div class="annotation-mini-library"><header><span><small>TRAINING DATA</small><strong>Recently saved</strong></span><button data-open-dataset>View all →</button></header><div><article><img src="./assets/fridge-open.png" alt="Fridge open training frame"><span>fridge_open</span><small>CAM-02</small></article><article><img src="./assets/wet-floor.png" alt="Wet floor training frame"><span>wet_floor</span><small>CAM-05</small></article><article><img src="./assets/fridge-open.png" alt="Fridge open training frame"><span>fridge_open</span><small>CAM-02</small></article></div></div>
+                  </div>
+                </div>
+              </div>
+              <div class="annotation-view" data-annotation-panel="dataset">
+                <div class="dataset-layout">
+                  <header class="dataset-toolbar"><div><p class="kicker">CURATED DATASET</p><h3>Every frame stays searchable by label and camera</h3></div><div class="dataset-filters"><button class="active" data-dataset-label="all">All labels</button><button data-dataset-label="fridge_open">fridge_open</button><button data-dataset-label="wet_floor">wet_floor</button><select id="cameraFilter"><option value="all">All cameras</option><option value="CAM-02">CAM-02</option><option value="CAM-05">CAM-05</option></select></div></header>
+                  <div class="dataset-stats"><article><span>Frames</span><strong id="datasetCount">24</strong><small>ready for review</small></article><article><span>Labels</span><strong>06</strong><small>2 added this week</small></article><article><span>Cameras</span><strong>04</strong><small>with retained frames</small></article><article><span>Reviewed</span><strong>83%</strong><small>training-ready</small></article></div>
+                  <div class="dataset-grid" id="datasetGrid">
+                    <article data-label="fridge_open" data-camera="CAM-02"><img src="./assets/fridge-open.png" alt="Open fridge frame"><div><span>fridge_open</span><small>CAM-02 · 14:32:18.420</small></div><b>Reviewed</b></article>
+                    <article data-label="wet_floor" data-camera="CAM-05"><img src="./assets/wet-floor.png" alt="Wet floor frame"><div><span>wet_floor</span><small>CAM-05 · 14:29:04.112</small></div><b>New</b></article>
+                    <article data-label="fridge_open" data-camera="CAM-02"><img src="./assets/fridge-open.png" alt="Open fridge frame"><div><span>fridge_open</span><small>CAM-02 · 13:48:51.906</small></div><b>Reviewed</b></article>
+                    <article data-label="wet_floor" data-camera="CAM-05"><img src="./assets/wet-floor.png" alt="Wet floor frame"><div><span>wet_floor</span><small>CAM-05 · 12:15:33.284</small></div><b>Reviewed</b></article>
+                    <article data-label="fridge_open" data-camera="CAM-02"><img src="./assets/fridge-open.png" alt="Open fridge frame"><div><span>fridge_open</span><small>CAM-02 · 11:42:20.771</small></div><b>Reviewed</b></article>
+                    <article data-label="wet_floor" data-camera="CAM-05"><img src="./assets/wet-floor.png" alt="Wet floor frame"><div><span>wet_floor</span><small>CAM-05 · 10:08:16.039</small></div><b>Reviewed</b></article>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide workspace-slide agent-slide" data-slide="6">
+        <div class="app-frame">
+          <header class="app-header">
+            <div class="app-brand"><span class="brand-mark small"><i></i></span><strong>ManySight</strong></div>
+            <div class="project-title"><span>AGENT INTERFACE</span><strong>MCP + Docs</strong></div>
+            <div class="header-status live"><i></i> Tools discoverable</div>
+          </header>
+          <div class="app-body">
+            <aside class="side-rail">
+              <button class="rail-button" data-slide-target="3"><span>⌁</span><small>Analysis</small></button>
+              <button class="rail-button" data-slide-target="5"><span>✎</span><small>Annotate</small></button>
+              <button class="rail-button active"><span>⌘</span><small>Agents</small></button>
+              <button class="rail-button"><span>?</span><small>Docs</small></button>
+            </aside>
+            <section class="agent-workspace">
+              <header class="agent-heading"><div><p class="kicker">AGENT-NATIVE PLATFORM</p><h2>Talk to your spatial data.</h2></div><p>Ask a question, run a model, or create a training workflow from one place.</p></header>
+              <div class="agent-layout simple-agent-layout">
+                <section class="agent-chat-card simple-chat-card">
+                  <header><span class="agent-avatar">M</span><div><strong>ManySight Agent</strong><small><i></i> Workspace connected</small></div><b>MCP ready</b></header>
+                  <div class="agent-examples"><button class="active" data-agent-prompt="insight">Ask insights</button><button data-agent-prompt="model">Run a model</button><button data-agent-prompt="finetune">Train from data</button></div>
+                  <div class="conversation">
+                    <div class="user-message" id="agentQuestion">How many customers visited between 2pm and 4pm?</div>
+                    <div class="agent-message"><div class="agent-answer-head"><span class="agent-avatar small">M</span><strong id="agentAnswerTitle">642 customers</strong><b id="agentAnswerBadge">Verified</b></div><p id="agentAnswerText">I queried distinct tracked visits in the selected interval across all entrance cameras.</p><div id="agentResult" class="agent-result insight-result"><div><span>14:00</span><i style="height:35%"></i></div><div><span>14:30</span><i style="height:58%"></i></div><div><span>15:00</span><i style="height:82%"></i></div><div><span>15:30</span><i style="height:67%"></i></div><div><span>16:00</span><i style="height:44%"></i></div></div><small id="agentSource">Source: tracked visits · 14:00–16:00 · 6 cameras</small></div>
+                  </div>
+                  <div class="agent-composer"><span>Ask ManySight about this workspace…</span><button>↑</button></div>
+                </section>
+                <section class="agent-guide-card">
+                  <header><p class="kicker">SIMPLE INTERFACE</p><h3>One conversation.<br>Three jobs.</h3><p>The agent discovers the platform contract and takes the required actions.</p></header>
+                  <div class="simple-contract"><span><small>START</small><strong>agent.md</strong></span><i>→</i><span><small>ACT</small><strong>MCP</strong></span><i>→</i><span><small>REFERENCE</small><strong>Docs</strong></span></div>
+                  <div class="agent-job-list">
+                    <article class="active" data-agent-job="insight"><b>01</b><div><strong>Ask about insights</strong><small>Time, zones, classes, cameras.</small></div></article>
+                    <article data-agent-job="model"><b>02</b><div><strong>Run a custom model</strong><small>Launch workers and publish results.</small></div></article>
+                    <article data-agent-job="finetune"><b>03</b><div><strong>Train from labeled data</strong><small>Extract, fine-tune, evaluate, deploy.</small></div></article>
+                  </div>
+                  <div class="agent-trace"><strong>Every answer stays traceable.</strong><p>Sources, time range, camera scope, and model provenance are included.</p><div id="agentWorkflow"><span class="done">Understand request</span><i></i><span class="done">Query analytics</span><i></i><span class="done">Return evidence</span></div></div>
+                </section>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide workspace-slide accessibility-slide" data-slide="7">
+        <div class="app-frame">
+          <header class="app-header">
+            <div class="app-brand"><span class="brand-mark small"><i></i></span><strong>ManySight</strong></div>
+            <div class="project-title"><span>SPATIAL RECOMMENDATIONS</span><strong>Accessibility benchmark</strong></div>
+            <div class="header-status live"><i></i> Agent review complete</div>
+          </header>
+          <div class="app-body">
+            <aside class="side-rail">
+              <button class="rail-button" data-slide-target="2"><span>⌂</span><small>Model</small></button>
+              <button class="rail-button" data-slide-target="3"><span>⌁</span><small>Insights</small></button>
+              <button class="rail-button active"><span>✦</span><small>Improve</small></button>
+              <button class="rail-button"><span>…</span><small>More</small></button>
+            </aside>
+            <section class="access-workspace">
+              <header class="access-heading">
+                <div><p class="kicker">AGENTIC SPATIAL REASONING</p><h2>Ask the model what should change.</h2><p>The agent audits the geometry, explains every constraint, and proposes a better layout using spatial rules and observed behavior.</p></div>
+                <div class="access-view-tabs" role="tablist"><button class="active" data-access-mode="audit">Current audit</button><button data-access-mode="proposal">Accessible proposal</button></div>
+              </header>
+              <div class="access-layout">
+                <section class="access-viewer-card">
+                  <header><div><small id="accessViewerEyebrow">CURRENT MODEL · ACCESSIBILITY OVERLAY</small><strong id="accessViewerTitle">Three points interrupt the route</strong></div><span id="accessScore" class="fail">62 / 100</span></header>
+                  <div id="accessibilityViewport" aria-label="Interactive 3D accessibility audit">
+                    <div class="access-legend"><span><i class="route"></i>Continuous route</span><span><i class="turn"></i>Turning clearance</span><span><i class="issue"></i>Constraint</span></div>
+                    <div class="access-model-note"><strong id="accessModeLabel">Audit overlay</strong><span>Drag to orbit · Scroll to zoom</span></div>
+                  </div>
+                </section>
+                <aside class="access-agent-panel">
+                  <header><span class="agent-avatar">M</span><div><small>SPATIAL AGENT</small><strong id="accessPanelTitle">One route must connect every essential service.</strong></div></header>
+                  <div class="access-target"><span>Benchmark</span><strong>Main clear route ≥ 1.2 m</strong><small>Entrance → ordering → pick-up → one seat → restroom</small></div>
+                  <div id="accessFindings" class="access-findings">
+                    <article class="pass"><b>✓</b><div><strong>Entrance → ordering</strong><small>1.34 m clear</small></div></article>
+                    <article class="fail"><b>!</b><div><strong>Ordering → pick-up</strong><small>0.86 m at display edge</small></div></article>
+                    <article class="fail"><b>!</b><div><strong>Pick-up → seating</strong><small>0.94 m between chairs</small></div></article>
+                    <article class="fail"><b>!</b><div><strong>Seating → restroom</strong><small>0.78 m at door approach</small></div></article>
+                  </div>
+                  <section class="access-recommendation"><small>AGENT RECOMMENDATION</small><h3 id="accessRecommendationTitle">Move three elements, not the whole layout.</h3><p id="accessRecommendationBody">Shift Row 01 by 0.55 m, rotate the pick-up counter, and remove the low-impression promo island.</p><div id="accessEvidence"><span>Geometry</span><span>Traffic flow</span><span>Impressions</span></div></section>
+                  <footer><strong id="accessOutcome">Proposed result: 1.2 m continuous route</strong><span id="accessOutcomeDetail">The same audit loop can optimize queueing, merchandising, safety, energy, or any measurable spatial objective.</span></footer>
+                </aside>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide domain-slide" data-slide="8">
+        <div class="domain-shell">
+          <header class="domain-header"><div class="app-brand"><span class="brand-mark small"><i></i></span><strong>ManySight</strong></div><span>ONE SPATIAL INTELLIGENCE CORE</span></header>
+          <div class="domain-heading"><p class="kicker">BEYOND A SINGLE VERTICAL</p><h2>Different spaces need different models—not different platforms.</h2><p>The same digital twin, data loop, and agent interface adapt to the business question that matters.</p></div>
+          <div class="domain-grid">
+            <article class="domain-card warehouse active" data-domain="warehouse"><img src="./assets/warehouse.png" alt="Modern warehouse"><div class="domain-gradient"></div><div class="domain-card-copy"><span>WAREHOUSES</span><h3>Custom models become operational infrastructure.</h3><p>Train for the exact pallets, hazards, equipment, and workflows unique to each site.</p><div><b>Pallet state</b><b>Forklift proximity</b><b>Damage & spills</b></div></div><aside><small>MODEL PRIORITY</small><strong>Site-specific detection</strong><i></i></aside></article>
+            <article class="domain-card fashion" data-domain="fashion"><img src="./assets/fashion-store.png" alt="Premium clothing store"><div class="domain-gradient"></div><div class="domain-card-copy"><span>FASHION RETAIL</span><h3>Impressions reveal which designs earn attention.</h3><p>Connect visual merchandising to real engagement around every rack and display.</p><div><b>Garment impressions</b><b>Dwell by display</b><b>Path to purchase</b></div></div><aside><small>INSIGHT PRIORITY</small><strong>Attention by design</strong><i></i></aside></article>
+          </div>
+          <div class="domain-core"><span>SCAN THE SPACE</span><i>→</i><span>CALIBRATE CAMERAS</span><i>→</i><span>OBSERVE</span><i>→</i><span>CURATE DATA</span><i>→</i><span>TRAIN & IMPROVE</span></div>
+          <p class="domain-footnote">A reusable spatial data foundation. Domain intelligence is added as models and insights.</p>
+        </div>
+      </section>
+    </main>
+
+    <nav class="deck-nav" aria-label="Slide navigation">
+      <button id="prevSlide" aria-label="Previous slide">←</button>
+      <span id="slideCounter">01 / 08</span>
+      <i><b id="slideProgress"></b></i>
+      <button id="nextSlide" aria-label="Next slide">→</button>
+      <button id="fullscreen" aria-label="Full screen">⛶</button>
+    </nav>
+    <script src="./app.bundle.js"></script>
+  </body>
+</html>

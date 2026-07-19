@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ManySight — Investor Deck</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="deck" aria-live="polite">
+      <section class="slide hero active" data-slide="1">
+        <img class="full-image" src="./assets/hero-digital-twin.png" alt="Semantic digital twin of a retail space" />
+        <div class="image-shade"></div>
+        <div class="content hero-copy">
+          <p class="eyebrow">MANY<span>SIGHT</span></p>
+          <h1>The spatial intelligence layer for physical businesses</h1>
+          <p class="lede">Turn mapped spaces, existing cameras and AI workflows into persistent, explainable operational intelligence.</p>
+          <p class="meta">Investor deck · Product transition · July 2026</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="2">
+        <div class="content">
+          <p class="eyebrow">THE PROBLEM</p>
+          <h2>Cameras record. Operations still guess.</h2>
+          <div class="three-beats">
+            <article><b>01</b><h3>Video is isolated</h3><p>Each feed stores pixels without a shared model of the physical space.</p></article>
+            <article><b>02</b><h3>Analysis forgets</h3><p>One-off workers restart, lose context and produce metrics that are hard to replay.</p></article>
+            <article><b>03</b><h3>Dashboards stop at charts</h3><p>Users see aggregates, but not the spatial evidence, provenance or actions behind them.</p></article>
+          </div>
+          <p class="closing-line">The missing layer is <em>spatial memory</em>.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="3">
+        <div class="content">
+          <p class="eyebrow">THE PRODUCT THESIS</p>
+          <h2>Map the space once. Keep asking better questions.</h2>
+          <div class="pipeline">
+            <article><span>01</span><h3>Scan</h3><p>Capture geometry and camera poses.</p></article>
+            <i>→</i>
+            <article><span>02</span><h3>Understand</h3><p>Segment objects, planes and zones.</p></article>
+            <i>→</i>
+            <article><span>03</span><h3>Observe</h3><p>Anchor model outputs in world coordinates.</p></article>
+            <i>→</i>
+            <article><span>04</span><h3>Explain</h3><p>Derive replayable analytics with provenance.</p></article>
+            <i>→</i>
+            <article><span>05</span><h3>Act</h3><p>Ask questions, review signals and automate.</p></article>
+          </div>
+          <p class="statement">A semantic digital twin becomes the common coordinate system for people, cameras, models and decisions.</p>
+        </div>
+      </section>
+
+      <section class="slide split" data-slide="4">
+        <div class="content split-grid">
+          <div>
+            <p class="eyebrow">WORKING PROOF</p>
+            <h2>StoreLens proves the observation-to-insight contract</h2>
+            <ul class="feature-list">
+              <li>Sources, floor maps, zones and camera calibration</li>
+              <li>Floor and named-plane projection with revision history</li>
+              <li>Evidence-rich detections, counts, state and zone events</li>
+              <li>Heatmap, dwell, occupancy, flow, alerts and dynamic insights</li>
+              <li>MCP tools for discovery, configuration and publishing</li>
+            </ul>
+            <p class="truth-label">Working 2D POC — not yet a SLAM, 3D, annotation or training product.</p>
+          </div>
+          <figure class="product-shot"><img src="./assets/storelens-dashboard.png" alt="StoreLens dashboard overview" /></figure>
+        </div>
+      </section>
+
+      <section class="slide image-led" data-slide="5">
+        <img class="full-image" src="./assets/slam-scan.png" alt="Phone scanning a store into a 3D reconstruction" />
+        <div class="image-shade right-to-left"></div>
+        <div class="content right-copy">
+          <p class="eyebrow">3D ONBOARDING</p>
+          <h2>Scanning becomes the setup workflow</h2>
+          <ol class="short-list">
+            <li><b>Capture</b> guided phone or LiDAR walk-through</li>
+            <li><b>Recover</b> geometry, intrinsics, poses and scale</li>
+            <li><b>Segment</b> planes, fixtures and operational objects</li>
+            <li><b>Align</b> fixed cameras to the shared world frame</li>
+            <li><b>Version</b> every scene and calibration change</li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="slide twin-slide" data-slide="6">
+        <div class="content twin-layout">
+          <div class="twin-copy">
+            <p class="eyebrow">INTERACTIVE DIGITAL TWIN</p>
+            <h2>Every observation lands on the same spatial truth</h2>
+            <p>Rotate the model, enter walk mode, click objects and toggle spatial layers.</p>
+            <div class="scene-controls" aria-label="Digital twin controls">
+              <button data-toggle="cameras" class="on">Cameras</button>
+              <button data-toggle="semantics" class="on">Semantics</button>
+              <button data-toggle="tracks" class="on">Tracks</button>
+              <button data-toggle="heatmap" class="on">Heatmap</button>
+              <button id="modeButton">Enter walk mode</button>
+              <button id="resetView">Reset view</button>
+            </div>
+            <div id="selectionInfo" class="selection-info">Click a shelf, zone or camera to inspect it.</div>
+            <p class="control-hint">Orbit: drag / wheel · Walk: arrow keys or WASD</p>
+          </div>
+          <div id="twinViewport" class="twin-viewport" aria-label="Interactive 3D semantic digital twin"></div>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="7">
+        <div class="content">
+          <p class="eyebrow">BEACHHEAD → PLATFORM</p>
+          <h2>Win retail operations first; expand through the same spatial core</h2>
+          <div class="wedge-layout">
+            <article class="wedge-primary"><small>FIRST WEDGE</small><h3>Retail operations</h3><p>Entry and zone traffic · queue pressure · anonymous flow and dwell · layout comparison</p></article>
+            <div class="wedge-core"><span>Shared core</span><strong>Semantic scene<br/>Observation ledger<br/>Edge runtime<br/>Insight engine</strong></div>
+            <div class="wedge-expansion">
+              <article><h3>Warehouses</h3><p>Flow, shelf state and asset reconciliation</p></article>
+              <article><h3>Schools</h3><p>Anonymous space utilization and safety workflows</p></article>
+              <article><h3>Offices</h3><p>Occupancy, room usage and facility operations</p></article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="8">
+        <div class="content">
+          <p class="eyebrow">WHY NOW</p>
+          <h2>The enabling stack has moved from research to product infrastructure</h2>
+          <div class="evidence-rows">
+            <article><b>Mobile spatial capture</b><p>RoomPlan already turns LiDAR-equipped iPhone/iPad scans into structured room geometry and USD/USDZ assets.</p></article>
+            <article><b>Composable scene standards</b><p>OpenUSD provides layerable scenes; glTF provides efficient browser delivery.</p></article>
+            <article><b>Browser-native 3D</b><p>Three.js renders and interacts with the twin without specialist desktop software.</p></article>
+            <article><b>Agentic software</b><p>Governed tools let AI agents inspect context, configure analyses and return evidence-backed results.</p></article>
+          </div>
+          <p class="sources">Sources: developer.apple.com/augmented-reality/roomplan · openusd.org · threejs.org</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="9">
+        <div class="content">
+          <p class="eyebrow">POSITIONING</p>
+          <h2>ManySight is designed to connect three product categories</h2>
+          <div class="landscape">
+            <article><h3>Camera analytics</h3><p>Strong operational video and search. Usually tied to a camera stack.</p><small>Example: Verkada People Analytics</small></article>
+            <article><h3>Digital-twin platforms</h3><p>Rich scene composition and simulation. Often heavy for day-to-day camera intelligence.</p><small>Example: NVIDIA Omniverse</small></article>
+            <article><h3>Computer-vision MLOps</h3><p>Annotation, datasets, training and deployment. Limited spatial operating context.</p><small>Example: Roboflow</small></article>
+            <article class="manysight-position"><h3>ManySight</h3><p>A persistent spatial model connecting live observations, governed AI workflows and operational decisions.</p></article>
+          </div>
+          <p class="sources">Category references: verkada.com · docs.omniverse.nvidia.com · docs.roboflow.com</p>
+        </div>
+      </section>
+
+      <section class="slide image-led" data-slide="10">
+        <img class="full-image" src="./assets/annotation-training.png" alt="Annotation, evaluation and deployment workspace" />
+        <div class="image-shade left-to-right"></div>
+        <div class="content left-copy narrow">
+          <p class="eyebrow">DATA FLYWHEEL</p>
+          <h2>Each deployment improves the next model—without losing provenance</h2>
+          <ol class="short-list">
+            <li>Sample uncertain or high-value frames</li>
+            <li>Annotate with review and quality control</li>
+            <li>Freeze versioned datasets</li>
+            <li>Evaluate by camera condition and workflow</li>
+            <li>Deploy, monitor, compare and roll back</li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="11">
+        <div class="content">
+          <p class="eyebrow">CONVERSATIONAL OPERATIONS</p>
+          <h2>Users ask a business question; the platform answers with spatial evidence</h2>
+          <blockquote>“Compare queue pressure before and after the layout change—and show me where the difference happened.”</blockquote>
+          <div class="conversation-flow">
+            <article><span>1</span><h3>Interpret</h3><p>Resolve sites, zones, time ranges and metric definitions.</p></article>
+            <article><span>2</span><h3>Query</h3><p>Use permissioned MCP/API tools, never unrestricted database access.</p></article>
+            <article><span>3</span><h3>Verify</h3><p>Check freshness, provenance, model version and limitations.</p></article>
+            <article><span>4</span><h3>Answer</h3><p>Return a chart, 3D overlay, supporting observations and suggested next action.</p></article>
+          </div>
+          <p class="statement small">StoreLens already exposes governed MCP tools; the customer-facing conversational layer is roadmap.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="12">
+        <div class="content">
+          <p class="eyebrow">TARGET ARCHITECTURE</p>
+          <h2>Separate camera access from the customer control plane</h2>
+          <div class="architecture">
+            <article><small>ON SITE</small><h3>ManySight Edge</h3><p>Camera connectors · local secrets · supervised workers · offline buffer · checkpoints</p></article>
+            <i>encrypted observations + health ⇄ signed commands</i>
+            <article><small>CLOUD CONTROL PLANE</small><h3>Spatial intelligence core</h3><p>Tenancy · scene graph · observation ledger · state · insights · review · audit</p></article>
+            <i>governed APIs + MCP ⇄</i>
+            <article><small>EXPERIENCE</small><h3>3D + operational UI</h3><p>Digital twin · dashboards · conversation · alerts · annotation · administration</p></article>
+          </div>
+          <p class="closing-line">Camera credentials stay at the edge. The cloud stores spatial truth and approved evidence.</p>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="13">
+        <div class="content">
+          <p class="eyebrow">FEATURES STILL MISSING</p>
+          <h2>The vision is compelling; the remaining work is product infrastructure</h2>
+          <div class="missing-grid">
+            <article><b>01</b><h3>3D capture core</h3><p>Guided scan app, SLAM pipeline, scene graph, asset versions, camera alignment and drift checks.</p></article>
+            <article><b>02</b><h3>Supervised edge</h3><p>Enrollment, secrets, offline buffering, checkpoints, logs, updates and rollback.</p></article>
+            <article><b>03</b><h3>Data & model lifecycle</h3><p>Evidence storage, annotation QA, dataset registry, evaluation, model registry and deployment.</p></article>
+            <article><b>04</b><h3>Customer platform</h3><p>Organizations, sites, RBAC, billing, usage controls, integrations, exports and support tooling.</p></article>
+            <article><b>05</b><h3>Trust & governance</h3><p>Consent/purpose, retention, audit, quality gates, uncertainty, privacy and incident operations.</p></article>
+            <article><b>06</b><h3>Conversational semantics</h3><p>Business ontology, query planner, permissions, citations, memory and action confirmation.</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="14">
+        <div class="content">
+          <p class="eyebrow">12-MONTH EXECUTION</p>
+          <h2>Build toward repeatability through measurable gates</h2>
+          <div class="roadmap">
+            <article><small>NOW</small><h3>POC proof</h3><p>2D geometry, observations, analytics, alerts, insights and MCP.</p><b>Gate: honest demo</b></article>
+            <article><small>0–3 MONTHS</small><h3>Pilot core</h3><p>Tenancy, PostgreSQL, idempotency, edge supervision, evaluation harness.</p><b>Gate: 7 days unattended</b></article>
+            <article><small>3–6 MONTHS</small><h3>Spatial onboarding</h3><p>Scan app, 3D scene graph, auto-calibration, interactive twin, annotation.</p><b>Gate: one repeatable install</b></article>
+            <article><small>6–12 MONTHS</small><h3>Closed-loop product</h3><p>Model registry, rollout/rollback, conversation, multi-site operations.</p><b>Gate: paid expansion</b></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-slide="15">
+        <div class="content">
+          <p class="eyebrow">GO-TO-MARKET</p>
+          <h2>Start with one operational question at one site</h2>
+          <div class="pilot">
+            <div class="pilot-number"><strong>1</strong><span>store</span></div>
+            <div class="pilot-number"><strong>2–5</strong><span>existing cameras</span></div>
+            <div class="pilot-number"><strong>4</strong><span>weeks</span></div>
+            <div class="pilot-number"><strong>1</strong><span>decision to improve</span></div>
+          </div>
+          <div class="pilot-measures">
+            <p><b>Technical:</b> workflow accuracy, uptime, latency, gaps and recovery</p>
+            <p><b>Operational:</b> manager usage, reviewed signals and actions influenced</p>
+            <p><b>Economic:</b> installation time, support burden and compute cost per camera</p>
+          </div>
+          <p class="truth-label">No fabricated traction or pricing: those become investor-grade only after design-partner evidence.</p>
+        </div>
+      </section>
+
+      <section class="slide final-slide" data-slide="16">
+        <div class="content">
+          <p class="eyebrow">THE INVESTMENT THESIS</p>
+          <h2>A digital twin that answers back</h2>
+          <div class="final-columns">
+            <p><b>Proof exists</b><br/>StoreLens validates the observation, geometry, insight and MCP foundations.</p>
+            <p><b>The wedge is disciplined</b><br/>Retail operations creates a measurable first use case without limiting the architecture.</p>
+            <p><b>The roadmap is concrete</b><br/>3D onboarding, reliable edge execution and a closed-loop model lifecycle turn the POC into a customer platform.</p>
+          </div>
+          <p class="final-ask">The next milestone: one site running for 30 days, producing trusted operational value, with an installation that can be repeated.</p>
+          <p class="meta">ManySight · Spatial intelligence for the physical world</p>
+        </div>
+      </section>
+    </main>
+
+    <nav class="deck-nav" aria-label="Presentation controls">
+      <button id="prevSlide" aria-label="Previous slide">←</button>
+      <span id="slideCounter">01 / 16</span>
+      <div id="progress"><i></i></div>
+      <button id="nextSlide" aria-label="Next slide">→</button>
+      <button id="fullscreen" aria-label="Toggle fullscreen">⛶</button>
+    </nav>
+    <script type="module">
+      import("./app.bundle.js").catch((error) => {
+        document.body.dataset.appError = error?.stack || String(error);
+        console.error("ManySight deck failed to initialize", error);
+      });
+    </script>
+  </body>
+</html>
