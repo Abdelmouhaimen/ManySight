@@ -8,16 +8,6 @@
         "http://localhost:8000",
         "http://127.0.0.1:8000"
       ]
-    },
-    "cloudflare": {
-      "public_url": "",
-      "mcp_url": "",
-      "cors_origins": []
-    },
-    "render": {
-      "public_url": "",
-      "mcp_url": "",
-      "cors_origins": []
     }
   },
   "paths": {

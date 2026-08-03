@@ -11,9 +11,6 @@ venv/
 # Frontend dependencies and build output
 dashboard/node_modules/
 dashboard/dist/
-deploy/cloudflare/node_modules/
-deploy/cloudflare/.dev.vars
-deploy/cloudflare/.dev.vars.*
 
 # Local tooling and operating-system files
 .coverage

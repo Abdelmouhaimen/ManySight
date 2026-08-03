@@ -1,8 +1,0 @@
-# Runtime-only dependencies for the hosted StoreLens API/MCP container.
-# Camera and computer-vision packages stay on agent/edge worker devices.
-fastapi
-uvicorn[standard]
-numpy
-pillow
-requests
-mcp
