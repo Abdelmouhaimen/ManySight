@@ -41,7 +41,7 @@ def derive_dwells(since: float, until: float, zone_id: int | None = None,
             open_at.setdefault(key, (r["ts"], db.jload(r["attributes"], {})))
         elif key in open_at:
             t0, attrs = open_at.pop(key)
-            if r["ts"] > t0 and r["ts"] >= since:
+            if r["ts"] >= t0 and r["ts"] >= since:
                 visits.append({"zone_id": r["zone_id"], "track_id": r["track_id"], "t0": t0,
                                "value": min(r["ts"] - t0, max_dwell_s),
                                "attributes": db.jload(r["attributes"], {}) or attrs,
@@ -88,3 +88,198 @@ def current_state(source_id: int, now: float) -> dict | None:
     return db.q1(
         "SELECT ts, label FROM events WHERE event_type='state_change' AND source_id=?"
         " AND ts<=? ORDER BY ts DESC, id DESC LIMIT 1", (source_id, now))
+
+
+# ---------------------------------------------------------------------------
+# Current-contract derivation (schema_version=2): workers submit only
+# detection/measurement/state observations. Everything below derives visits,
+# state intervals, and measurement aggregates from those raw rows, and is
+# designed to be merged with the legacy functions above so historical
+# zone_enter/zone_exit/state_change rows keep contributing to the same
+# analytics. All thresholds are explicit and overridable per call, per the
+# platform's "configurable rules" requirement.
+# ---------------------------------------------------------------------------
+
+MAX_GAP_S = 45.0            # gap between same-zone detections before a visit session closes
+MIN_CONFIRM_SAMPLES = 2     # detections required before a visit is confirmed (debounces boundary jitter)
+STATE_STALE_S = 120.0       # a state sample older than this no longer counts as "current"
+PRESENCE_TIMEOUT_S = 30.0   # an entity is "active" if detected within this window
+
+
+def derive_visits_from_detections(since: float, until: float, zone_id: int | None = None,
+                                   gap_s: float = MAX_GAP_S, min_samples: int = MIN_CONFIRM_SAMPLES,
+                                   max_dwell_s: float = MAX_DWELL_S) -> tuple[list[dict], int]:
+    """Zone visits derived purely from ordered, zone-assigned `detection` rows
+    grouped by (entity_id, zone_id) -- the current contract's substitute for
+    worker-authored zone_enter/zone_exit pairs.
+
+    Consecutive detections for the same entity in the same zone belong to one
+    visit as long as no gap between them exceeds `gap_s` (bridges missed frames
+    or brief occlusion); a larger gap, or the entity/zone changing, closes the
+    visit. A visit is only counted once it has at least `min_samples` confirmed
+    detections, so a single noisy frame at a zone boundary is never a confirmed
+    entry or exit. Returns (visits, open_count) in the same shape as
+    `derive_dwells`, so callers can merge legacy and current-contract visits.
+    """
+    where = ["ts BETWEEN ? AND ?", "event_type='detection'", "track_id IS NOT NULL", "zone_id IS NOT NULL"]
+    args: list = [since - max_dwell_s, until]
+    if zone_id is not None:
+        where.append("zone_id=?")
+        args.append(zone_id)
+    rows = db.q(
+        f"SELECT ts, track_id, zone_id, attributes FROM events WHERE {' AND '.join(where)}"
+        f" ORDER BY track_id, zone_id, ts, id", args)
+    visits: list[dict] = []
+    open_count = 0
+
+    def emit(session: dict, end: float, completed: bool):
+        nonlocal open_count
+        if session["samples"] < min_samples or end <= since:
+            return
+        if not completed:
+            open_count += 1
+        visits.append({
+            "zone_id": session["zone_id"], "track_id": session["track_id"], "t0": session["t0"],
+            "value": min(end - session["t0"], max_dwell_s),
+            "attributes": session["attributes"], "completed": completed,
+        })
+
+    session = None
+    for r in rows:
+        key = (r["track_id"], r["zone_id"])
+        if session is not None and (session["track_id"], session["zone_id"]) == key \
+                and r["ts"] - session["last_ts"] <= gap_s:
+            session["last_ts"] = r["ts"]
+            session["samples"] += 1
+            continue
+        if session is not None:
+            # A different entity/zone follows, or the gap was exceeded: this
+            # session's fate is certain within the queried window -- it ended.
+            emit(session, session["last_ts"], completed=True)
+        session = {"track_id": r["track_id"], "zone_id": r["zone_id"], "t0": r["ts"],
+                  "last_ts": r["ts"], "samples": 1, "attributes": db.jload(r["attributes"], {})}
+    if session is not None:
+        # The last session in the window may still be ongoing.
+        stale = (until - session["last_ts"]) > gap_s
+        emit(session, session["last_ts"] if stale else until, completed=stale)
+    return visits, open_count
+
+
+def derive_visits(since: float, until: float, zone_id: int | None = None,
+                  max_dwell_s: float = MAX_DWELL_S) -> tuple[list[dict], int]:
+    """Zone visits from BOTH sources: legacy worker-authored zone_enter/zone_exit
+    pairs (derive_dwells) and current-contract detection sessions
+    (derive_visits_from_detections). This is the function analytics and alerts
+    should call — it keeps historical data replayable while requiring nothing
+    but tracked detections from current workers."""
+    legacy_visits, legacy_open = derive_dwells(since, until, zone_id, max_dwell_s)
+    detection_visits, detection_open = derive_visits_from_detections(since, until, zone_id, max_dwell_s=max_dwell_s)
+    return legacy_visits + detection_visits, legacy_open + detection_open
+
+
+def coalesce_state_intervals(rows: list[dict], until: float,
+                             stale_s: float = STATE_STALE_S) -> tuple[list[dict], bool]:
+    """rows: ordered {ts, label} samples for ONE (source_id, name, entity_id) key.
+    Workers may send repeated identical samples every heartbeat; repeated
+    identical samples must not create repeated transitions, so consecutive
+    same-label samples are coalesced into one interval before duration or
+    transition-count math ever sees them. The trailing interval is marked
+    stale — and its end clipped to last_sample_ts + stale_s rather than
+    extended to `until` — once the most recent sample is older than `stale_s`,
+    so an unresponsive worker can never make a state look verified forever.
+    Returns (intervals, is_current_stale)."""
+    coalesced: list[dict] = []
+    for r in rows:
+        if coalesced and coalesced[-1]["label"] == r["label"]:
+            coalesced[-1]["samples"] += 1
+            coalesced[-1]["last_sample_ts"] = r["ts"]
+            continue
+        coalesced.append({"label": r["label"], "start": r["ts"], "last_sample_ts": r["ts"], "samples": 1})
+    if not coalesced:
+        return [], False
+    intervals = []
+    for i, iv in enumerate(coalesced):
+        end = coalesced[i + 1]["start"] if i + 1 < len(coalesced) else None
+        intervals.append({"label": iv["label"], "start": iv["start"], "samples": iv["samples"],
+                          "last_sample_ts": iv["last_sample_ts"], "end": end, "stale": False})
+    last = intervals[-1]
+    stale = (until - last["last_sample_ts"]) > stale_s
+    last["end"] = (last["last_sample_ts"] + stale_s) if stale else until
+    last["stale"] = stale
+    return intervals, stale
+
+
+def state_keys(since: float, until: float, source_id: int | None = None) -> list[tuple]:
+    """Distinct (source_id, name, entity_id) state series with samples in range."""
+    where, args = ["event_type='state'", "ts BETWEEN ? AND ?", "name IS NOT NULL"], [since, until]
+    if source_id is not None:
+        where.append("source_id=?")
+        args.append(source_id)
+    rows = db.q(f"SELECT DISTINCT source_id, name, track_id FROM events WHERE {' AND '.join(where)}", args)
+    return [(r["source_id"], r["name"], r["track_id"]) for r in rows]
+
+
+def state_samples(source_id: int, name: str, entity_id: str | None, since: float, until: float) -> list[dict]:
+    where = ["event_type='state'", "source_id=?", "name=?", "ts<=?"]
+    args: list = [source_id, name, until]
+    if entity_id is None:
+        where.append("track_id IS NULL")
+    else:
+        where.append("track_id=?")
+        args.append(entity_id)
+    return db.q(f"SELECT ts, label FROM events WHERE {' AND '.join(where)} ORDER BY ts, id", args)
+
+
+def current_state_interval(source_id: int, name: str, entity_id: str | None, now: float,
+                           stale_s: float = STATE_STALE_S) -> dict | None:
+    """The current (possibly stale) coalesced interval for one state series, or
+    None if it has never reported."""
+    rows = state_samples(source_id, name, entity_id, now - 30 * 24 * 3600, now)
+    intervals, _ = coalesce_state_intervals(rows, now, stale_s)
+    return intervals[-1] if intervals else None
+
+
+def measurement_series(since: float, until: float, name: str, source_id: int | None = None,
+                       entity_id: str | None = None, label: str | None = None) -> list[dict]:
+    """Ordered raw samples for one measurement series: {ts, value, value_kind,
+    source_id, track_id, label, attributes}. Callers that only need the
+    aggregate math (aggregate_measurement) can ignore the extra columns; callers
+    doing further filtering (e.g. the unified analytics query engine) need them
+    on the row without a second query."""
+    where = ["event_type='measurement'", "name=?", "ts BETWEEN ? AND ?", "value IS NOT NULL"]
+    args: list = [name, since, until]
+    if source_id is not None:
+        where.append("source_id=?")
+        args.append(source_id)
+    if entity_id is not None:
+        where.append("track_id=?")
+        args.append(entity_id)
+    if label is not None:
+        where.append("label=?")
+        args.append(label)
+    return db.q(
+        f"SELECT ts, value, value_kind, source_id, track_id, label, attributes FROM events"
+        f" WHERE {' AND '.join(where)} ORDER BY ts, id", args)
+
+
+def aggregate_measurement(rows: list[dict]) -> dict:
+    """Aggregate one ordered measurement series, respecting `value_kind`. Gauge
+    samples are never summed by default (a sampled instantaneous value has no
+    meaningful sum). Cumulative series get counter-reset detection so a worker
+    restart never produces a negative rate; delta series are summed and rated
+    directly. Aggregation must always respect value_kind — never guess."""
+    if not rows:
+        return {"latest": None, "minimum": None, "maximum": None, "average": None,
+               "sum": None, "samples": 0, "rate": None}
+    values = [r["value"] for r in rows]
+    kind = rows[-1]["value_kind"] or "gauge"
+    duration = max(rows[-1]["ts"] - rows[0]["ts"], 1e-9)
+    base = {"latest": values[-1], "minimum": min(values), "maximum": max(values),
+           "average": sum(values) / len(values), "samples": len(values)}
+    if kind == "delta":
+        total = sum(values)
+        return {**base, "sum": total, "rate": total / duration if len(values) > 1 else None}
+    if kind == "cumulative":
+        increase = sum(cur - prev for prev, cur in zip(values, values[1:]) if cur >= prev)
+        return {**base, "sum": None, "rate": increase / duration if len(values) > 1 else None}
+    return {**base, "sum": None, "rate": None}  # gauge

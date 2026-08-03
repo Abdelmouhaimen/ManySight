@@ -87,14 +87,17 @@ def heatmap(since: float | None = None, until: float | None = None,
 @router.get("/analytics/dwell")
 def dwell(since: float | None = None, until: float | None = None, group_by: str | None = None,
           zone_id: int | None = None, max_dwell_s: float = derive.MAX_DWELL_S):
-    """Time spent in zones, always derived from zone_enter/zone_exit pairs.
+    """Time spent in zones, derived from BOTH legacy zone_enter/zone_exit pairs and
+    current-contract tracked detections (services/derive.py:derive_visits) -- never
+    from worker-posted aggregates.
 
     Worker-posted `zone_dwell` events are stored as observations but never read here.
-    Still-open visits (enter without exit yet) are included clipped to `until` and
-    reported in `open_visits`; single visits are capped at `max_dwell_s`.
+    Still-open visits (enter without exit yet, or a detection session not yet stale)
+    are included clipped to `until` and reported in `open_visits`; single visits are
+    capped at `max_dwell_s`.
     """
     since, until = _range(since, until)
-    visits, open_count = derive.derive_dwells(since, until, zone_id, max_dwell_s)
+    visits, open_count = derive.derive_visits(since, until, zone_id, max_dwell_s)
     agg: dict[tuple, dict] = defaultdict(lambda: {"visits": 0, "total_s": 0.0})
     for d in visits:
         group = str(d["attributes"].get(group_by, "all")) if group_by else "all"
@@ -242,14 +245,15 @@ def counts(since: float | None = None, until: float | None = None,
 
 @router.get("/analytics/transitions")
 def transitions(since: float | None = None, until: float | None = None, max_gap_s: float = 1800):
+    """Zone-to-zone movement, derived from legacy `zone_enter` markers and current-
+    contract zone-assigned `detection` rows together (one merged, time-ordered
+    sequence per track) -- so historical and current-contract data both contribute
+    to the same flow matrix."""
     since, until = _range(since, until)
     rows = db.q(
-        "SELECT ts, track_id, zone_id FROM events WHERE ts BETWEEN ? AND ? AND event_type='zone_enter'"
+        "SELECT ts, track_id, zone_id FROM events WHERE ts BETWEEN ? AND ?"
+        " AND event_type IN ('zone_enter','detection')"
         " AND track_id IS NOT NULL AND zone_id IS NOT NULL ORDER BY track_id, ts", (since, until))
-    if not rows:  # fall back to zone changes observed in raw detections
-        rows = db.q(
-            "SELECT ts, track_id, zone_id FROM events WHERE ts BETWEEN ? AND ? AND event_type='detection'"
-            " AND track_id IS NOT NULL AND zone_id IS NOT NULL ORDER BY track_id, ts", (since, until))
     links: dict[tuple, int] = defaultdict(int)
     prev_track, prev_zone, prev_ts = None, None, 0.0
     for r in rows:
@@ -265,27 +269,41 @@ def transitions(since: float | None = None, until: float | None = None, max_gap_
 
 @router.get("/analytics/states")
 def states(since: float | None = None, until: float | None = None, source_id: int | None = None):
+    """State timelines, derived from legacy `state_change` flips and current-contract
+    repeated `state` samples alike. Consecutive identical samples are coalesced
+    (services/derive.py:coalesce_state_intervals) before segments or totals are
+    computed, so a heartbeat-sampled worker never inflates the transition count.
+    A source/name/entity key whose most recent sample is older than the stale
+    timeout reports its trailing segment as stale rather than extending it forever.
+    """
     since, until = _range(since, until)
-    where, args = ["event_type='state_change'", "ts<=?"], [until]
+    where, args = ["event_type IN ('state_change','state')", "ts BETWEEN ? AND ?", "source_id IS NOT NULL"], \
+        [since - 30 * 24 * 3600, until]
     if source_id is not None:
         where.append("source_id=?"); args.append(source_id)
-    rows = db.q(f"SELECT ts, source_id, zone_id, label FROM events WHERE {' AND '.join(where)} ORDER BY ts", args)
+    rows = db.q(
+        f"SELECT ts, source_id, track_id, name, label FROM events WHERE {' AND '.join(where)}"
+        f" AND label IS NOT NULL AND label!='' ORDER BY source_id, track_id, name, ts, id", args)
     src_names = {s["id"]: s["name"] for s in db.q("SELECT id, name FROM sources")}
-    by_src: dict = defaultdict(list)
+    by_key: dict = defaultdict(list)
     for r in rows:
-        by_src[r["source_id"]].append(r)
+        by_key[(r["source_id"], r.get("name") or "", r["track_id"])].append(r)
     out = []
-    for sid, changes in by_src.items():
+    for (sid, name, entity_id), samples in by_key.items():
+        intervals, stale = derive.coalesce_state_intervals(samples, until)
         segments, totals = [], defaultdict(float)
-        for i, c in enumerate(changes):
-            start = max(c["ts"], since)
-            end = changes[i + 1]["ts"] if i + 1 < len(changes) else until
-            if end <= since or not c["label"]:
+        for iv in intervals:
+            start, end = max(iv["start"], since), iv["end"]
+            if end <= since:
                 continue
-            seg = {"label": c["label"], "start": start, "end": end, "seconds": round(end - start, 1)}
-            segments.append(seg)
-            totals[c["label"]] += seg["seconds"]
+            seconds = round(end - start, 1)
+            segments.append({"label": iv["label"], "start": start, "end": end,
+                             "seconds": seconds, "stale": iv["stale"], "samples": iv["samples"]})
+            totals[iv["label"]] += seconds
         if segments:
-            out.append({"source_id": sid, "source_name": src_names.get(sid, f"source {sid}"),
-                        "segments": segments, "totals": {k: round(v, 1) for k, v in totals.items()}})
+            out.append({
+                "source_id": sid, "source_name": src_names.get(sid, f"source {sid}"),
+                "name": name or None, "entity_id": entity_id, "stale": stale,
+                "segments": segments, "totals": {k: round(v, 1) for k, v in totals.items()},
+            })
     return {"series": out, "since": since, "until": until}
