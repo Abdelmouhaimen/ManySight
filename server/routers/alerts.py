@@ -8,7 +8,7 @@ from .. import db
 
 router = APIRouter(tags=["alerts"])
 
-RULE_KINDS = {"dwell_exceeds", "occupancy_exceeds", "state_alert", "event_match"}
+RULE_KINDS = {"dwell_exceeds", "occupancy_exceeds", "state_alert", "event_match", "analysis_condition"}
 REVIEW_STATUSES = {"new", "in_review", "resolved", "dismissed"}
 
 
@@ -16,6 +16,12 @@ class RuleIn(BaseModel):
     name: str
     kind: str
     params: dict = {}
+    # `analysis_condition` rules use these instead of `params`: analysis is
+    # {subject, measures, filters}; condition is {operator, value, for_seconds,
+    # window_s}. Evaluated periodically (services/alert_engine.py:evaluate_ongoing),
+    # not just on ingestion, so it doesn't need a new observation to fire.
+    analysis: dict | None = None
+    condition: dict | None = None
     webhook_url: str = ""
     cooldown_s: float = 60
     enabled: bool = True
@@ -25,6 +31,8 @@ class RulePatch(BaseModel):
     name: str | None = None
     kind: str | None = None
     params: dict | None = None
+    analysis: dict | None = None
+    condition: dict | None = None
     webhook_url: str | None = None
     cooldown_s: float | None = None
     enabled: bool | None = None
@@ -37,7 +45,10 @@ class AlertPatch(BaseModel):
 
 def serialize(row: dict) -> dict:
     return {"id": row["id"], "name": row["name"], "kind": row["kind"],
-            "params": db.jload(row["params_json"], {}), "webhook_url": row["webhook_url"],
+            "params": db.jload(row["params_json"], {}),
+            "analysis": db.jload(row.get("analysis_json"), None),
+            "condition": db.jload(row.get("condition_json"), None),
+            "webhook_url": row["webhook_url"],
             "cooldown_s": row["cooldown_s"], "enabled": bool(row["enabled"]),
             "last_fired_at": row["last_fired_at"], "created_at": row["created_at"]}
 
