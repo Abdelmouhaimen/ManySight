@@ -1,4 +1,5 @@
 """SQLite storage layer for StoreLens. Plain sqlite3, WAL mode, dict rows."""
+import hashlib
 import json
 import os
 import sqlite3
@@ -184,6 +185,31 @@ CREATE TABLE IF NOT EXISTS insight_definitions (
   created_at REAL,
   updated_at REAL
 );
+-- Deprecated: superseded by `analyses` (unified saved-analysis model). Kept for
+-- historical rows and best-effort migration; the API no longer writes new rows here.
+CREATE TABLE IF NOT EXISTS analyses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  question TEXT DEFAULT '',
+  subject TEXT NOT NULL,                        -- detection | measurement | state
+  measures_json TEXT NOT NULL DEFAULT '[]',     -- ["active_entities", ...]
+  filters_json TEXT NOT NULL DEFAULT '{}',
+  grouping_json TEXT NOT NULL DEFAULT '{}',     -- {primary, bucket, split_by}
+  default_range_json TEXT NOT NULL DEFAULT '{}',
+  comparison_json TEXT NOT NULL DEFAULT '{}',
+  presentation TEXT DEFAULT '',                 -- optional preferred renderer hint
+  pinned INTEGER DEFAULT 0,
+  sort_order INTEGER DEFAULT 0,
+  visibility TEXT NOT NULL DEFAULT 'visible',   -- visible | hidden
+  created_by TEXT NOT NULL DEFAULT 'user',      -- user | agent
+  status TEXT NOT NULL DEFAULT 'ready',
+  query_hash TEXT,                              -- normalized (subject,measures,filters,grouping) hash; duplicate detection
+  migrated_from_insight_id INTEGER,
+  migration_note TEXT DEFAULT '',
+  created_at REAL,
+  updated_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_analyses_query_hash ON analyses(query_hash);
 """
 
 
@@ -278,10 +304,34 @@ def init_db():
             "calibration_revision": "INTEGER",
             "surface_revision": "INTEGER",
             "zone_view_revision": "INTEGER",
+            # Observation contract v2 (schema_version=2): workers submit only
+            # detection/measurement/state kinds (stored in the existing event_type
+            # column) plus these columns. `track_id` doubles as the opaque
+            # `entity_id`; `label` and `attributes` carry per-kind meaning documented
+            # in docs/adr/0001-observation-contract.md. Legacy rows keep schema_version=1
+            # and their original event_type (zone_enter/zone_exit/zone_dwell/
+            # state_change/count/transition/custom) for historical audit.
+            "schema_version": "INTEGER NOT NULL DEFAULT 1",
+            "observation_id": "TEXT",
+            "worker_id": "INTEGER",
+            "name": "TEXT",
+            "entity_type": "TEXT",
+            "value_kind": "TEXT",
+            "unit": "TEXT",
+            "confidence": "REAL",
+            "identity_scope": "TEXT",
+            "identity_model_version": "TEXT",
         }
         for column, sql_type in event_migrations.items():
             if column not in event_columns:
                 con.execute(f"ALTER TABLE events ADD COLUMN {column} {sql_type}")
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_events_observation_id "
+            "ON events(observation_id) WHERE observation_id IS NOT NULL"
+        )
+        con.execute("CREATE INDEX IF NOT EXISTS idx_events_entity ON events(track_id, name, ts)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_events_source_name ON events(source_id, name, ts)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_events_worker ON events(worker_id, ts)")
         alert_columns = {r[1] for r in con.execute("PRAGMA table_info(alerts)").fetchall()}
         if "status" not in alert_columns:
             con.execute("ALTER TABLE alerts ADD COLUMN status TEXT NOT NULL DEFAULT 'new'")
@@ -290,6 +340,13 @@ def init_db():
         if "resolved_at" not in alert_columns:
             con.execute("ALTER TABLE alerts ADD COLUMN resolved_at REAL")
         con.execute("UPDATE alerts SET status='resolved' WHERE acknowledged=1 AND status='new'")
+        rule_columns = {r[1] for r in con.execute("PRAGMA table_info(alert_rules)").fetchall()}
+        if "analysis_json" not in rule_columns:
+            con.execute("ALTER TABLE alert_rules ADD COLUMN analysis_json TEXT")
+        if "condition_json" not in rule_columns:
+            con.execute("ALTER TABLE alert_rules ADD COLUMN condition_json TEXT")
+        if "condition_state_json" not in rule_columns:
+            con.execute("ALTER TABLE alert_rules ADD COLUMN condition_state_json TEXT DEFAULT '{}'")
         # Count lines now default to the last instantaneous observation in each
         # interval. Update only legacy template text, never user-authored wording.
         legacy_count_limitations = (
@@ -312,9 +369,105 @@ def init_db():
                 "INSERT INTO stores (id, name, width_m, height_m, map_json, created_at) VALUES (1,'My space',20,12,'{}',?)",
                 (time.time(),),
             )
+        _migrate_insights_to_analyses(con)
         con.commit()
     finally:
         con.close()
+
+
+def analysis_hash(subject: str, measures: list, filters: dict, grouping: dict) -> str:
+    """Canonical hash for duplicate-analysis detection — same (subject, measures,
+    filters, grouping) is the same question regardless of presentation."""
+    normalized = json.dumps(
+        {"subject": subject, "measures": sorted(measures),
+         "filters": filters, "grouping": grouping},
+        sort_keys=True,
+    )
+    return hashlib.sha256(normalized.encode()).hexdigest()[:24]
+
+
+def _map_insight_to_analysis(row: dict) -> dict:
+    """Best-effort translation of a legacy block+dataset+params insight into the
+    unified analysis shape. Approximate by nature — see migration_note on the
+    result and docs/adr/0001-observation-contract.md 'Legacy insight mapping'."""
+    params = jload(row["params_json"], {})
+    dataset, block = row["dataset"], row["block"]
+    subject, measures, filters, grouping, presentation, note = "detection", [], {}, {}, "", ""
+    zone_id = params.get("zone_id")
+    if zone_id is not None:
+        filters["zone_ids"] = [zone_id]
+    if dataset == "summary":
+        field = params.get("field", "tracks")
+        measures = ["active_entities"] if field == "active_tracks" else ["distinct_entities"]
+        if field not in {"tracks", "active_tracks"}:
+            note = f"legacy summary field '{field}' has no direct analog; approximated as distinct_entities"
+    elif dataset == "heatmap":
+        subject, measures, presentation = "detection", ["density"], "heatmap_map"
+        if params.get("label"):
+            filters["labels"] = [params["label"]]
+        if params.get("source_id") is not None:
+            filters["source_ids"] = [params["source_id"]]
+    elif dataset == "dwell":
+        subject = "detection"
+        measures = ["visits", "average_dwell", "total_dwell"]
+        grouping = {"primary": "zone"} if block in {"bar", "table"} else {}
+        if params.get("group_by"):
+            grouping["split_by"] = [params["group_by"]]
+    elif dataset == "occupancy":
+        subject, measures = "detection", ["active_entities"]
+        grouping = {"primary": "time", "bucket": "5m"}
+        if params.get("label"):
+            filters["labels"] = [params["label"]]
+        if params.get("group_by") == "label":
+            grouping["split_by"] = ["label"]
+    elif dataset == "counts":
+        subject = "measurement"
+        measures = ["average"] if params.get("aggregation") == "avg" else ["latest"]
+        grouping = {"primary": "time", "bucket": "5m"}
+        if params.get("label"):
+            filters["measurement_names"] = [params["label"]]
+    elif dataset == "transitions":
+        subject, measures, grouping, presentation = "detection", ["transition_count"], {"primary": "zone"}, "flow_matrix"
+    elif dataset == "states":
+        subject, measures, presentation = "state", ["duration"], "state_timeline"
+        if params.get("source_id") is not None:
+            filters["source_ids"] = [params["source_id"]]
+    else:
+        note = f"unrecognized legacy dataset '{dataset}' — migrated as an empty detection KPI; review manually"
+    return {
+        "name": row["title"], "question": row["question"], "subject": subject,
+        "measures": measures, "filters": filters, "grouping": grouping,
+        "presentation": presentation,
+        "note": note or f"auto-migrated from legacy block='{block}' dataset='{dataset}' params={params}",
+    }
+
+
+def _migrate_insights_to_analyses(con: sqlite3.Connection):
+    """One-time, idempotent best-effort migration of insight_definitions rows into
+    the unified analyses table. Never drops a legacy row; every insight gets a
+    corresponding analyses row, even an approximate or unrepresentable one, with
+    migration_note explaining the mapping so nothing is silently lost."""
+    already = {r[0] for r in con.execute(
+        "SELECT migrated_from_insight_id FROM analyses WHERE migrated_from_insight_id IS NOT NULL"
+    ).fetchall()}
+    rows = con.execute("SELECT * FROM insight_definitions").fetchall()
+    now = time.time()
+    for row in rows:
+        row = dict(row)
+        if row["id"] in already:
+            continue
+        mapped = _map_insight_to_analysis(row)
+        query_hash = analysis_hash(mapped["subject"], mapped["measures"], mapped["filters"], mapped["grouping"])
+        con.execute(
+            "INSERT INTO analyses (name, question, subject, measures_json, filters_json, grouping_json,"
+            " default_range_json, comparison_json, presentation, pinned, sort_order, visibility,"
+            " created_by, status, query_hash, migrated_from_insight_id, migration_note, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (mapped["name"], mapped["question"], mapped["subject"], json.dumps(mapped["measures"]),
+             json.dumps(mapped["filters"]), json.dumps(mapped["grouping"]), "{}", "{}",
+             mapped["presentation"], row["pinned"], row["sort_order"], row["visibility"],
+             row["created_by"], row["status"], query_hash, row["id"], mapped["note"], now, now),
+        )
 
 
 def q(sql: str, args=()) -> list[dict]:
