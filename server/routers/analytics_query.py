@@ -305,14 +305,11 @@ def _query_detection(q: QueryIn, since: float, until: float) -> dict:
 
 def _query_measurement(q: QueryIn, since: float, until: float) -> dict:
     filters, grouping = q.filters, q.grouping
-    names = filters.get("measurement_names") or [
+    requested_names = filters.get("measurement_names") or [
         r["name"] for r in db.q(
             "SELECT DISTINCT name FROM events WHERE event_type='measurement' AND name IS NOT NULL"
             " AND ts BETWEEN ? AND ?", (since, until))
     ]
-    if not names:
-        return {"shape": "scalar" if not grouping.primary else "timeseries", "dimensions": [],
-               "measures": q.measures, "rows": [], "metadata": {"warnings": ["no measurement series matched"]}}
 
     def filtered_series(name):
         rows = derive.measurement_series(since, until, name)
@@ -327,8 +324,19 @@ def _query_measurement(q: QueryIn, since: float, until: float) -> dict:
             rows = [r for r in rows if predicate(r.get("attributes"))]
         return rows
 
+    # A name with zero matching rows in range never gets a row -- whether it came
+    # from an explicit (possibly stale or mistyped) measurement_names filter or
+    # the implicit "every distinct name in range" default below. Synthesizing a
+    # null-valued placeholder row for a series with no data would be
+    # indistinguishable from a real series that is merely idle right now.
+    series_by_name = {name: filtered_series(name) for name in requested_names}
+    names = [name for name in requested_names if series_by_name[name]]
+    if not names:
+        return {"shape": "scalar" if not grouping.primary else "timeseries", "dimensions": [],
+               "measures": q.measures, "rows": [], "metadata": {"warnings": ["no measurement series matched"]}}
+
     def aggregate_for(name):
-        agg = derive.aggregate_measurement(filtered_series(name))
+        agg = derive.aggregate_measurement(series_by_name[name])
         return {m: agg[m] for m in q.measures}
 
     if grouping.primary == "time":
@@ -336,9 +344,8 @@ def _query_measurement(q: QueryIn, since: float, until: float) -> dict:
         b0, b1 = int(since // bucket_s), int(until // bucket_s)
         rows = []
         for name in names:
-            series_rows = filtered_series(name)
             buckets: dict = defaultdict(list)
-            for r in series_rows:
+            for r in series_by_name[name]:
                 buckets[int(r["ts"] // bucket_s)].append(r)
             for b in range(b0, b1 + 1):
                 agg = derive.aggregate_measurement(buckets.get(b, []))

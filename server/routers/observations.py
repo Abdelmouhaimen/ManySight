@@ -320,21 +320,19 @@ def list_observations(since: float | None = None, until: float | None = None,
     return {"observations": observations, "count": len(observations), "total": total, "next_cursor": next_cursor}
 
 
-@router.get("/observations/{observation_id}")
-def get_observation(observation_id: int):
-    row = db.q1("SELECT * FROM events WHERE id=?", (observation_id,))
-    if not row:
-        raise HTTPException(404, "observation not found")
-    zone_names = {z["id"]: z["name"] for z in db.q("SELECT id, name FROM zones")}
-    return _serialize_observation(row, zone_names)
-
-
 # --------------------------------------------------------------------------
 # Latest-value read models. Raw observations stay append-only; these are
 # derived read models computed at query time from the same `events` table
 # (no separate materialized/cached copy), so they are always rebuildable and
 # never a second source of truth. Kept here because they read the same
 # storage this router writes to.
+#
+# Registered before /observations/{observation_id}: a dynamic single-segment
+# path parameter route would otherwise shadow this static path (FastAPI/
+# Starlette matches routes in registration order), swallowing every request
+# to /observations/latest and failing int-parsing on "latest" as if it were
+# an observation_id. Keep any future static /observations/* route above the
+# {observation_id} route below for the same reason.
 # --------------------------------------------------------------------------
 
 def _current_detections(since: float, now: float, source_id: int | None, zone_id: int | None) -> dict:
@@ -431,3 +429,12 @@ def latest_observations(kind: str | None = None, source_id: int | None = None,
         "measurement": _current_measurements(since, now, source_id, name),
         "state": _current_states(since, now, source_id),
     }
+
+
+@router.get("/observations/{observation_id}")
+def get_observation(observation_id: int):
+    row = db.q1("SELECT * FROM events WHERE id=?", (observation_id,))
+    if not row:
+        raise HTTPException(404, "observation not found")
+    zone_names = {z["id"]: z["name"] for z in db.q("SELECT id, name FROM zones")}
+    return _serialize_observation(row, zone_names)

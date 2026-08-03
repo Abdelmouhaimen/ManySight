@@ -67,6 +67,55 @@ def test_empty_result_for_unmatched_filters(client, calibrated_source):
     assert response.json()["rows"] == []
 
 
+def test_empty_result_for_multiple_unmatched_filters(client, calibrated_source):
+    response = client.post("/api/v1/analytics/query", json={
+        "subject": "measurement", "measures": ["latest"],
+        "filters": {"measurement_names": ["nonexistent_a", "nonexistent_b"]},
+        "range": {"since": 0, "until": 2000},
+    })
+    assert response.status_code == 200
+    assert response.json()["rows"] == []
+
+
+def test_mixed_existing_and_nonexistent_names_only_returns_real_rows(client, calibrated_source):
+    client.post("/api/v1/observations/batch", json={"observations": [
+        make_measurement(calibrated_source, "q-mix-1", 1000.0, "queue_length", 3),
+        make_measurement(calibrated_source, "q-mix-2", 1030.0, "queue_length", 5),
+    ]})
+    response = client.post("/api/v1/analytics/query", json={
+        "subject": "measurement", "measures": ["latest", "average"],
+        "filters": {"measurement_names": ["queue_length", "nonexistent"]},
+        "range": {"since": 0, "until": 2000},
+    })
+    assert response.status_code == 200
+    result = response.json()
+    assert [row["measurement_name"] for row in result["rows"]] == ["queue_length"]
+    # gauge semantics untouched by the empty-row fix: averaged, not summed
+    assert result["rows"][0]["latest"] == 5
+    assert result["rows"][0]["average"] == 4
+
+
+def test_grouped_query_with_unmatched_filter_returns_no_buckets(client, calibrated_source):
+    response = client.post("/api/v1/analytics/query", json={
+        "subject": "measurement", "measures": ["average"],
+        "filters": {"measurement_names": ["nonexistent"]},
+        "grouping": {"primary": "time", "bucket": "1h"},
+        "range": {"since": 0, "until": 3600 * 3},
+    })
+    assert response.status_code == 200
+    assert response.json()["rows"] == []
+
+
+def test_no_filter_no_data_still_returns_empty_rows(client):
+    """The pre-existing no-filter path this fix must stay consistent with."""
+    response = client.post("/api/v1/analytics/query", json={
+        "subject": "measurement", "measures": ["latest"],
+        "range": {"since": 0, "until": 2000},
+    })
+    assert response.status_code == 200
+    assert response.json()["rows"] == []
+
+
 def test_capabilities_endpoint_lists_measures_per_subject(client):
     response = client.get("/api/v1/analytics/capabilities")
     assert response.status_code == 200
