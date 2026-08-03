@@ -1,4 +1,8 @@
 """Observation validation: POST /api/v1/observations/batch."""
+import json
+
+import pytest
+
 from helpers import make_detection
 
 
@@ -49,16 +53,54 @@ def test_missing_required_field_is_item_level_error(client, source_id):
     assert result["rejected"][0]["error"] == "missing_required_field"
 
 
-def test_invalid_numeric_value_rejected(client, source_id):
-    body = {"observations": [{
+def test_invalid_numeric_value_rejected_by_server(client, source_id):
+    """Proves the server itself rejects a NaN value (enrich.py:validate_shape),
+    not merely that some HTTP client library refuses to transmit one. Sent as
+    a raw body (bypassing the test client's own JSON encoder -- see
+    test_httpx_json_encoder_refuses_nan_before_the_request_is_sent below) using
+    the bare `NaN` token Python's json module accepts as a non-standard
+    extension on both the write and read side, so it actually reaches the
+    server's request parser and then validate_shape."""
+    raw = json.dumps({"observations": [{
         "schema_version": 2, "observation_id": "obs-nan", "kind": "measurement",
         "timestamp": 1000.0, "source_id": source_id, "name": "queue_length", "value": float("nan"),
+    }]}, allow_nan=True).encode()
+    assert b"NaN" in raw  # sanity: we're actually exercising the NaN path
+    response = client.post(
+        "/api/v1/observations/batch", content=raw, headers={"content-type": "application/json"},
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["accepted"] == 0
+    assert result["rejected"][0]["error"] == "invalid_observation"
+    assert "finite" in result["rejected"][0]["message"]
+
+
+def test_httpx_json_encoder_refuses_nan_before_the_request_is_sent(client, source_id):
+    """Documents a client-library limitation, not server behavior: passing
+    `json=` (as any normal caller would) serializes via a strict encoder
+    (`allow_nan=False`) that raises before the request is even sent, so a NaN
+    sent this way never reaches the server's own validation at all."""
+    body = {"observations": [{
+        "schema_version": 2, "observation_id": "obs-nan-2", "kind": "measurement",
+        "timestamp": 1000.0, "source_id": source_id, "name": "queue_length", "value": float("nan"),
     }]}
-    response = client.post("/api/v1/observations/batch", json=body)
-    # FastAPI/pydantic serializes NaN as a bare `NaN` token that most JSON
-    # parsers (including the server's) reject at the transport layer before
-    # this ever reaches validate_shape — assert it does not silently succeed.
-    assert response.status_code != 200 or response.json()["accepted"] == 0
+    with pytest.raises(ValueError, match="[Nn]ot JSON compliant|[Oo]ut of range"):
+        client.post("/api/v1/observations/batch", json=body)
+
+
+def test_validate_shape_rejects_nan_and_inf_directly():
+    """Unit-tests the canonical numeric validator itself, independent of any
+    HTTP client's JSON encoding behavior."""
+    from server.services import enrich
+
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        try:
+            enrich.validate_shape({"value": bad})
+        except ValueError as exc:
+            assert "finite" in str(exc)
+        else:
+            raise AssertionError(f"validate_shape accepted non-finite value {bad!r}")
 
 
 def test_duplicate_observation_id_is_idempotent_not_error(client, source_id):

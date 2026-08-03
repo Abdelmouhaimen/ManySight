@@ -48,12 +48,34 @@ def test_ongoing_visit_reported_open(isolated_db):
     zone = isolated_db.ex("INSERT INTO zones (name, ztype, polygon_json, created_at, updated_at)"
                           " VALUES ('Z','area','[]',0,0)")
     now = 1100.0
-    for ts in (1000.0, 1050.0, now - 5):  # last sample 5s before `until`, well within gap_s
+    # Every consecutive gap is exactly 45s (== gap_s), so all three samples stay
+    # one session; the last (10s before `until`) is well within gap_s of `now`.
+    for ts in (1000.0, 1045.0, 1090.0):
         _insert_detection(isolated_db, zone, 1, ts)
     visits, open_count = derive.derive_visits_from_detections(900, now, min_samples=2, gap_s=45)
     assert open_count == 1
     assert visits[0]["completed"] is False
     assert visits[0]["value"] == now - 1000.0  # clipped to `until`, not the last sample
+
+
+def test_gap_greater_than_max_gap_s_splits_the_session(isolated_db):
+    """The precise boundary two other tests once got wrong by a small margin
+    (a 50s and a 70s gap, mistaken for "within gap_s" against a 45s tolerance):
+    a gap of exactly gap_s bridges (one session, see
+    test_ongoing_visit_reported_open above); a gap one second over splits into
+    two. Query well past both sessions so this stays isolated to the split
+    itself, not the open/clipped-to-`until` behavior covered above. Do not
+    "fix" a failure here by raising MAX_GAP_S/gap_s."""
+    zone = isolated_db.ex("INSERT INTO zones (name, ztype, polygon_json, created_at, updated_at)"
+                          " VALUES ('Z','area','[]',0,0)")
+    for ts in (1000.0, 1010.0, 1056.0, 1066.0):  # gap 1010->1056 is 46s (> 45s gap_s)
+        _insert_detection(isolated_db, zone, 1, ts)
+    visits, _ = derive.derive_visits_from_detections(900, 2000, min_samples=2, gap_s=45)
+    assert len(visits) == 2
+    assert visits[0]["completed"] is True
+    assert visits[0]["value"] == 10.0   # 1010 - 1000
+    assert visits[1]["completed"] is True
+    assert visits[1]["value"] == 10.0   # 1066 - 1056
 
 
 def test_merges_legacy_and_current_contract_visits(isolated_db):

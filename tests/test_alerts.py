@@ -21,10 +21,11 @@ def test_dwell_exceeds_ongoing_without_a_new_zone_event(isolated_db):
         (f'{{"zone_id": {zone}, "seconds": 60}}',),
     )
     now = 10000.0
-    # Gaps of 40s stay within derive.MAX_GAP_S (45s) so these merge into one
-    # confirmed session; the last sample (10s ago) keeps it "open" rather than
-    # closed -- this is what a real tracker sampling every ~40s would produce.
-    for ts in (now - 200, now - 160, now - 120, now - 80, now - 10):
+    # Every consecutive gap is 40s, safely under derive.MAX_GAP_S (45s), so
+    # these merge into one confirmed session; the last sample (40s ago, still
+    # within gap_s of `now`) keeps it "open" rather than closed -- this is
+    # what a real tracker sampling every ~40s would produce.
+    for ts in (now - 200, now - 160, now - 120, now - 80, now - 40):
         isolated_db.ex(
             "INSERT INTO events (source_id, ts, event_type, track_id, zone_id, attributes, created_at)"
             " VALUES (1, ?, 'detection', 'e1', ?, '{}', ?)", (ts, zone, ts))

@@ -90,7 +90,13 @@ def test_geometry_revision_retained_after_zone_edit(client, calibrated_source):
     assert row_after["revisions"]["zone"] == row_before["revisions"]["zone"]
 
 
-def test_worker_never_accepts_zone_view_from_wrong_source(client, calibrated_source, source_id):
+def test_worker_never_accepts_zone_view_from_wrong_source(client, calibrated_source):
+    """calibrated_source (source A) owns the zone view. source B is a second,
+    genuinely distinct source -- not calibrated_source's own `source_id`
+    fixture, which calibrates and returns that same source A."""
+    source_b = client.post("/api/v1/sources", json={"name": "Other cam", "kind": "webcam"}).json()["id"]
+    assert source_b != calibrated_source
+
     zone = client.post("/api/v1/zones", json={
         "name": "Aisle", "polygon": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}],
     }).json()
@@ -98,7 +104,17 @@ def test_worker_never_accepts_zone_view_from_wrong_source(client, calibrated_sou
         "zone_id": zone["id"], "source_id": calibrated_source,
         "outer_polygon_px": [{"x": 0, "y": 0}, {"x": 10, "y": 0}, {"x": 10, "y": 10}],
     }).json()
-    body = {"observations": [make_detection(source_id, "geo-8", 1000.0, point_px=(5, 5),
-                                            zone_view_id=view["id"])]}
-    response = client.post("/api/v1/observations/batch", json=body)
-    assert response.json()["rejected"][0]["error"] == "invalid_observation"
+
+    wrong_source_body = {"observations": [make_detection(source_b, "geo-8", 1000.0, point_px=(5, 5),
+                                                          zone_view_id=view["id"])]}
+    response = client.post("/api/v1/observations/batch", json=wrong_source_body)
+    result = response.json()
+    assert result["accepted"] == 0
+    assert result["rejected"][0]["error"] == "invalid_observation"
+
+    right_source_body = {"observations": [make_detection(calibrated_source, "geo-9", 1000.0, point_px=(5, 5),
+                                                          zone_view_id=view["id"])]}
+    response = client.post("/api/v1/observations/batch", json=right_source_body)
+    result = response.json()
+    assert result["rejected"] == []
+    assert result["accepted"] == 1
