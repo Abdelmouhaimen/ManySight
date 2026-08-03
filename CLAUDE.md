@@ -13,9 +13,12 @@ an external AI coding agent (OpenAI Codex, or any MCP client) that opens cameras
 writes and runs worker scripts, and submits observations back over REST or MCP. The
 hosted platform never opens feeds or stores camera connection URLs/credentials.
 `AGENTS.md` is that agent's operating manual; `skills/*/SKILL.md` are its step-by-step
-playbooks. `PLATFORM_ROADMAP.md` is a forward-looking planning doc, not a description of
-what's currently built. `docs/adr/0001-observation-contract.md` explains why this
-redesign shape was chosen.
+playbooks. `PLATFORM_ROADMAP.md` and `UI_UX_REWRITE_PLAN.md` are forward-looking/
+historical planning docs, not descriptions of what's currently built (the latter's own
+status line says the frontend migration it proposed is now implemented). `TUTORIAL.md` is
+a manual walkthrough of the platform via curl/MCP, written for a specific local Windows
+checkout — treat its paths as illustrative, not literal. `docs/adr/0001-observation-contract.md`
+explains why this redesign shape was chosen.
 
 ## Commands
 
@@ -37,11 +40,19 @@ uvicorn server.app:app --port 8000        # or: ./run.sh (respects $PORT)
 - `python -m compileall server mcp_server sdk examples scripts` and `pytest` are the
   validation commands for backend changes (a minimal `pytest` suite lives under `tests/`,
   added alongside the observation-contract redesign — there was no test suite before).
+  Install its extra deps first: `pip install -r requirements-test.txt` (pytest, httpx —
+  kept separate from `requirements.txt` since they're dev-only). Run one file/test with
+  `pytest tests/test_alerts.py -k test_name`. Each test gets an isolated SQLite db via the
+  `isolated_db` fixture in `tests/conftest.py` (monkeypatches `server/db.py`'s
+  `DATA_DIR`/`DB_PATH` globals) — never point tests at the real `./data` directory.
   `scripts/smoke_test.sh` is a curl+python smoke test of the platform slice — run it
   against a freshly seeded server (`uvicorn server.app:app --port 8000` +
   `python scripts/seed_demo.py`).
 - `requirements.txt` intentionally carries no version pins ("Latest stable versions; no
-  pins.") — preserve that convention if you touch it.
+  pins.") — preserve that convention if you touch it. `mcp` is the sole deliberate
+  exception (`mcp>=2.0.0,<3`): the SDK's v1→v2 release renamed its server API in a way
+  an unpinned install would silently break against (see the MCP server section below) —
+  re-pin only after updating `mcp_server/_transport.py` for the next major SDK line.
 
 ## Architecture
 
@@ -174,11 +185,22 @@ most tables assume one store row (`id=1`, hardcoded in `server/routers/store.py`
 
 **MCP server** (`mcp_server/server.py`) is a thin bridge, not a direct import of `server/`
 — every tool call is an HTTP request to the same REST API a human dashboard user would
-hit. Primary tools: `submit_observations`, `get_observation_contract`, `list_observations`,
+hit. Built on MCP Python SDK v2 (`mcp>=2.0.0,<3` — the one pinned exception to
+`requirements.txt`'s no-pins convention, see below); `mcp_server/_transport.py` is the
+sole compatibility boundary that imports `MCPServer`/`TransportSecuritySettings`/
+`ToolError` and constructs/runs the server — `server.py` itself only calls
+`build_server(...)`/`run_server(...)` and never imports SDK server/transport classes
+directly, so a future SDK migration touches only `_transport.py`. The `@mcp.tool()`
+decorator surface is unchanged from v1; `host`/`port`/`stateless_http`/
+`transport_security` moved off the server constructor onto `run()` in v2 — `run_server`
+only forwards them for the `streamable-http` transport, never `stdio`. Primary tools:
+`submit_observations`, `get_observation_contract`, `list_observations`,
 `get_latest_observations`, `query_analytics`, `list_analysis_capabilities`,
 `create_analysis`/`list_analyses`/`update_analysis`/`delete_analysis`. Legacy tools
 (`submit_events`, `get_analytics`, `register_insight` — now a best-effort adapter onto
-`create_analysis` — `list_insights`/`update_insight`/`delete_insight`) remain, docstring-
+`create_analysis` — `list_insights`/`delete_insight`, read/delete only: the REST
+`insights` router dropped create/update entirely, since authoring a new insight in the
+old shape is exactly what the redesign removed) remain, docstring-
 flagged as legacy, for historical/backward-compat use. Also exposes the full geometry
 surface (`create_zone`, `create_projection_surface`/`create_zone_view` + their `list_`/
 `update_`/`delete_` counterparts, `project_points`/`unproject_points`) and worker lifecycle
