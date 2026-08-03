@@ -72,13 +72,25 @@ mcp = FastMCP(
         "prior conversation or demo state. Camera access is agent-local: StoreLens never opens "
         "a feed and never returns camera credentials. Use MCP for agent operations; workers "
         "use the REST endpoint returned by get_platform_config(). "
-        "Post raw observations only (what the model saw), never computed aggregates — the "
-        "platform derives dwell, durations, and every insight. After posting events, register "
-        "the resulting view with register_insight so it appears in the Insights catalogue. "
-        "A zone polygon is its global map footprint. Use zone views for camera-specific visible "
+        "\n\nObserve locally, derive centrally: a worker submits ONLY three observation kinds — "
+        "detection (an observed entity with spatial evidence), measurement (an observed numeric "
+        "value), and state (an observed current categorical value). Call get_observation_contract() "
+        "for the exact field-level contract. Workers must NEVER resolve zones, send zone_id/zone, "
+        "or calculate zone entry/exit, dwell, occupancy, movement between zones, state changes, or "
+        "state durations — StoreLens derives every one of those from raw detection/state rows. "
+        "submit_observations() rejects any of those legacy derived kinds with a "
+        "legacy_derived_observation error. "
+        "\n\nAfter posting observations, verify with get_latest_observations()/query_analytics(), "
+        "then create_analysis(subject, measures, filters, grouping) so the result appears on the "
+        "dashboard as a saved question, not a chart — changing how it is displayed later never "
+        "requires a second analysis. list_analysis_capabilities() shows which subjects/measures/"
+        "groupings fit the data actually present. register_insight is deprecated (kept only as a "
+        "compatibility adapter to create_analysis) — do not use it for new work. "
+        "\n\nA zone polygon is its global map footprint. Use zone views for camera-specific visible "
         "and inset decision polygons, and named projection surfaces for mattresses, tables, or "
         "other elevated planes; never compensate for height by subtracting map Y. Preserve bbox, "
-        "keypoints, masks, point meaning, and geometry provenance in submitted observations."
+        "keypoints, masks, point meaning, and geometry provenance in submitted observations — "
+        "StoreLens uses them for zone assignment and review evidence; it never invents identity."
     ),
 )
 
@@ -190,8 +202,10 @@ def create_zone(name: str, ztype: str = "area",
     checkout, entrance, queue, aisle, stockroom, equipment, hall, classroom,
     playground, meeting_room, area, custom) — it carries NO behavior: what happens
     when someone enters (alerts, review signals) is configured separately with
-    create_alert_rule; your worker just posts zone_enter/zone_exit and never needs to
-    know what the zone means. Confirm the polygon with the user before creating it."""
+    create_alert_rule; your worker just posts tracked detections with coordinates
+    and never needs to know what the zone means or resolve it itself — StoreLens
+    assigns the zone from geometry at ingestion. Confirm the polygon with the
+    user before creating it."""
     return _req("POST", "/zones", {"name": name, "ztype": ztype, "polygon": polygon_map,
                                    "polygon_px": polygon_px, "source_id": source_id})
 
@@ -341,21 +355,79 @@ def request_worker_state(worker_id: int, desired_state: str) -> dict:
 
 
 @mcp.tool()
+def get_observation_contract() -> dict:
+    """Machine-readable summary of the current worker contract: the three
+    observation kinds (detection|measurement|state), required/optional fields
+    per kind, and what is forbidden (zone_id/zone, and the legacy derived kinds
+    zone_enter/zone_exit/zone_dwell/state_change/count). Call this before
+    writing a new worker."""
+    return _req("GET", "/observations/contract")
+
+
+@mcp.tool()
+def submit_observations(observations: list[dict], job_id: int | None = None) -> dict:
+    """Post a batch of raw observations (max 5000) — THE primary ingestion tool.
+    Each observation is exactly one kind: detection (an observed entity with
+    spatial evidence), measurement (an observed numeric value), or state (an
+    observed current categorical value). Common fields: schema_version (2),
+    observation_id (a worker-generated idempotency key — retries are safe),
+    kind, timestamp (epoch seconds or ISO-8601), source_id, and optionally
+    worker_id, confidence, label, attributes, entity_id (opaque per-track id;
+    never a verified human identity), identity_scope (worker_run|source|
+    workspace, default worker_run), identity_model_version.
+    Kind-specific: detection adds entity_type and geometry {point_px:[x,y],
+    bbox_px:[x0,y0,x1,y1], keypoints_px:{name:[x,y]}, mask}; measurement adds
+    name, value, value_kind (gauge|delta|cumulative, default gauge), unit;
+    state adds name, label (the observed value), info.
+    Never send zone_id/zone (StoreLens assigns zones from geometry) or the
+    legacy kinds zone_enter/zone_exit/zone_dwell/state_change/count — those are
+    rejected per-item with error 'legacy_derived_observation'. A worker sends
+    what a model directly observed; StoreLens derives visits, dwell, occupancy,
+    movement, state transitions/durations, and every analysis from these rows.
+    Returns {accepted, duplicates, rejected: [{index, observation_id, error,
+    message}], alerts} — duplicates (same observation_id already stored) are
+    not errors, they're a safe no-op retry."""
+    return _req("POST", "/observations/batch", {"job_id": job_id, "observations": observations})
+
+
+@mcp.tool()
+def list_observations(since: float | None = None, until: float | None = None,
+                      kind: str | None = None, source_id: int | None = None,
+                      entity_id: str | None = None, name: str | None = None,
+                      label: str | None = None, zone_id: int | None = None,
+                      cursor: str | None = None, limit: int = 100) -> dict:
+    """Query stored observations (current + legacy kinds), newest first — use it
+    to sanity-check what your worker posted, including the zone/projection it was
+    assigned and the geometry revisions in effect at ingestion. Page with the
+    returned next_cursor; `total` counts all matching rows."""
+    params = {k: v for k, v in {"since": since, "until": until, "kind": kind, "source_id": source_id,
+                                "entity_id": entity_id, "name": name, "label": label, "zone_id": zone_id,
+                                "cursor": cursor, "limit": limit}.items() if v is not None}
+    return _req("GET", "/observations?" + urllib.parse.urlencode(params))
+
+
+@mcp.tool()
+def get_latest_observations(kind: str | None = None, source_id: int | None = None,
+                            zone_id: int | None = None, name: str | None = None) -> dict:
+    """Current-value read models, derived live from raw observations (never a
+    separate stored copy): detection -> active/latest entities with staleness;
+    measurement -> latest sample per (source, name, label, entity); state ->
+    current label and duration per (source, name, entity), marked stale once a
+    worker stops reporting. Omit `kind` to get all three."""
+    params = {k: v for k, v in {"kind": kind, "source_id": source_id, "zone_id": zone_id,
+                                "name": name}.items() if v is not None}
+    return _req("GET", "/observations/latest" + ("?" + urllib.parse.urlencode(params) if params else ""))
+
+
+@mcp.tool()
 def submit_events(events: list[dict], job_id: int | None = None) -> dict:
-    """Post a batch of raw observations (max 5000). Event fields:
-      ts (epoch seconds, optional), source_id, event_type (detection|zone_enter|zone_exit|
-      transition|state_change|count|custom), track_id, point_px {x,y} OR point_map {x,y}
-      OR bbox [x,y,w,h], keypoints, compressed mask evidence, point_kind,
-      projection_surface_id, zone_view_id, zone_id or zone (name), value (a per-frame
-      count sample only), label, and attributes. Geometry evidence and revision
-      provenance are persisted; use a named surface for elevated planar targets.
-    Contract: post what the model SAW, never computed aggregates. The platform derives
-    dwell from zone_enter/zone_exit pairs and state durations from state_change
-    timestamps. `zone_dwell` is deprecated: still stored, but its value is ignored by
-    analytics and alerts. The platform auto-projects point_px to map meters (if the
-    source is calibrated) and can assign zones through map geometry or a source-specific
-    zone view (point, bbox overlap, or keypoints-inside rule).
-    Returns enrichment counts."""
+    """LEGACY. Prefer submit_observations for all new work. Post a batch of raw
+    events (max 5000) using the older per-event-type contract (event_type:
+    detection|zone_enter|zone_exit|transition|state_change|count|custom).
+    Still accepted for backward compatibility, but zone_enter/zone_exit/
+    zone_dwell/state_change/count are worker-calculated derived events that the
+    current contract does not want new workers to send — see
+    get_observation_contract() for what to send instead."""
     return _req("POST", "/events", {"job_id": job_id, "events": events})
 
 
@@ -377,13 +449,12 @@ def get_events(since: float | None = None, until: float | None = None,
 
 @mcp.tool()
 def get_analytics(kind: str, params: dict | None = None) -> dict:
-    """Read the platform's computed analytics. kind: summary | heatmap | dwell | occupancy |
-    counts | transitions | states. params are the endpoint's query params (since/until epoch seconds,
-    group_by, zone_id, ...). Occupancy and heatmap accept the top-level detection `label`;
-    occupancy also accepts group_by="label" to return per-class series. Counts accepts
-    the top-level count-event `label`. Useful to verify your events produce sensible insights.
-    All analytics are derived from raw observations — dwell always comes from
-    zone_enter/zone_exit pairs, state durations from state_change timestamps."""
+    """LEGACY. Prefer query_analytics for new work. Read the platform's per-kind
+    analytics. kind: summary | heatmap | dwell | occupancy | counts | transitions |
+    states. params are the endpoint's query params (since/until epoch seconds,
+    group_by, zone_id, ...). All analytics are derived from raw observations —
+    dwell/occupancy/transitions now come from tracked detections (or legacy
+    zone_enter/zone_exit pairs), state durations from state/state_change samples."""
     allowed = {"summary", "heatmap", "dwell", "occupancy", "counts", "transitions", "states"}
     if kind not in allowed:
         raise ValueError(f"kind must be one of {sorted(allowed)}")
@@ -392,68 +463,153 @@ def get_analytics(kind: str, params: dict | None = None) -> dict:
 
 
 @mcp.tool()
-def create_alert_rule(name: str, kind: str, params: dict, webhook_url: str = "",
-                      cooldown_s: float = 60) -> dict:
-    """Create an alert rule evaluated on every ingested batch. kinds:
-      dwell_exceeds {zone_id?, seconds} — a track's platform-derived dwell (enter/exit
-        pairing, or an ongoing stay with no exit yet) reaches `seconds` ·
-      occupancy_exceeds {zone_id?, count, window_s} ·
-      state_alert {label, source_id, min_seconds?} — duration derived from consecutive
-        state_change timestamps; also fires while the state is ongoing past the limit ·
-      event_match {event_type, zone_id?, attr_key?, attr_value?}.
-    Rules only evaluate when events are ingested, so keep a worker streaming.
+def list_analysis_capabilities() -> dict:
+    """What query_analytics()/create_analysis() can build a question from right
+    now: subjects (detection|measurement|state), their valid measures, grouping
+    options, split dimensions, and the labels/sources/zones/measurement-names/
+    state-names/attribute-keys actually present in the data. Call this before
+    query_analytics/create_analysis so you never guess an invalid combination."""
+    return _req("GET", "/analytics/capabilities")
+
+
+@mcp.tool()
+def query_analytics(subject: str, measures: list[str], filters: dict | None = None,
+                    grouping: dict | None = None, range: dict | None = None,
+                    comparison: dict | None = None) -> dict:
+    """Answer one analytical question directly, without saving it. subject:
+    detection|measurement|state. measures: e.g. ["active_entities"],
+    ["visits","average_dwell","total_dwell"], ["latest","rate"],
+    ["current","duration"] — see list_analysis_capabilities() for the valid set
+    per subject. filters: {source_ids, zone_ids, labels, entity_types,
+    entity_ids, attributes:{key:value}, measurement_names, state_names,
+    state_labels}. grouping: {primary: null|"time"|"zone", bucket: "5m",
+    split_by: ["label", "attribute:gender", ...]}. range: {since, until} (epoch
+    seconds or ISO-8601; defaults to the last 24h). comparison:
+    {mode: "previous_period"} to also return the prior equal-length window.
+    Returns {shape, dimensions, measures, rows, metadata} — shape tells the
+    caller how to read rows (scalar|timeseries|categorical|heatmap), never
+    which chart to draw; that is a frontend rendering choice, not part of the
+    question's identity."""
+    body = {"subject": subject, "measures": measures, "filters": filters or {},
+            "grouping": grouping or {}, "range": range or {}, "comparison": comparison or {}}
+    return _req("POST", "/analytics/query", body)
+
+
+@mcp.tool()
+def create_analysis(name: str, subject: str, measures: list[str], filters: dict | None = None,
+                    grouping: dict | None = None, question: str = "", default_range: dict | None = None,
+                    comparison: dict | None = None, presentation: str = "", pinned: bool = False) -> dict:
+    """Save a data question so it appears on the dashboard's Analytics page (and
+    Dashboard, if pinned). This is a QUESTION, not a chart — subject/measures/
+    filters/grouping, exactly like query_analytics(). `presentation` is only an
+    optional renderer hint (e.g. "heatmap_map", "flow_matrix", "state_timeline");
+    changing how a saved analysis is displayed later never needs a new record —
+    patch presentation on the same analysis with update_analysis instead of
+    creating a second one for the same question. Call list_analysis_capabilities()
+    first, and list_analyses() to avoid registering a duplicate. `question` is
+    shown to the user (e.g. "How long do customers stay near checkout?")."""
+    return _req("POST", "/analyses", {
+        "name": name, "subject": subject, "measures": measures, "filters": filters or {},
+        "grouping": grouping or {}, "question": question, "default_range": default_range or {},
+        "comparison": comparison or {}, "presentation": presentation, "pinned": pinned,
+        "created_by": "agent",
+    })
+
+
+@mcp.tool()
+def list_analyses() -> list[dict]:
+    """List every saved analysis (including hidden ones) — check this before
+    create_analysis to avoid a duplicate; identical (subject, measures, filters,
+    grouping) is flagged via `duplicate_of` on creation regardless."""
+    return _req("GET", "/analyses?include_hidden=true")
+
+
+@mcp.tool()
+def update_analysis(analysis_id: int, patch: dict) -> dict:
+    """Patch a saved analysis (name, question, measures, filters, grouping,
+    presentation, pinned, sort_order, visibility, status...). Use
+    status='degraded'/'retired' instead of deleting when its worker stops."""
+    return _req("PATCH", f"/analyses/{analysis_id}", patch)
+
+
+@mcp.tool()
+def delete_analysis(analysis_id: int) -> dict:
+    """Delete a saved analysis. Prefer update_analysis(status='retired') if it
+    may still be useful as history."""
+    return _req("DELETE", f"/analyses/{analysis_id}")
+
+
+@mcp.tool()
+def create_alert_rule(name: str, kind: str, params: dict | None = None, analysis: dict | None = None,
+                      condition: dict | None = None, webhook_url: str = "", cooldown_s: float = 60) -> dict:
+    """Create an alert rule. kinds:
+      dwell_exceeds {zone_id?, seconds} (params) — a track's platform-derived dwell
+        (tracked detections, or legacy enter/exit pairing) reaches `seconds` ·
+      occupancy_exceeds {zone_id?, count, window_s} (params) ·
+      state_alert {label, source_id, name?, entity_id?, min_seconds?} (params) — duration
+        derived from consecutive state samples (repeated identical samples never reset it) ·
+      event_match {event_type, zone_id?, attr_key?, attr_value?} (params) ·
+      analysis_condition (analysis + condition) — the general case: analysis is
+        {subject, measures, filters} exactly like query_analytics(); condition is
+        {operator: ">"|">="|"<"|"<="|"=="|"!=", value, for_seconds?, window_s?}. Fires once
+        the measure has satisfied the condition continuously for `for_seconds`
+        (default 0 = immediately), e.g. a measurement staying over a threshold or
+        active_entities staying above a crowd limit.
+    Ongoing/time-based conditions (dwell_exceeds, occupancy_exceeds, state_alert with
+    min_seconds, and every analysis_condition) are evaluated on a periodic timer
+    independent of ingestion (every ~15s), so a quiet zone or a stale source still
+    gets caught — they do not require another observation to arrive.
     Fired alerts appear in the UI and POST to webhook_url (n8n etc.)."""
-    return _req("POST", "/alert-rules", {"name": name, "kind": kind, "params": params,
+    return _req("POST", "/alert-rules", {"name": name, "kind": kind, "params": params or {},
+                                         "analysis": analysis, "condition": condition,
                                          "webhook_url": webhook_url, "cooldown_s": cooldown_s})
+
+
+_INSIGHT_DATASET_TO_SUBJECT = {
+    "summary": ("detection", ["distinct_entities"]), "heatmap": ("detection", ["density"]),
+    "dwell": ("detection", ["visits", "average_dwell", "total_dwell"]),
+    "occupancy": ("detection", ["active_entities"]), "counts": ("measurement", ["latest"]),
+    "transitions": ("detection", ["transition_count"]), "states": ("state", ["duration"]),
+}
 
 
 @mcp.tool()
 def register_insight(title: str, block: str, dataset: str, params: dict | None = None,
                      question: str = "", unit: str = "", limitations: str = "",
                      pinned: bool = False) -> dict:
-    """Register a dashboard insight card so your analysis appears in the Insights tab.
-    block: metric|line|bar|table|heatmap_map|flow_matrix|state_timeline. dataset: the
-    platform analytics feeding it (summary|heatmap|dwell|occupancy|counts|transitions|
-    states). params are that analytics endpoint's filters (zone_id, label, group_by,
-    source_id, field...). For labelled detections, use occupancy with label="class" to
-    filter one class or group_by="label" to compare class lines. Call
-    list_insight_templates() first to see which combinations
-    fit the data, and list_insights() to avoid duplicates. Always state `limitations`
-    honestly — it is shown on the card. pinned=True also shows it on Overview."""
-    return _req("POST", "/insights", {
-        "title": title, "block": block, "dataset": dataset, "params": params or {},
-        "question": question, "unit": unit, "limitations": limitations,
-        "pinned": pinned, "created_by": "agent",
+    """DEPRECATED — compatibility adapter only. Use create_analysis for new work;
+    the block+dataset+params model this tool used is retired. This translates
+    your call into the closest create_analysis() equivalent on a best-effort
+    basis (see server/db.py's legacy insight mapping for the exact rules) and
+    saves it there, so old agent prompts don't hard-fail, but the mapping is
+    approximate — always prefer calling create_analysis directly."""
+    subject, measures = _INSIGHT_DATASET_TO_SUBJECT.get(dataset, ("detection", ["observations"]))
+    params = params or {}
+    filters = {"zone_ids": [params["zone_id"]]} if params.get("zone_id") is not None else {}
+    if params.get("label"):
+        key = "measurement_names" if subject == "measurement" else "labels"
+        filters[key] = [params["label"]]
+    grouping = {"split_by": [params["group_by"]]} if params.get("group_by") else {}
+    return _req("POST", "/analyses", {
+        "name": title, "subject": subject, "measures": measures, "filters": filters,
+        "grouping": grouping, "question": question, "presentation": block, "pinned": pinned,
+        "created_by": "agent",
     })
 
 
 @mcp.tool()
 def list_insights() -> list[dict]:
-    """List every registered insight definition (including hidden ones). Check this
-    before register_insight to avoid duplicate cards."""
+    """LEGACY, READ-ONLY — historical insight_definitions rows only; there is no
+    create/update path anymore (the block+dataset+params model is retired). Use
+    list_analyses() for current work; every insight has already been
+    best-effort migrated to an analysis (see analyses[].migrated_from_insight_id)."""
     return _req("GET", "/insights?include_hidden=true")
 
 
 @mcp.tool()
-def list_insight_templates() -> dict:
-    """Insight templates assembled from the data actually present (count labels, state
-    sources, zones, attribute keys). Each entry has block/dataset/params ready to pass
-    to register_insight; unavailable ones carry a `requires` hint."""
-    return _req("GET", "/insights/templates")
-
-
-@mcp.tool()
-def update_insight(insight_id: int, patch: dict) -> dict:
-    """Patch an insight definition (title, question, params, unit, limitations, pinned,
-    sort_order, visibility, status...). Use status='degraded' or 'retired' instead of
-    deleting when an analysis stops running."""
-    return _req("PUT", f"/insights/{insight_id}", patch)
-
-
-@mcp.tool()
 def delete_insight(insight_id: int) -> dict:
-    """Delete an insight definition. Prefer update_insight(status='retired') if the
-    card may still be useful as history."""
+    """LEGACY. Delete a historical insight_definitions row (cleanup only). Prefer
+    delete_analysis/update_analysis(status='retired') on its migrated analysis."""
     return _req("DELETE", f"/insights/{insight_id}")
 
 
