@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import db
+from ..services.sse import broker
 
 router = APIRouter(tags=["jobs"])
 
@@ -183,6 +184,7 @@ def heartbeat_worker(worker_id: int, body: WorkerHeartbeat):
           " stopped_at=?,updated_at=? WHERE id=?",
           (body.status, json.dumps(body.metrics), body.last_error, now, stopped, now, worker_id))
     current = serialize_worker(_worker(worker_id))
+    broker.publish("worker.updated", current)
     return {**current, "should_stop": current["desired_state"] in {"stopped", "restart"},
             "restart_requested": current["desired_state"] == "restart"}
 
@@ -194,4 +196,6 @@ def command_worker(worker_id: int, body: WorkerCommand):
         raise HTTPException(422, f"desired_state must be one of {sorted(DESIRED_STATES)}")
     db.ex("UPDATE worker_instances SET desired_state=?,updated_at=? WHERE id=?",
           (body.desired_state, db.now(), worker_id))
-    return serialize_worker(_worker(worker_id))
+    current = serialize_worker(_worker(worker_id))
+    broker.publish("worker.updated", current)
+    return current

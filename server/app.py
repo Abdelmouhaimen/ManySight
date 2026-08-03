@@ -4,7 +4,10 @@ Run:  uvicorn server.app:app --host 0.0.0.0 --port 8000
 UI:   http://localhost:8000        API docs: http://localhost:8000/docs
 Auth: optional — set STORELENS_API_KEY to require X-API-Key (or ?api_key=) on /api/*.
 """
+import asyncio
+import contextlib
 import os
+import sys
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +16,40 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .platform_config import resolve as resolve_platform_config
-from .routers import alerts, analytics, events, geometry, insights, jobs, sources, store, zones
+from .routers import alerts, analytics, analytics_query, analyses, events, geometry, insights, jobs, observations, sources, store, zones
+from .services import alert_engine
+from .services.sse import broker
+
+ALERT_POLL_INTERVAL_S = float(os.environ.get("STORELENS_ALERT_POLL_INTERVAL_S", "15"))
+
+
+async def _alert_poll_loop():
+    """Periodic, ingestion-independent evaluation of ongoing alert conditions
+    (loiter, occupancy, state duration, unified analysis conditions) — see
+    services/alert_engine.py:evaluate_ongoing. Runs for the life of the process;
+    a failure in one tick is logged and never kills the loop."""
+    while True:
+        try:
+            zone_names = {z["id"]: z["name"] for z in db.q("SELECT id, name FROM zones")}
+            alerts_fired = alert_engine.evaluate_ongoing(db.now(), zone_names)
+            for a in alerts_fired:
+                broker.publish("alert", a)
+                broker.publish("alert.created", a)
+        except Exception as exc:  # never let a transient DB/query error kill the poller
+            print(f"periodic alert evaluation failed: {exc}", file=sys.stderr, flush=True)
+        await asyncio.sleep(ALERT_POLL_INTERVAL_S)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI):
+    task = asyncio.create_task(_alert_poll_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
 
 app = FastAPI(
     title="StoreLens",
@@ -22,17 +58,10 @@ app = FastAPI(
                 "zones, floor and named-plane localization, camera decision ROIs, a generic evidence-rich "
                 "event stream, heartbeat-backed workers, reviewable insights, and alerts. "
                 "AI agents connect through MCP, access cameras locally, run models, and post observations back here.",
+    lifespan=lifespan,
 )
 
 db.init_db()
-
-CORS_ORIGINS = resolve_platform_config()["cors_origins"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-API-Key", "MCP-Protocol-Version"],
-)
 
 API_KEY = os.environ.get("STORELENS_API_KEY", "")
 PUBLIC_READS = os.environ.get("STORELENS_PUBLIC_READS", "false").lower() in {"1", "true", "yes"}
@@ -47,6 +76,19 @@ async def api_key_guard(request: Request, call_next):
         if supplied != API_KEY:
             return JSONResponse({"detail": "invalid or missing API key"}, status_code=401)
     return await call_next(request)
+
+
+# Added after api_key_guard so it becomes the outermost middleware (Starlette
+# runs the last-registered middleware first) — otherwise a cross-origin CORS
+# preflight (OPTIONS, no X-API-Key) gets 401'd by the guard before CORS
+# headers are ever attached, breaking every private, key-protected deployment.
+CORS_ORIGINS = resolve_platform_config()["cors_origins"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "MCP-Protocol-Version"],
+)
 
 
 @app.get("/api/v1/health")
@@ -100,10 +142,16 @@ the device or edge gateway that can reach the source and posts raw observations 
 3. Resolve camera access locally. For example, a webcam locator with `device_index: 0`
    means OpenCV `VideoCapture(0)` on the worker device.
 4. Register a job, then register a worker and heartbeat every 5-15 seconds.
-5. Post raw observations to `POST {endpoints["rest_url"]}/events`. For a people-count chart, post one
-   `count` event per sampling interval with `source_id`, `label: "person"`, and the
-   current per-frame `value`; do not post a cumulative or time-aggregated total.
-6. Verify events and analytics, then register an insight definition.
+5. Submit only three observation kinds to `POST {endpoints["rest_url"]}/observations/batch`:
+   `detection` (an observed entity with spatial evidence), `measurement` (an observed
+   numeric value — e.g. one `value` per sampling interval, never a precomputed average
+   or cumulative total), or `state` (an observed current categorical value, sent on
+   every sample including repeats). Never resolve a zone or send zone_id/zone, and
+   never compute zone entry/exit, dwell, occupancy, movement, or a state change —
+   StoreLens derives all of those itself. See `GET {endpoints["rest_url"]}/observations/contract`.
+6. Verify with `GET {endpoints["rest_url"]}/observations/latest` and
+   `POST {endpoints["rest_url"]}/analytics/query`, then save a `POST {endpoints["rest_url"]}/analyses`
+   definition — a data question (subject/measures/filters/grouping), not a chart.
 
 Camera credentials stay in a local environment variable, keychain, or ignored worker
 configuration. StoreLens source metadata is provenance and coordination, not a stream proxy.
@@ -141,7 +189,8 @@ def storelens_discovery(request: Request):
     }
 
 
-for r in (sources, store, zones, geometry, jobs, events, analytics, alerts, insights):
+for r in (sources, store, zones, geometry, jobs, events, observations, analytics,
+         analytics_query, analyses, alerts, insights):
     app.include_router(r.router, prefix="/api/v1")
 
 _server_dir = os.path.dirname(__file__)
