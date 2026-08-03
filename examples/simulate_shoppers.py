@@ -1,8 +1,11 @@
 """Live shopper simulator — demo the whole platform with zero cameras.
 
-Registers a job and streams realistic raw observations (detections, zone enter/
-exit pairs, fridge state changes) in real time, so the Insights tab, live feed and
-alerts all light up. The platform derives dwell and state durations itself.
+Registers a job and submits realistic raw `detection` and `state` observations
+in real time, so the dashboard's live cards, Analytics page, and alerts all
+light up. This worker never resolves a zone, pairs an enter/exit, or computes
+a state change — it only reports what it "observed" (a simulated position, or
+a simulated fridge-door reading) every tick; StoreLens derives zones, visits,
+dwell, transitions, and state durations from those raw rows.
 
 Usage:
     python examples/simulate_shoppers.py --url http://localhost:8000 --shoppers 6 --minutes 10
@@ -25,11 +28,10 @@ def centroid(zone):
 class Shopper:
     _n = 0
 
-    def __init__(self, zones, store):
+    def __init__(self, zones):
         Shopper._n += 1
         self.id = f"sim{Shopper._n}"
         self.attrs = {"gender": random.choice(["female", "male"])}
-        self.store = store
         entrance = next((z for z in zones if z["ztype"] == "entrance"), zones[0])
         checkout = [z for z in zones if z["ztype"] == "checkout"]
         browse = [z for z in zones if z["ztype"] in ("aisle", "fridge", "area")] or zones
@@ -39,7 +41,6 @@ class Shopper:
         self.pos = list(self.waypoints[0])
         self.wp = 1
         self.pause_until = 0
-        self.zone_state = {}       # zone_id -> enter_ts
         self.done = False
 
     def step(self, dt, now):
@@ -59,6 +60,17 @@ class Shopper:
         self.pos[1] += dy / d * speed * dt + random.uniform(-0.08, 0.08)
 
 
+def simulated_source(sl: StoreLens) -> dict:
+    """This simulator has no camera — every observation still needs a
+    source_id, so reuse or create one logical, credential-free 'sensor' source
+    to attribute the synthetic observations to."""
+    existing = next((s for s in sl.sources() if s["name"] == "Shopper simulator"), None)
+    if existing:
+        return existing
+    return sl.create_source(name="Shopper simulator", kind="sensor", connection_mode="agent_local",
+                            metadata={"purpose": "synthetic demo traffic, no real camera"})
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--url", default="http://localhost:8000")
@@ -72,11 +84,14 @@ def main():
     zones = store["zones"]
     if not zones:
         raise SystemExit("No zones defined — run scripts/seed_demo.py or draw zones in the Store Map tab.")
+    source = simulated_source(sl)
     sl.register_job("Live shopper simulation", "synthetic shoppers walking waypoint paths",
-                    event_types=["detection", "zone_enter", "zone_exit", "state_change"])
+                    source_ids=[source["id"]], event_types=["detection", "state"])
     sl.register_worker("shopper-simulator", version="1")
+    print("Contract: this worker sends only 'detection' and 'state' observations — "
+          "StoreLens derives zone visits, dwell, transitions, and door-state durations.")
     fridge_state, fridge_next = "closed", time.time() + random.uniform(20, 60)
-    shoppers = [Shopper(zones, store) for _ in range(args.shoppers)]
+    shoppers = [Shopper(zones) for _ in range(args.shoppers)]
     t_end = time.time() + args.minutes * 60
     last_heartbeat = 0.0
     print(f"Simulating {args.shoppers} shoppers for {args.minutes} min → {args.url}")
@@ -91,27 +106,23 @@ def main():
         for s in list(shoppers):
             s.step(1.0, now)
             if s.done:
-                for zid in list(s.zone_state):
-                    sl.add_event(event_type="zone_exit", track_id=s.id, zone_id=zid, attributes=s.attrs)
                 shoppers.remove(s)
-                shoppers.append(Shopper(zones, store))
+                shoppers.append(Shopper(zones))
                 continue
-            sl.add_event(event_type="detection", track_id=s.id,
-                         point_map={"x": s.pos[0], "y": s.pos[1]}, attributes=s.attrs)
-            for z in zones:
-                member = sl.point_in_zone(z, s.pos[0], s.pos[1])
-                if member and z["id"] not in s.zone_state:
-                    s.zone_state[z["id"]] = now
-                    sl.add_event(event_type="zone_enter", track_id=s.id, zone_id=z["id"], attributes=s.attrs)
-                elif not member and z["id"] in s.zone_state:
-                    s.zone_state.pop(z["id"])
-                    sl.add_event(event_type="zone_exit", track_id=s.id, zone_id=z["id"], attributes=s.attrs)
+            # This simulator has no camera frame, so it reports the map position
+            # directly (point_map) instead of pixel evidence — see submit_detection's
+            # docstring on when that's appropriate.
+            sl.submit_detection(source_id=source["id"], entity_id=s.id, point_map=s.pos,
+                               entity_type="person", label="customer", attributes=s.attrs)
         if now >= fridge_next:
             new = "open" if fridge_state == "closed" else "closed"
-            sl.add_event(event_type="state_change", label=new,
-                         zone=next((z["name"] for z in zones if z["ztype"] == "fridge"), None))
+            sl.submit_state(source_id=source["id"], name="fridge_door", label=new)
             fridge_state = new
             fridge_next = now + (random.uniform(15, 90) if new == "open" else random.uniform(60, 240))
+        else:
+            # Repeated identical samples are expected and required — StoreLens
+            # coalesces them; a worker must not try to detect the change itself.
+            sl.submit_state(source_id=source["id"], name="fridge_door", label=fridge_state)
         sl.flush()
         time.sleep(1.0)
     sl.flush()

@@ -1,8 +1,12 @@
-"""Dwell worker — zone enter/exit observations from a real video source.
+"""Dwell worker — tracked detections from a real video source.
 
-Tracks people, projects feet to floor meters locally, and emits zone_enter/
-zone_exit pairs. The platform derives dwell durations from those pairs — do not
-post precomputed dwell values. Requires a calibrated source.
+Tracks people and submits `detection` observations with feet pixel points and a
+stable per-track `entity_id`. That's the entire contract: this worker never
+resolves a zone, debounces a boundary crossing, or pairs an enter/exit — the
+platform projects each point through the source calibration, matches it against
+zone geometry with its own hysteresis rules, and derives visits and dwell
+duration from the resulting stream of zoned detections (services/derive.py).
+Requires a calibrated source so points can be projected onto zone polygons.
 
 Usage:
     python examples/dwell_zones.py --source 1 [--zones "Checkout,Fridge"]
@@ -17,7 +21,7 @@ from heatmap_tracker import motion_detector  # reuse the fallback detector  # no
 
 def main():
     ap = parse_args_base(__doc__)
-    ap.add_argument("--zones", default="", help="comma-separated zone names (default: all)")
+    ap.add_argument("--zones", default="", help="comma-separated zone names, informational only")
     args = ap.parse_args()
     sl = StoreLens(args.url, args.api_key)
     src = sl.source(args.source)
@@ -28,18 +32,20 @@ def main():
         wanted = {z.strip().lower() for z in args.zones.split(",")}
         zones = [z for z in zones if z["name"].lower() in wanted]
     if not zones:
-        raise SystemExit("No matching zones — draw them in the Store Map tab first.")
-    print(f"watching zones: {[z['name'] for z in zones]}")
+        print("Note: no matching zones on the map yet — detections still post; dwell/visits "
+              "appear once zones are drawn in the Store Map tab.")
+    else:
+        print(f"zones on this floor plan: {[z['name'] for z in zones]} "
+              "(StoreLens assigns them from geometry — this worker never resolves one itself)")
 
-    sl.register_job(f"Dwell – {src['name']}", f"dwell in {[z['name'] for z in zones]}",
-                    source_ids=[src["id"]], event_types=["zone_enter", "zone_exit"])
+    sl.register_job(f"Dwell – {src['name']}", "tracked detections for dwell/visit derivation",
+                    source_ids=[src["id"]], event_types=["detection"])
     sl.register_worker("dwell-zones", version="1")
+    print("Contract: this worker sends only 'detection' observations — "
+          "StoreLens derives zone visits and dwell duration from them.")
     detect = motion_detector()
     cap = sl.open_capture(src, args.connection)
     tracker = CentroidTracker(max_distance=90)
-    inside: dict[tuple, float] = {}
-    membership_hits: dict[tuple, int] = {}
-    DEBOUNCE = 3
     last_heartbeat = 0.0
 
     while True:
@@ -48,30 +54,14 @@ def main():
             break
         now = time.time()
         if now - last_heartbeat >= 10:
-            command = sl.heartbeat(metrics={"open_visits": len(inside)})
+            command = sl.heartbeat(metrics={"tracked": len(tracker.tracks)})
             last_heartbeat = now
             if command["should_stop"]:
                 break
-        tracked = tracker.update(detect(frame))
-        if not tracked:
-            continue
-        pts = sl.project(src, [(cx, cy) for _, cx, cy in tracked])
-        for (tid, _, _), (xm, ym) in zip(tracked, pts):
-            for z in zones:
-                key = (tid, z["id"])
-                member = sl.point_in_zone(z, xm, ym)
-                hits = membership_hits.get(key, 0)
-                membership_hits[key] = min(hits + 1, DEBOUNCE) if member else max(hits - 1, 0)
-                if membership_hits[key] >= DEBOUNCE and key not in inside:
-                    inside[key] = now
-                    sl.add_event(source_id=src["id"], event_type="zone_enter", track_id=tid, zone_id=z["id"])
-                elif membership_hits[key] == 0 and key in inside:
-                    inside.pop(key)
-                    sl.add_event(source_id=src["id"], event_type="zone_exit", track_id=tid, zone_id=z["id"])
+        for tid, cx, cy in tracker.update(detect(frame)):
+            sl.submit_detection(source_id=src["id"], entity_id=tid, point_px=(cx, cy), entity_type="person")
+        sl.flush()
         time.sleep(0.05)
-    # close out open visits with exits — the platform derives their dwell
-    for (tid, zid) in inside:
-        sl.add_event(source_id=src["id"], event_type="zone_exit", track_id=tid, zone_id=zid)
     sl.flush()
     sl.stop_worker()
 

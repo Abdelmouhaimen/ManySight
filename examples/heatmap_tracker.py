@@ -1,8 +1,10 @@
 """Heatmap worker — person positions from a real video source.
 
 Detects moving people (YOLO if ultralytics is installed, otherwise background
-subtraction), tracks them, and posts `detection` events with feet pixel points.
-The platform projects them through the source's homography onto the floor plan.
+subtraction), tracks them, and submits `detection` observations with feet pixel
+points. The platform projects them through the source's homography onto the
+floor plan and derives the heatmap, presence, visits, and dwell itself — this
+worker never computes a heatmap or a zone.
 
 Usage:
     python examples/heatmap_tracker.py --source 1 [--url http://localhost:8000] [--fps 2]
@@ -64,6 +66,8 @@ def main():
 
     sl.register_job(f"Heatmap – {src['name']}", "person feet positions for spatial heatmap",
                     source_ids=[src["id"]], event_types=["detection"])
+    print("Contract: this worker sends only 'detection' observations with a feet "
+          "point — StoreLens derives the heatmap, zones, and dwell.")
     sl.register_worker("heatmap-tracker", version="1")
     cap = sl.open_capture(src, args.connection)
     tracker = CentroidTracker(max_distance=90)
@@ -83,8 +87,8 @@ def main():
                 break
         if now - last >= interval:
             for tid, cx, cy in tracker.update(feet):
-                sl.add_event(source_id=src["id"], event_type="detection",
-                             track_id=tid, point_px={"x": cx, "y": cy})
+                sl.submit_detection(source_id=src["id"], entity_id=tid, point_px=(cx, cy),
+                                   entity_type="person")
                 n += 1
             last = now
             if n and n % 200 == 0:
