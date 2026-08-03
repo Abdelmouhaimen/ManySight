@@ -7,7 +7,7 @@ floor plan and derives the heatmap, presence, visits, and dwell itself — this
 worker never computes a heatmap or a zone.
 
 Usage:
-    python examples/heatmap_tracker.py --source 1 [--url http://localhost:8000] [--fps 2]
+    python examples/heatmap_tracker.py --source 1 [--url http://localhost:8000] [--fps 4]
 """
 import sys
 import time
@@ -50,7 +50,8 @@ def motion_detector():
 
 def main():
     ap = parse_args_base(__doc__)
-    ap.add_argument("--fps", type=float, default=2.0, help="event posting rate")
+    ap.add_argument("--fps", type=float, default=4.0,
+                    help="inference publication rate; 4 Hz reliably covers 0.5 s windows")
     args = ap.parse_args()
     sl = StoreLens(args.url, args.api_key)
     src = sl.source(args.source)
@@ -64,10 +65,10 @@ def main():
         detect = motion_detector()
         print("ultralytics not installed — using background-subtraction motion blobs")
 
-    sl.register_job(f"Heatmap – {src['name']}", "person feet positions for spatial heatmap",
-                    source_ids=[src["id"]], event_types=["detection"])
-    print("Contract: this worker sends only 'detection' observations with a feet "
-          "point — StoreLens derives the heatmap, zones, and dwell.")
+    sl.register_job(f"Heatmap – {src['name']}", "person feet positions and processed-frame samples",
+                    source_ids=[src["id"]], event_types=["detection", "measurement"])
+    print("Contract: this worker sends detections plus a zero-capable processed-frame "
+          "sample — StoreLens derives zones, presence windows, heatmaps, and dwell.")
     sl.register_worker("heatmap-tracker", version="1")
     cap = sl.open_capture(src, args.connection)
     tracker = CentroidTracker(max_distance=90)
@@ -86,10 +87,17 @@ def main():
             if command["should_stop"]:
                 break
         if now - last >= interval:
-            for tid, cx, cy in tracker.update(feet):
+            tracks = tracker.update(feet)
+            sample_ts = time.time()
+            for tid, cx, cy in tracks:
                 sl.submit_detection(source_id=src["id"], entity_id=tid, point_px=(cx, cy),
-                                   entity_type="person")
+                                   entity_type="person", ts=sample_ts)
                 n += 1
+            sl.submit_detection_frame(
+                source_id=src["id"], entity_type="person", count=len(tracks), ts=sample_ts,
+                attributes={"detector": "heatmap_tracker"},
+            )
+            sl.flush_observations()
             last = now
             if n and n % 200 == 0:
                 print(f"{n} detections posted")

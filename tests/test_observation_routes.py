@@ -65,6 +65,7 @@ def test_contract_route_not_shadowed(client):
     response = client.get("/api/v1/observations/contract")
     assert response.status_code == 200
     assert "kinds" in response.json()
+    assert response.json()["processed_detection_frame"]["name"] == "detection_frame_count"
 
 
 def test_static_observation_routes_registered_before_dynamic_id_route():

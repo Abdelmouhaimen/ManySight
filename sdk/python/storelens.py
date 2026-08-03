@@ -214,6 +214,29 @@ class StoreLens:
                              unit=unit, label=label, entity_id=entity_id, confidence=confidence,
                              attributes=attributes, geometry=geometry, ts=ts, observation_id=observation_id)
 
+    def submit_detection_frame(self, source_id: int, entity_type: str, count: int,
+                               ts: float | None = None, attributes: dict | None = None,
+                               observation_id: str | None = None) -> None:
+        """Mark one processed detection frame, including frames with zero matches.
+
+        Submit this once per inference sample with the same timestamp used by
+        every detection from that frame. StoreLens uses it only as completeness
+        evidence for half-second presence windows: detections still determine
+        identities and zone membership, while this marker distinguishes an
+        observed zero from a missing/offline sample.
+        """
+        self.submit_measurement(
+            source_id=source_id,
+            name="detection_frame_count",
+            value=int(count),
+            label=entity_type,
+            value_kind="gauge",
+            unit="tracks",
+            attributes={"frame_sample": True, "window_s": 0.5, **(attributes or {})},
+            ts=ts,
+            observation_id=observation_id,
+        )
+
     def submit_state(self, source_id: int, name: str, label: str, entity_id: str | None = None,
                      info: dict | None = None, confidence: float | None = None,
                      ts: float | None = None, observation_id: str | None = None) -> None:

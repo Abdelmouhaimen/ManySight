@@ -33,6 +33,8 @@ SPLIT_DIMENSIONS = {"label", "entity_type", "entity_id", "source", "state_label"
 # attribute key instead (checked separately since the key set is open-ended).
 DAY = 86400.0
 MAX_BUCKETS = 500
+ENTITY_COUNT_WINDOW_S = 0.5
+DETECTION_FRAME_COUNT_NAME = "detection_frame_count"
 
 
 class RangeIn(BaseModel):
@@ -287,15 +289,169 @@ def _query_detection(q: QueryIn, since: float, until: float) -> dict:
                 **summarize_scalar(["zone_id=?"], [zid])} for zid in zone_ids]
         return {"shape": "categorical", "dimensions": ["zone_id"], "measures": q.measures, "rows": rows, "metadata": {}}
     if grouping.primary == "time":
+        if q.measures == ["active_entities"]:
+            window_s = ENTITY_COUNT_WINDOW_S
+            identity_key = (
+                "CASE COALESCE(identity_scope, 'worker_run') "
+                "WHEN 'workspace' THEN 'workspace:' || track_id "
+                "WHEN 'source' THEN 'source:' || source_id || ':' || track_id "
+                "ELSE 'worker:' || COALESCE(CAST(worker_id AS TEXT), 'source-' || source_id) || ':' || track_id END"
+            )
+            if predicate:
+                identities_by_window = defaultdict(set)
+                for event in db.q(
+                    f"SELECT ts, track_id, identity_scope, source_id, worker_id, attributes "
+                    f"FROM events WHERE {' AND '.join(base_where)} AND track_id IS NOT NULL",
+                    base_args,
+                ):
+                    if not predicate(event["attributes"]):
+                        continue
+                    scope = event.get("identity_scope") or "worker_run"
+                    if scope == "workspace":
+                        key = ("workspace", event["track_id"])
+                    elif scope == "source":
+                        key = ("source", event["source_id"], event["track_id"])
+                    else:
+                        key = ("worker", event.get("worker_id") or f"source-{event['source_id']}", event["track_id"])
+                    identities_by_window[int(event["ts"] // window_s)].add(key)
+                counts_by_window = {
+                    window_id: len(identities) for window_id, identities in identities_by_window.items()
+                }
+            else:
+                count_rows_by_window = db.q(
+                    f"SELECT CAST(ts / ? AS INTEGER) window_id, "
+                    f"COUNT(DISTINCT {identity_key}) active_entities "
+                    f"FROM events WHERE {' AND '.join(base_where)} AND track_id IS NOT NULL "
+                    f"GROUP BY window_id ORDER BY window_id",
+                    [window_s, *base_args],
+                )
+                counts_by_window = {
+                    row["window_id"]: row["active_entities"] for row in count_rows_by_window
+                }
+
+            # A detection proves its own window was processed. Explicit frame
+            # count measurements additionally prove zero-detection windows.
+            # Missing markers remain absent/unknown rather than becoming zero.
+            marker_where = ["event_type='measurement'", "name=?", "ts BETWEEN ? AND ?"]
+            marker_args = [DETECTION_FRAME_COUNT_NAME, since, until]
+            entity_types = filters.get("entity_types") or []
+            if entity_types:
+                marker_where.append(f"label IN ({','.join('?' for _ in entity_types)})")
+                marker_args.extend(entity_types)
+            for filter_key, column in (("source_ids", "source_id"), ("job_ids", "job_id")):
+                values = filters.get(filter_key)
+                if values:
+                    marker_where.append(f"{column} IN ({','.join('?' for _ in values)})")
+                    marker_args.extend(values)
+
+            marker_rows = [] if predicate else db.q(
+                f"SELECT CAST(ts / ? AS INTEGER) window_id, source_id "
+                f"FROM events WHERE {' AND '.join(marker_where)} GROUP BY window_id, source_id",
+                [window_s, *marker_args],
+            )
+            expected_sources = set(filters.get("source_ids") or [row["source_id"] for row in marker_rows])
+            marker_sources_by_window = defaultdict(set)
+            for row in marker_rows:
+                marker_sources_by_window[row["window_id"]].add(row["source_id"])
+            complete_windows = {
+                window_id for window_id, source_ids in marker_sources_by_window.items()
+                if expected_sources and expected_sources.issubset(source_ids)
+            }
+            known_windows = sorted(set(counts_by_window) | complete_windows)
+            window_rows = [
+                {"t": window_id * window_s, "active_entities": counts_by_window.get(window_id, 0)}
+                for window_id in known_windows
+            ]
+
+            # For large histories, choose one real half-second result from each
+            # display slice. IDs are never unioned between windows.
+            source_points = len(window_rows)
+            max_points = 5000
+            display_stride = 1
+            if source_points > max_points:
+                display_stride = (source_points + max_points - 1) // max_points
+                window_rows = [
+                    max(window_rows[index:index + display_stride], key=lambda row: row["active_entities"])
+                    for index in range(0, source_points, display_stride)
+                ]
+            return {
+                "shape": "timeseries",
+                "dimensions": ["t"],
+                "measures": q.measures,
+                "rows": window_rows,
+                "metadata": {
+                    "active_entity_semantics": "distinct scoped track IDs per processed 0.5-second window",
+                    "window_s": window_s,
+                    "zero_semantics": "zero only when every expected source posted a processed-frame marker",
+                    "expected_source_ids": sorted(expected_sources),
+                    "source_points": source_points,
+                    "sampled": source_points > max_points,
+                    "display_gap_s": window_s * display_stride * 1.5,
+                },
+            }
+
         bucket_s = _bucket_seconds(grouping.bucket, since, until)
         b0, b1 = int(since // bucket_s), int(until // bucket_s)
+        active_by_bucket = {}
+        if "active_entities" in q.measures:
+            identity_key = (
+                "CASE COALESCE(identity_scope, 'worker_run') "
+                "WHEN 'workspace' THEN 'workspace:' || track_id "
+                "WHEN 'source' THEN 'source:' || source_id || ':' || track_id "
+                "ELSE 'worker:' || COALESCE(CAST(worker_id AS TEXT), 'source-' || source_id) || ':' || track_id END"
+            )
+            if predicate:
+                # Attribute predicates are intentionally evaluated in Python;
+                # all other common filters stay in the SQL base predicate.
+                samples = defaultdict(set)
+                for event in db.q(
+                    f"SELECT ts, track_id, identity_scope, source_id, worker_id, attributes "
+                    f"FROM events WHERE {' AND '.join(base_where)} AND track_id IS NOT NULL",
+                    base_args,
+                ):
+                    if not predicate(event["attributes"]):
+                        continue
+                    scope = event.get("identity_scope") or "worker_run"
+                    if scope == "workspace":
+                        key = ("workspace", event["track_id"])
+                    elif scope == "source":
+                        key = ("source", event["source_id"], event["track_id"])
+                    else:
+                        key = ("worker", event.get("worker_id") or f"source-{event['source_id']}", event["track_id"])
+                    samples[int(event["ts"])].add(key)
+                for sample_second, identities in samples.items():
+                    bucket_id = int(sample_second // bucket_s)
+                    active_by_bucket[bucket_id] = max(active_by_bucket.get(bucket_id, 0), len(identities))
+            else:
+                # First count scoped identities in each one-second frame bin,
+                # then take the peak frame count in each coarser chart bucket.
+                # We never union track IDs across the whole display bucket.
+                rows = db.q(
+                    f"WITH per_second AS ("
+                    f" SELECT CAST(ts AS INTEGER) sample_second, COUNT(DISTINCT {identity_key}) n"
+                    f" FROM events WHERE {' AND '.join(base_where)} AND track_id IS NOT NULL"
+                    f" GROUP BY CAST(ts AS INTEGER))"
+                    f" SELECT CAST(sample_second / ? AS INTEGER) bucket_id, MAX(n) n"
+                    f" FROM per_second GROUP BY bucket_id",
+                    [*base_args, bucket_s],
+                )
+                active_by_bucket = {row["bucket_id"]: row["n"] for row in rows}
         rows = []
         for b in range(b0, b1 + 1):
             bucket_since, bucket_until = b * bucket_s, (b + 1) * bucket_s
-            rows.append({"t": bucket_since, **summarize_scalar(
-                ["ts>=?", "ts<?"], [bucket_since, bucket_until])})
+            bucket_where = ["ts>=?", "ts<?"]
+            bucket_args = [bucket_since, bucket_until]
+            row = {"t": bucket_since}
+            if "observations" in q.measures:
+                row["observations"] = count_rows(bucket_where, bucket_args, distinct=False)
+            if "distinct_entities" in q.measures:
+                row["distinct_entities"] = count_rows(bucket_where, bucket_args, distinct=True)
+            if "active_entities" in q.measures:
+                row["active_entities"] = active_by_bucket.get(b, 0)
+            rows.append(row)
         return {"shape": "timeseries", "dimensions": ["t"], "measures": q.measures, "rows": rows,
-               "metadata": {"bucket_s": bucket_s}}
+               "metadata": {"bucket_s": bucket_s,
+                            "active_entity_semantics": "peak simultaneous scoped tracks per one-second sample"}}
     return {"shape": "scalar", "dimensions": [], "measures": q.measures, "rows": [summarize_scalar()], "metadata": {}}
 
 
@@ -431,6 +587,9 @@ def capabilities():
         "zones": db.q("SELECT id, name FROM zones ORDER BY id"),
         "labels": [r["label"] for r in db.q(
             "SELECT DISTINCT label FROM events WHERE label IS NOT NULL AND label!='' ORDER BY label")],
+        "entity_types": [r["entity_type"] for r in db.q(
+            "SELECT DISTINCT entity_type FROM events WHERE event_type='detection'"
+            " AND entity_type IS NOT NULL AND entity_type!='' ORDER BY entity_type")],
         "measurement_names": [r["name"] for r in db.q(
             "SELECT DISTINCT name FROM events WHERE event_type='measurement' AND name IS NOT NULL ORDER BY name")],
         "state_names": [r["name"] for r in db.q(

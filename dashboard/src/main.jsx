@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
@@ -6,6 +6,7 @@ import {
   Camera,
   Gauge,
   Menu,
+  Radio,
   ScanSearch,
   Settings2,
   X,
@@ -17,11 +18,16 @@ import { AnalyticsPage } from "./analytics.jsx";
 import { ConfigurePage, OverviewPage, ReviewPage, SourcesPage } from "./pages.jsx";
 import "./styles.css";
 
+const LivePage = lazy(() =>
+  import("./live.jsx").then((module) => ({ default: module.LivePage })),
+);
+
 const NAV = [
   ["overview", "Dashboard", Gauge],
   ["analytics", "Analytics", Activity],
   ["review", "Review", BellRing],
   ["observations", "Observations", ScanSearch],
+  ["live", "Live", Radio],
   ["sources", "Sources", Camera],
   ["setup", "Setup", Settings2],
 ];
@@ -132,6 +138,8 @@ function App() {
           ? ReviewPage
           : route === "observations"
             ? ObservationsPage
+            : route === "live"
+              ? LivePage
             : route === "sources"
               ? SourcesPage
               : ConfigurePage;
@@ -196,14 +204,16 @@ function App() {
         </div>
       </aside>
       <main className="app-main">
-        <Page
-          liveTick={liveTick}
-          openSignal={openSignal}
-          initialSignal={initialSignal}
-          clearInitial={() => setInitialSignal(null)}
-          notify={notify}
-          refreshShell={refreshShell}
-        />
+        <Suspense fallback={<div className="loading-state"><span className="spinner" />Loading 3D workspace…</div>}>
+          <Page
+            liveTick={liveTick}
+            openSignal={openSignal}
+            initialSignal={initialSignal}
+            clearInitial={() => setInitialSignal(null)}
+            notify={notify}
+            refreshShell={refreshShell}
+          />
+        </Suspense>
       </main>
       <Toast toast={toast} dismiss={() => setToast(null)} />
     </div>

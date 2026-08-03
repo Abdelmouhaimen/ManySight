@@ -32,7 +32,7 @@ import {
   SignalRow,
 } from "./components.jsx";
 import { AnalysisCard } from "./analytics.jsx";
-import { SpaceWorkbench } from "./space-workbench.jsx";
+import { LocalSourcePreview, SourceEditorModal, SpaceWorkbench } from "./space-workbench.jsx";
 import { TechnicalConfig } from "./technical-config.jsx";
 
 function useDashboardData(range, liveTick = 0) {
@@ -536,11 +536,12 @@ function SignalDrawer({ signal, onClose, onSave }) {
   );
 }
 
-export function SourcesPage({ liveTick = 0 }) {
+export function SourcesPage({ liveTick = 0, notify }) {
   const [sources, setSources] = useState([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(null),
-    [filter, setFilter] = useState("all");
+    [filter, setFilter] = useState("all"),
+    [showSourceCreator, setShowSourceCreator] = useState(false);
   const load = async () => {
     try {
       setSources(await api.get("/sources"));
@@ -569,12 +570,31 @@ export function SourcesPage({ liveTick = 0 }) {
           ? "danger"
           : "neutral";
 
+  const deleteSource = async (source) => {
+    if (!window.confirm(
+      `Delete ${source.name}? Its placement, calibration, zone views, and projection surfaces will be removed. Historical observations retain their source ID.`,
+    )) return;
+    try {
+      await api.del(`/sources/${source.id}`);
+      localStorage.removeItem(`storelens.local-preview.${source.id}`);
+      await load();
+      notify?.("Source deleted", source.name);
+    } catch (err) {
+      notify?.("Couldn't delete source", err.message, "error");
+    }
+  };
+
   return (
     <>
       <PageHeader
         eyebrow="Sources"
         title="Observation sources"
         description="Logical provenance registered by agents. Camera access and models run on the device that can reach the source."
+        actions={
+          <button className="button button-dark" onClick={() => setShowSourceCreator(true)}>
+            <Plus size={15} /> Add source
+          </button>
+        }
       />
       <div className="health-summary source-health-summary">
         <div>
@@ -636,10 +656,15 @@ export function SourcesPage({ liveTick = 0 }) {
                     <span className="tiny-label">Source #{source.id}</span>
                     <h2>{source.name}</h2>
                   </div>
-                  <Badge tone={statusTone(source.observation_status)}>
-                    <span className="badge-dot" />
-                    {source.observation_status}
-                  </Badge>
+                  <div className="card-actions">
+                    <Badge tone={statusTone(source.observation_status)}>
+                      <span className="badge-dot" />
+                      {source.observation_status}
+                    </Badge>
+                    <button className="icon-button danger" onClick={() => deleteSource(source)} aria-label={`Delete ${source.name}`}>
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </header>
                 <dl className="source-status-facts">
                   <div>
@@ -679,6 +704,7 @@ export function SourcesPage({ liveTick = 0 }) {
                     (capability) => <span key={capability}>{capability}</span>,
                   )}
                 </div>
+                <LocalSourcePreview source={source} />
                 <footer>
                   <span>{source.event_count.toLocaleString()} stored observations</span>
                   <a href={`#detections`} className="button button-secondary">
@@ -694,6 +720,16 @@ export function SourcesPage({ liveTick = 0 }) {
             </EmptyState>
           )}
         </div>
+      )}
+      {showSourceCreator && (
+        <SourceEditorModal
+          onClose={() => setShowSourceCreator(false)}
+          onSaved={async (source) => {
+            setShowSourceCreator(false);
+            await load();
+            notify?.("Source created", `${source.name} is ready to place and calibrate.`);
+          }}
+        />
       )}
     </>
   );

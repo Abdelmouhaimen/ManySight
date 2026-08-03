@@ -64,6 +64,12 @@ function scalarValue(row, measure) {
   return value;
 }
 
+function measureLabel(definition, measure) {
+  if (measure !== "active_entities") return measure.replaceAll("_", " ");
+  const entityType = definition.filters?.entity_types?.[0] || "entity";
+  return entityType === "person" ? "People present" : `${entityType} present`;
+}
+
 function AnalysisBody({ definition, context, result, loading, error }) {
   if (loading && !result) return <LoadingState label="Loading analysis…" />;
   if (error) return <ErrorState error={error} />;
@@ -117,8 +123,11 @@ function AnalysisBody({ definition, context, result, loading, error }) {
       const series = Object.entries(groups).map(([label, points]) => ({ label, points }));
       return <MultiLineChart series={series} empty="No data in this period." />;
     }
-    return <MultiLineChart series={[{ label: measures[0], points: rows.map((r) => ({ t: r.t, count: r[measures[0]] ?? 0 })) }]}
-                           empty="No data in this period." />;
+    return <MultiLineChart
+      series={[{ label: measureLabel(definition, measures[0]), points: rows.map((r) => ({ t: r.t, count: r[measures[0]] ?? 0 })) }]}
+      empty="No processed samples in this period."
+      gapAfterSeconds={result.metadata?.display_gap_s ?? null}
+    />;
   }
   // categorical: dimensions typically ["zone_id"] or ["measurement_name"] etc.
   const dimensionKey = dimensions[0];
@@ -170,30 +179,41 @@ export function AnalysisCard({ definition, rangeSeconds, context, liveTick, onEd
   );
 }
 
-function BuilderModal({ existing, capabilities, zones, onClose, onSaved, notify }) {
-  const [form, setForm] = useState(
-    existing || { name: "", question: "", subject: "detection", measures: [], filters: {},
-                 grouping: { primary: null, bucket: "1h", split_by: [] }, presentation: "", pinned: false },
-  );
+function analysisName(entityType, zone) {
+  const subject = entityType === "person"
+    ? "People"
+    : `${entityType.charAt(0).toUpperCase()}${entityType.slice(1)}`;
+  return zone ? `${subject} in ${zone.name}` : `${subject} over time`;
+}
+
+function BuilderModal({ existing, capabilities, zones, onClose, onSaved }) {
+  const [entityType, setEntityType] = useState(existing?.filters?.entity_types?.[0] || "");
+  const [zoneId, setZoneId] = useState(existing?.filters?.zone_ids?.[0] ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const availableMeasures = capabilities?.measures_by_subject?.[form.subject] || [];
-
-  const toggleMeasure = (measure) =>
-    setForm((current) => ({
-      ...current,
-      measures: current.measures.includes(measure)
-        ? current.measures.filter((m) => m !== measure)
-        : [...current.measures, measure],
-    }));
+  const entityTypes = capabilities?.entity_types || [];
 
   const save = async () => {
     setSaving(true);
     setError("");
     try {
-      if (!form.name.trim()) throw new Error("A name is required");
-      if (!form.measures.length) throw new Error("Pick at least one measure");
-      const body = { ...form, name: form.name.trim() };
+      if (!entityType) throw new Error("Choose an entity type");
+      const zone = zones.find((item) => item.id === Number(zoneId));
+      const body = {
+        name: analysisName(entityType, zone),
+        question: zone
+          ? `How many ${entityType} tracks were present at the same time in ${zone.name}?`
+          : `How many ${entityType} tracks were present at the same time?`,
+        subject: "detection",
+        measures: ["active_entities"],
+        filters: {
+          entity_types: [entityType],
+          ...(zone ? { zone_ids: [zone.id] } : {}),
+        },
+        grouping: { primary: "time", bucket: "0.5s", split_by: [] },
+        presentation: "line",
+        pinned: existing?.pinned || false,
+      };
       const saved = existing
         ? await api.patch(`/analyses/${existing.id}`, body)
         : await api.post("/analyses", body);
@@ -207,14 +227,13 @@ function BuilderModal({ existing, capabilities, zones, onClose, onSaved, notify 
 
   return (
     <Modal
-      title={existing ? `Edit ${existing.name}` : "New analysis"}
+      title={existing ? "Edit entity count" : "Add entity count"}
       onClose={onClose}
-      wide
       footer={
         <>
           <button className="button button-secondary" onClick={onClose}>Cancel</button>
-          <button className="button button-dark" onClick={save} disabled={saving}>
-            {saving ? "Saving…" : existing ? "Save analysis" : "Create analysis"}
+          <button className="button button-dark" onClick={save} disabled={saving || !entityType}>
+            {saving ? "Saving…" : existing ? "Save" : "Show count"}
           </button>
         </>
       }
@@ -222,83 +241,21 @@ function BuilderModal({ existing, capabilities, zones, onClose, onSaved, notify 
       <div className="form-grid">
         {error && <p className="field-error field-full">{error}</p>}
         <label className="field field-full">
-          <span>Name</span>
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <span>Entity type *</span>
+          <select value={entityType} onChange={(event) => setEntityType(event.target.value)} required>
+            <option value="">Choose an entity type</option>
+            {entityTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+          {!entityTypes.length && (
+            <small>No entity types recorded yet. They appear after a worker submits detections.</small>
+          )}
         </label>
         <label className="field field-full">
-          <span>Question this answers</span>
-          <input value={form.question} onChange={(e) => setForm({ ...form, question: e.target.value })} />
-        </label>
-        <label className="field">
-          <span>Subject</span>
-          <select
-            value={form.subject}
-            onChange={(e) => setForm({ ...form, subject: e.target.value, measures: [] })}
-          >
-            {Object.entries(SUBJECT_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
+          <span>Zone (optional)</span>
+          <select value={zoneId} onChange={(event) => setZoneId(event.target.value)}>
+            <option value="">Everywhere</option>
+            {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
           </select>
-        </label>
-        <label className="field">
-          <span>Grouping</span>
-          <select
-            value={form.grouping.primary || ""}
-            onChange={(e) => setForm({ ...form, grouping: { ...form.grouping, primary: e.target.value || null } })}
-          >
-            <option value="">No grouping (KPI)</option>
-            <option value="time">Over time</option>
-            <option value="zone">By zone</option>
-          </select>
-        </label>
-        {form.grouping.primary === "time" && (
-          <label className="field">
-            <span>Bucket</span>
-            <select
-              value={form.grouping.bucket}
-              onChange={(e) => setForm({ ...form, grouping: { ...form.grouping, bucket: e.target.value } })}
-            >
-              {["1m", "5m", "15m", "1h", "1d"].map((b) => <option key={b} value={b}>{b}</option>)}
-            </select>
-          </label>
-        )}
-        <div className="field field-full">
-          <span>Measures</span>
-          <div className="chip-row">
-            {availableMeasures.map((measure) => (
-              <button
-                key={measure}
-                type="button"
-                className={`chip ${form.measures.includes(measure) ? "chip-active" : ""}`}
-                onClick={() => toggleMeasure(measure)}
-              >
-                {measure.replaceAll("_", " ")}
-              </button>
-            ))}
-            {!availableMeasures.length && <small>Loading capabilities…</small>}
-          </div>
-        </div>
-        {zones?.length > 0 && (
-          <label className="field field-full">
-            <span>Zone filter</span>
-            <select
-              value={form.filters.zone_ids?.[0] ?? ""}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  filters: { ...form.filters, zone_ids: e.target.value ? [Number(e.target.value)] : undefined },
-                })
-              }
-            >
-              <option value="">All zones</option>
-              {zones.map((z) => <option key={z.id} value={z.id}>{z.name}</option>)}
-            </select>
-          </label>
-        )}
-        <label className="field checkbox-field field-full">
-          <input type="checkbox" checked={form.pinned}
-                onChange={(e) => setForm({ ...form, pinned: e.target.checked })} />
-          <span>Pin to Dashboard</span>
         </label>
       </div>
     </Modal>
@@ -344,33 +301,33 @@ export function AnalyticsPage({ notify }) {
     try {
       await api.del(`/analyses/${definition.id}`);
       setAnalyses((current) => current.filter((a) => a.id !== definition.id));
-      notify("Analysis deleted", definition.name);
+      notify("Entity count deleted", definition.name);
     } catch (err) {
-      notify("Couldn't delete analysis", err.message, "error");
+      notify("Couldn't delete entity count", err.message, "error");
     }
   };
 
-  if (loading && !analyses.length) return <LoadingState label="Loading analyses…" />;
+  if (loading && !analyses.length) return <LoadingState label="Loading entity counts…" />;
   if (error && !analyses.length) return <ErrorState error={error} retry={load} />;
 
   return (
     <>
       <PageHeader
         eyebrow="Analytics"
-        title="Saved analyses"
-        description="A saved analysis is a data question — subject, measures, filters, grouping — never a chart. Switching how it renders never creates a second record."
+        title="Entity counts over time"
+        description="Choose an entity type and, optionally, one zone. Each point counts unique matching track IDs in a processed 0.5-second window; confirmed empty windows are zero and missing samples stay unknown."
         actions={
           <>
             <RangeSelect value={rangeSeconds} onChange={setRangeSeconds} />
             <button className="button button-dark" onClick={() => { setEditing(null); setShowBuilder(true); }}>
-              <Plus size={14} /> New analysis
+              <Plus size={14} /> Add entity count
             </button>
           </>
         }
       />
       {!analyses.length ? (
-        <EmptyState title="No analyses yet">
-          Create one from a subject (detection, measurement, or state) and the measures that answer your question.
+        <EmptyState title="No entity counts yet">
+          Add a count by selecting an entity type. You can optionally restrict it to a zone.
         </EmptyState>
       ) : (
         <div className="insight-grid">
@@ -391,7 +348,6 @@ export function AnalyticsPage({ notify }) {
           existing={editing}
           capabilities={capabilities}
           zones={context.zones}
-          notify={notify}
           onClose={() => setShowBuilder(false)}
           onSaved={(saved) => {
             setShowBuilder(false);
@@ -399,7 +355,7 @@ export function AnalyticsPage({ notify }) {
               const others = current.filter((a) => a.id !== saved.id);
               return [...others, saved].sort((a, b) => a.sort_order - b.sort_order);
             });
-            notify(editing ? "Analysis updated" : "Analysis created", saved.name);
+            notify(editing ? "Entity count updated" : "Entity count added", saved.name);
           }}
         />
       )}

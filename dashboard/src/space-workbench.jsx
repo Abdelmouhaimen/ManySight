@@ -4,6 +4,8 @@ import {
   CheckCircle2,
   Crosshair,
   Eraser,
+  ExternalLink,
+  FileUp,
   MapPin,
   MousePointer2,
   Pencil,
@@ -154,6 +156,13 @@ function MapSurface({
           height={height}
           className="workbench-floor"
         />
+        {(store?.map?.floor_polygons || []).map((floor, index) => (
+          <polygon
+            key={`imported-floor-${index}`}
+            points={polygon(floor)}
+            className="workbench-imported-floor"
+          />
+        ))}
         <rect
           x="0"
           y="0"
@@ -247,6 +256,56 @@ function MapSurface({
   );
 }
 
+function MetricBlueprintImport({ onRefresh, notify }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const upload = async (file) => {
+    if (!window.confirm(
+      "Import this metric plan? It replaces the current coordinate frame and clears existing camera placements and floor calibrations so they cannot project into the wrong map.",
+    )) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api.upload("/store/import-metric-blueprint", file);
+      await onRefresh();
+      notify(
+        "Metric blueprint imported",
+        `${result.polygon_count} polygon${result.polygon_count === 1 ? "" : "s"} · ${result.width_m.toFixed(2)} × ${result.height_m.toFixed(2)} m · ${result.invalidated_calibrations} calibration${result.invalidated_calibrations === 1 ? "" : "s"} cleared`,
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Panel
+      title="Import floor plan"
+      subtitle="Metric ZIP exported by Plan → metric blueprint"
+      action={
+        <label className="button button-dark">
+          <FileUp size={14} /> {busy ? "Importing…" : "Import plan ZIP"}
+          <input
+            aria-label="Metric blueprint ZIP"
+            type="file"
+            accept=".zip,application/zip"
+            hidden
+            disabled={busy}
+            onChange={(event) => event.target.files?.[0] && upload(event.target.files[0])}
+          />
+        </label>
+      }
+    >
+      <p className="form-note">
+        Imports floor polygons and metric dimensions from floor_polygon.json.
+        This replaces the map coordinate frame. Existing camera placements and floor
+        calibrations are cleared, then must be confirmed again with point pairs.
+      </p>
+      {error && <div className="form-error" role="alert">{error}</div>}
+    </Panel>
+  );
+}
+
 export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
   const svgRef = useRef(null);
   const [tool, setTool] = useState("select");
@@ -257,6 +316,8 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
   const [zoneDraft, setZoneDraft] = useState(null);
   const [labelDraft, setLabelDraft] = useState(null);
   const [editingZone, setEditingZone] = useState(null);
+  const [calibrating, setCalibrating] = useState(null);
+  const [showSourceCreator, setShowSourceCreator] = useState(false);
   const [placementDraft, setPlacementDraft] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -264,7 +325,9 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
     sources.find((source) => source.id === selectedSourceId) || null;
 
   useEffect(() => {
-    if (!selectedSourceId && sources.length) setSelectedSourceId(sources[0].id);
+    if (!sources.length) setSelectedSourceId(null);
+    else if (!sources.some((source) => source.id === selectedSourceId))
+      setSelectedSourceId(sources[0].id);
   }, [sources, selectedSourceId]);
 
   useEffect(() => {
@@ -456,8 +519,25 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
     }
   };
 
+  const deleteSource = async () => {
+    if (!selectedSource) return;
+    if (!window.confirm(
+      `Delete ${selectedSource.name}? Its placement, calibration, zone views, and projection surfaces will be removed. Historical observations retain their source ID.`,
+    )) return;
+    try {
+      await api.del(`/sources/${selectedSource.id}`);
+      localStorage.removeItem(`storelens.local-preview.${selectedSource.id}`);
+      setSelectedSourceId(null);
+      await onRefresh();
+      notify("Source deleted", selectedSource.name);
+    } catch (err) {
+      notify("Couldn't delete source", err.message, "error");
+    }
+  };
+
   return (
     <div className="space-workbench stack">
+      <MetricBlueprintImport onRefresh={onRefresh} notify={notify} />
       <Panel
         title="Floor map workbench"
         subtitle="Draw geometry in metres and place logical source markers"
@@ -611,6 +691,11 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
         <Panel
           title={`Sources · ${sources.length}`}
           subtitle="Map placement is descriptive; workers configure pixel geometry from locally captured frames"
+          action={
+            <button className="button button-secondary" onClick={() => setShowSourceCreator(true)}>
+              <Plus size={14} /> Add source
+            </button>
+          }
         >
           <div className="data-list">
             {sources.map((source) => (
@@ -637,9 +722,11 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
               </button>
             ))}
             {!sources.length && (
-              <EmptyState title="Register a source first">
-                An agent can create a logical source through StoreLens MCP before
-                placing it on the map.
+              <EmptyState
+                title="Add a camera source"
+                action={<button className="button button-dark" onClick={() => setShowSourceCreator(true)}>Add source</button>}
+              >
+                Create a logical source, then place and calibrate it on the map.
               </EmptyState>
             )}
           </div>
@@ -650,12 +737,10 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
                   <span className="tiny-label">Selected camera</span>
                   <h3>{selectedSource.name}</h3>
                 </div>
-                {selectedSource.placement && (
-                  <Badge tone="positive">
-                    <MapPin size={12} />
-                    Placed
-                  </Badge>
-                )}
+                <div className="card-actions">
+                  {selectedSource.placement && <Badge tone="positive"><MapPin size={12} /> Placed</Badge>}
+                  <button className="icon-button danger" onClick={deleteSource} aria-label={`Delete ${selectedSource.name}`}><Trash2 size={15} /></button>
+                </div>
               </div>
               {!selectedSource.placement ? (
                 <button
@@ -731,6 +816,13 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
                       Save view
                     </button>
                     <button
+                      className="button button-dark"
+                      onClick={() => setCalibrating(selectedSource)}
+                    >
+                      <Crosshair size={14} />
+                      {selectedSource.calibrated ? "Review calibration" : "Calibrate camera"}
+                    </button>
+                    <button
                       className="button button-ghost danger"
                       onClick={clearPlacement}
                     >
@@ -745,6 +837,7 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
                   </p>
                 </>
               )}
+              <LocalSourcePreview source={selectedSource} />
             </div>
           )}
         </Panel>
@@ -779,7 +872,139 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
       {labelDraft && (
         <LabelModal onClose={() => setLabelDraft(null)} onSave={addLabel} />
       )}
+      {calibrating && (
+        <CalibrationModal
+          source={sources.find((item) => item.id === calibrating.id) || calibrating}
+          store={store}
+          zones={zones}
+          sources={sources}
+          onClose={() => setCalibrating(null)}
+          onSaved={async () => {
+            await onRefresh();
+            notify("Calibration saved", "Future pixel detections can now be projected onto the floor plan.");
+          }}
+        />
+      )}
+      {showSourceCreator && (
+        <SourceEditorModal
+          onClose={() => setShowSourceCreator(false)}
+          onSaved={async (source) => {
+            setShowSourceCreator(false);
+            setSelectedSourceId(source.id);
+            await onRefresh();
+            notify("Source created", `${source.name} is ready to place and calibrate.`);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+export function LocalSourcePreview({ source }) {
+  const storageKey = `storelens.local-preview.${source.id}`;
+  const demoAddress = source.locator?.local_secret_ref === "STORELENS_DEMO_STREAM_0"
+    ? "http://127.0.0.1:8765/stream.mjpg"
+    : "";
+  const [address, setAddress] = useState(() => localStorage.getItem(storageKey) || demoAddress);
+  const [connected, setConnected] = useState(() => localStorage.getItem(storageKey) || demoAddress);
+  useEffect(() => {
+    const value = localStorage.getItem(storageKey) || demoAddress;
+    setAddress(value);
+    setConnected(value);
+  }, [storageKey, demoAddress]);
+  const connect = () => {
+    const value = address.trim();
+    localStorage.setItem(storageKey, value);
+    setConnected(value);
+  };
+  return (
+    <div className="local-source-preview stack">
+      <div className="section-heading">
+        <div>
+          <span className="tiny-label">Local demo footage</span>
+          <h3>Browser preview</h3>
+        </div>
+      </div>
+      <label className="field">
+        <span>Local player address</span>
+        <input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="http://127.0.0.1:8765/stream.mjpg" />
+        <small>Saved only in this browser; never sent to the StoreLens server.</small>
+      </label>
+      <div className="card-actions">
+        <button className="button button-secondary" onClick={connect} disabled={!address.trim()}>Connect preview</button>
+        {address.trim() && <a className="button button-ghost" href={address.trim()} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open separately</a>}
+      </div>
+      {connected && <iframe className="local-preview-frame" src={connected} title={`Local preview for ${source.name}`} allow="autoplay; fullscreen" />}
+    </div>
+  );
+}
+
+export function SourceEditorModal({ onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name: "Looped hallway camera",
+    kind: "http",
+    local_secret_ref: "STORELENS_DEMO_STREAM_0",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      if (!form.name.trim()) throw new Error("Enter a source name.");
+      if (!form.local_secret_ref.trim()) throw new Error("Enter a safe local reference.");
+      const source = await api.post("/sources", {
+        name: form.name.trim(),
+        kind: form.kind,
+        connection_mode: "agent_local",
+        locator: { local_secret_ref: form.local_secret_ref.trim() },
+        capabilities: ["video"],
+        metadata: { demo: true },
+      });
+      await onSaved(source);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal
+      title="Add camera source"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="button button-secondary" onClick={onClose}>Cancel</button>
+          <button className="button button-dark" onClick={save} disabled={saving}><Save size={14} /> {saving ? "Creating…" : "Create source"}</button>
+        </>
+      }
+    >
+      <div className="form-grid">
+        <label className="field field-full">
+          <span>Source name</span>
+          <input autoFocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+        </label>
+        <label className="field">
+          <span>Video type</span>
+          <select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value })}>
+            <option value="http">HTTP / MJPEG</option>
+            <option value="rtsp">RTSP</option>
+            <option value="webrtc">WebRTC</option>
+            <option value="webcam">Webcam</option>
+            <option value="file">Local file</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Local stream reference</span>
+          <input value={form.local_secret_ref} onChange={(event) => setForm({ ...form, local_secret_ref: event.target.value })} />
+        </label>
+      </div>
+      <p className="form-note">
+        StoreLens saves this non-secret reference, not a URL or credentials. For this
+        demo the worker resolves STORELENS_DEMO_STREAM_0 on the same machine.
+      </p>
+      {error && <div className="form-error" role="alert">{error}</div>}
+    </Modal>
   );
 }
 
@@ -922,6 +1147,226 @@ function LabelModal({ onClose, onSave }) {
           {error}
         </div>
       )}
+    </Modal>
+  );
+}
+
+function CalibrationMap({ store, zones, sources, svgRef, onClick, points, pending, testPoint }) {
+  return (
+    <MapSurface
+      store={store}
+      zones={zones}
+      sources={sources}
+      draft={[]}
+      selectedSourceId={null}
+      tool="select"
+      onMapClick={onClick}
+      onSourceSelect={() => {}}
+      onEraseWall={() => {}}
+      onEraseLabel={() => {}}
+      svgRef={svgRef}
+      testPoint={testPoint}
+    >
+      {points.map((pair, index) => (
+        <g key={index} className="calibration-map-point">
+          <circle cx={pair.map.x} cy={pair.map.y} r=".18" />
+          <text x={pair.map.x} y={pair.map.y + 0.07}>{index + 1}</text>
+        </g>
+      ))}
+      {pending && (
+        <text x=".25" y={Math.max(Number(store?.height_m) || 12, 1) - 0.25} className="calibration-hint">
+          Click the matching map position
+        </text>
+      )}
+    </MapSurface>
+  );
+}
+
+function CalibrationModal({ source, store, zones, sources, onClose, onSaved }) {
+  const imageRef = useRef(null);
+  const mapRef = useRef(null);
+  const [pairs, setPairs] = useState(source.calibration?.points || []);
+  const [pending, setPending] = useState(null);
+  const [frameUrl, setFrameUrl] = useState("");
+  const [frame, setFrame] = useState({
+    width: source.calibration?.frame_w || 0,
+    height: source.calibration?.frame_h || 0,
+  });
+  const [mode, setMode] = useState("pair");
+  const [testPoint, setTestPoint] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => () => {
+    if (frameUrl) URL.revokeObjectURL(frameUrl);
+  }, [frameUrl]);
+
+  const chooseFrame = (file) => {
+    const nextUrl = URL.createObjectURL(file);
+    setFrameUrl(nextUrl);
+    setPending(null);
+    setTestPoint(null);
+  };
+
+  const frameClick = async (event) => {
+    const image = imageRef.current;
+    if (!image || !image.naturalWidth) return;
+    const rect = image.getBoundingClientRect();
+    const point = {
+      x: ((event.clientX - rect.left) / rect.width) * image.naturalWidth,
+      y: ((event.clientY - rect.top) / rect.height) * image.naturalHeight,
+    };
+    if (mode === "test") {
+      setError("");
+      try {
+        const result = await api.post(`/sources/${source.id}/project`, { points: [point] });
+        setTestPoint(result.points[0]);
+      } catch (err) {
+        setError(err.message);
+      }
+    } else {
+      setPending(point);
+    }
+  };
+
+  const mapClick = (event) => {
+    if (!pending) return;
+    const point = eventPoint(event, mapRef.current);
+    if (!point) return;
+    setPairs((current) => [...current, { px: pending, map: point }]);
+    setPending(null);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      if (pairs.length < 4) throw new Error("Add at least four matching point pairs.");
+      if (!frame.width || !frame.height) throw new Error("Choose the still frame used for calibration.");
+      await api.put(`/sources/${source.id}/calibration`, {
+        points: pairs,
+        frame_w: frame.width,
+        frame_h: frame.height,
+      });
+      await onSaved();
+      setMode("test");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const clear = async () => {
+    if (!window.confirm(`Clear the saved calibration for ${source.name}?`)) return;
+    await api.del(`/sources/${source.id}/calibration`);
+    setPairs([]);
+    setPending(null);
+    setTestPoint(null);
+    await onSaved();
+    setMode("pair");
+  };
+
+  return (
+    <Modal
+      wide
+      title={`Calibrate ${source.name}`}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="button button-secondary" onClick={onClose}>Close</button>
+          {source.calibrated && (
+            <button className="button button-ghost danger" onClick={clear}>
+              <Trash2 size={14} /> Clear saved calibration
+            </button>
+          )}
+          <button className="button button-dark" onClick={save} disabled={saving || pairs.length < 4 || !frameUrl}>
+            <Save size={14} /> {saving ? "Computing…" : "Compute & save"}
+          </button>
+        </>
+      }
+    >
+      <div className="calibration-intro">
+        <div>
+          <span className="tiny-label">Guided floor homography</span>
+          <h3>Match the same floor points in both views</h3>
+          <p>
+            Upload a still from this camera, then choose fixed floor points spread
+            across the visible area. Four pairs is the minimum; six or more is safer.
+          </p>
+        </div>
+        <Badge tone={pairs.length >= 4 ? "positive" : "warning"}>{pairs.length}/4 minimum pairs</Badge>
+      </div>
+      <div className="card-actions">
+        <label className="button button-secondary">
+          <FileUp size={14} /> {frameUrl ? "Replace still frame" : "Choose still frame"}
+          <input type="file" accept="image/*" hidden onChange={(event) => event.target.files?.[0] && chooseFrame(event.target.files[0])} />
+        </label>
+        <span className="definition-note">The image stays in this browser and is not uploaded to StoreLens.</span>
+      </div>
+      <div className="calibration-mode" role="tablist" aria-label="Calibration mode">
+        <button className={mode === "pair" ? "active" : ""} onClick={() => { setMode("pair"); setTestPoint(null); }} role="tab" aria-selected={mode === "pair"}>1. Match points</button>
+        <button className={mode === "test" ? "active" : ""} onClick={() => { setMode("test"); setPending(null); }} role="tab" aria-selected={mode === "test"} disabled={!source.calibrated}>2. Test projection</button>
+      </div>
+      <div className="calibration-status" role="status">
+        {!frameUrl
+          ? "Choose a still frame from the selected camera."
+          : mode === "test"
+            ? "Click a floor position in the camera frame; the projected map point appears in orange."
+            : pending
+              ? "Camera point selected. Click the same physical location on the floor map."
+              : "Click a fixed floor point in the camera frame to begin a pair."}
+      </div>
+      <div className="calibration-grid">
+        <section>
+          <h4>Camera frame</h4>
+          {frameUrl ? (
+            <div className={`calibration-frame ${pending ? "has-pending" : ""}`} onClick={frameClick} style={frame.width && frame.height ? { aspectRatio: `${frame.width} / ${frame.height}` } : undefined}>
+              <img
+                ref={imageRef}
+                src={frameUrl}
+                alt={`Local calibration frame for ${source.name}`}
+                onLoad={(event) => setFrame({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+              />
+              {pairs.map((pair, index) => (
+                <span key={index} className="calibration-frame-point" style={{ left: `${(pair.px.x / (frame.width || 1)) * 100}%`, top: `${(pair.px.y / (frame.height || 1)) * 100}%` }}>{index + 1}</span>
+              ))}
+              {pending && <span className="calibration-frame-point pending" style={{ left: `${(pending.x / (frame.width || 1)) * 100}%`, top: `${(pending.y / (frame.height || 1)) * 100}%` }}>+</span>}
+            </div>
+          ) : (
+            <div className="calibration-frame calibration-frame-empty">Choose a still frame to begin.</div>
+          )}
+        </section>
+        <section>
+          <h4>Floor map</h4>
+          <CalibrationMap store={store} zones={zones} sources={sources} svgRef={mapRef} onClick={mapClick} points={pairs} pending={pending} testPoint={testPoint} />
+        </section>
+      </div>
+      {!!pairs.length && (
+        <div className="calibration-pairs">
+          <div><strong>Point pairs</strong><span>{frame.width} × {frame.height}px frame</span></div>
+          <ol>
+            {pairs.map((pair, index) => (
+              <li key={index}>
+                <span>{index + 1}</span>
+                <code>px {Math.round(pair.px.x)}, {Math.round(pair.px.y)}</code>
+                <code>map {pair.map.x.toFixed(2)}, {pair.map.y.toFixed(2)}m</code>
+                <button className="icon-button" onClick={() => setPairs((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove point pair ${index + 1}`}><X size={14} /></button>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {source.calibrated && (
+        <div className="quality-note">
+          <CheckCircle2 size={15} />
+          <div>
+            <strong>Saved control-point error: ±{Number(source.calibration?.error_m || 0).toFixed(2)}m</strong>
+            <p>Test several floor points before trusting automatic zone assignment.</p>
+          </div>
+        </div>
+      )}
+      {error && <div className="form-error" role="alert">{error}</div>}
     </Modal>
   );
 }

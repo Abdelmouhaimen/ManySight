@@ -147,6 +147,14 @@ def observation_contract():
         },
         "identity_scopes": ["worker_run", "source", "workspace"],
         "value_kinds": ["gauge", "delta", "cumulative"],
+        "processed_detection_frame": {
+            "kind": "measurement",
+            "name": "detection_frame_count",
+            "label": "<entity_type>",
+            "value": "number of matching detections in this processed frame, including 0",
+            "timestamp": "same timestamp as every detection emitted from the frame",
+            "purpose": "distinguishes an observed zero from a missing/offline sample in 0.5-second presence windows",
+        },
         "representative_point_precedence": [
             "explicit geometry.point_px",
             "foot/ankle keypoints (averaged)",

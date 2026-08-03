@@ -16,7 +16,11 @@ which saved analysis you create afterward.
 A stream of `detection` observations with a stable `entity_id` and spatial evidence.
 For standing floor traffic, use the person's **feet** (`geometry.point_px`, or let
 StoreLens pick foot/ankle keypoints or the bbox bottom-center — see precedence below).
-Post 1–2 per second per entity; don't post every frame at 30fps.
+Post 1–2 per second per entity for ordinary spatial analytics; don't post every
+camera frame at 30fps. For zero-capable 0.5-second presence windows, run inference
+at 4 Hz or faster and call `submit_detection_frame` once per sample, including
+empty frames, with the same timestamp as that sample's detections. Missing frame
+markers mean unknown, never zero.
 
 Never send `zone_id`/`zone`, and never emit an enter/exit pair or a computed dwell value
 yourself — StoreLens assigns the zone from geometry and derives visits/dwell/flow from
@@ -57,7 +61,7 @@ foot/ankle keypoints, then bbox bottom-center, then left empty if only a mask is
 ## Worker template
 
 ```python
-import os, sys
+import os, sys, time
 sys.path.insert(0, "sdk/python")
 from storelens import StoreLens, CentroidTracker
 import cv2
@@ -65,7 +69,7 @@ import cv2
 sl = StoreLens(os.environ["STORELENS_URL"])
 src = sl.source(SOURCE_ID)
 job = sl.register_job("Presence – whole store", "tracked detections", source_ids=[src["id"]],
-                      event_types=["detection"])
+                      event_types=["detection", "measurement"])
 sl.register_worker("detection-tracker", version="1")
 cap = sl.open_capture(src)
 bg = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=32, detectShadows=False)
@@ -84,8 +88,13 @@ while True:
             continue
         x, y, w, h = cv2.boundingRect(c)
         feet.append((x + w / 2, y + h))          # bottom-center = feet
-    for tid, cx, cy in tracker.update(feet):
-        sl.submit_detection(source_id=src["id"], entity_id=tid, point_px=(cx, cy), entity_type="person")
+    sample_ts = time.time()
+    tracks = tracker.update(feet)
+    for tid, cx, cy in tracks:
+        sl.submit_detection(source_id=src["id"], entity_id=tid, point_px=(cx, cy),
+                            entity_type="person", ts=sample_ts)
+    sl.submit_detection_frame(source_id=src["id"], entity_type="person",
+                              count=len(tracks), ts=sample_ts)
     sl.flush()
 sl.flush()
 ```

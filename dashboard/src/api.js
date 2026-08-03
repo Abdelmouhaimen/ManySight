@@ -33,6 +33,17 @@ export const api = {
   put: (path, body) => request("PUT", path, body),
   patch: (path, body) => request("PATCH", path, body),
   del: (path) => request("DELETE", path),
+  upload: async (path, file) => {
+    const form = new FormData();
+    form.append("bundle", file);
+    const headers = apiKey() ? { "X-API-Key": apiKey() } : {};
+    const response = await fetch(BASE + path, { method: "POST", headers, body: form });
+    if (!response.ok) {
+      const detail = (await response.json().catch(() => ({}))).detail || response.statusText;
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    }
+    return response.json();
+  },
 };
 
 export function assetUrl(path) {

@@ -99,8 +99,11 @@ floor calibration, projection surface, and zone view used at ingestion. Geometry
 affect future rows; never silently reinterpret historical detections.
 
 Conventions that make analyses light up:
-- **Presence / heatmap / density** ← `detection` rows with a point, ~1–2 per second per
-  entity is plenty.
+- **Presence / heatmap / density** ← `detection` rows with a point. For zero-capable
+  0.5 s presence windows, publish at ≥4 inference samples/s and add one
+  `measurement` named `detection_frame_count` per processed frame (`label` = entity
+  type, `value` = frame detection count including 0) using the exact same timestamp
+  as that frame's detections. Missing frame markers remain unknown, never zero.
 - **Visits / dwell** ← ordinary tracked `detection` rows in a zone. StoreLens groups
   consecutive same-zone detections per entity into a visit (bridging brief gaps, requiring
   a minimum number of confirmed samples so one noisy frame at a boundary is never a

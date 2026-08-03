@@ -319,6 +319,7 @@ export function MultiLineChart({
   series = [],
   unit = "",
   empty = "No observations in this period",
+  gapAfterSeconds = null,
 }) {
   const visible = series.filter((item) => item.points?.length);
   if (!visible.length)
@@ -369,16 +370,28 @@ export function MultiLineChart({
         ))}
         {visible.map((item, index) => {
           const color = SERIES_COLORS[index % SERIES_COLORS.length];
-          const path = item.points
-            .map(
-              (point, pointIndex) =>
-                `${pointIndex ? "L" : "M"} ${x(point.t).toFixed(1)} ${y(point.count).toFixed(1)}`,
-            )
-            .join(" ");
+          const segments = [];
+          for (const point of item.points) {
+            const current = segments.at(-1);
+            const previous = current?.at(-1);
+            if (!current || (gapAfterSeconds != null && point.t - previous.t > gapAfterSeconds)) {
+              segments.push([point]);
+            } else {
+              current.push(point);
+            }
+          }
           const latest = item.points.at(-1);
           return (
             <g key={item.label}>
-              <path d={path} className="chart-line" style={{ stroke: color }} />
+              {segments.map((segment, segmentIndex) => {
+                const path = segment
+                  .map(
+                    (point, pointIndex) =>
+                      `${pointIndex ? "L" : "M"} ${x(point.t).toFixed(1)} ${y(point.count).toFixed(1)}`,
+                  )
+                  .join(" ");
+                return <path key={segmentIndex} d={path} className="chart-line" style={{ stroke: color }} />;
+              })}
               <circle
                 cx={x(latest.t)}
                 cy={y(latest.count)}
