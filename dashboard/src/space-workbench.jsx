@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Camera,
   CheckCircle2,
+  Crosshair,
   Eraser,
   MapPin,
   MousePointer2,
@@ -430,9 +431,13 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
       !window.confirm(`Remove ${selectedSource.name} from the floor map?`)
     )
       return;
-    await api.del(`/sources/${selectedSource.id}/placement`);
-    await onRefresh();
-    notify("Camera unplaced", selectedSource.name);
+    try {
+      await api.del(`/sources/${selectedSource.id}/placement`);
+      await onRefresh();
+      notify("Camera unplaced", selectedSource.name);
+    } catch (err) {
+      notify("Couldn't unplace camera", err.message, "error");
+    }
   };
 
   const deleteZone = async (zone) => {
@@ -442,9 +447,13 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
       )
     )
       return;
-    await api.del(`/zones/${zone.id}`);
-    await onRefresh();
-    notify("Zone deleted", zone.name);
+    try {
+      await api.del(`/zones/${zone.id}`);
+      await onRefresh();
+      notify("Zone deleted", zone.name);
+    } catch (err) {
+      notify("Couldn't delete zone", err.message, "error");
+    }
   };
 
   return (
