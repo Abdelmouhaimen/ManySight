@@ -31,7 +31,7 @@ export function TechnicalConfig({ notify }) {
     <div className="stack">
       <Panel
         title="Agent analysis contract"
-        subtitle="How an agent-local worker produces hosted insights"
+        subtitle="How an agent-local worker produces hosted analyses"
       >
         <div className="agent-contract">
           <div className="agent-flow" aria-label="Analysis workflow">
@@ -46,7 +46,7 @@ export function TechnicalConfig({ notify }) {
               [
                 "4",
                 "Explain",
-                "The worker posts raw observations that the platform turns into insights",
+                "The worker submits raw observations that the platform derives analyses from",
               ],
             ].map(([number, title, detail], index) => (
               <div key={number}>
@@ -112,20 +112,20 @@ export function TechnicalConfig({ notify }) {
       </Panel>
 
       <Panel
-        title="Raw event explorer"
+        title="Raw observation explorer"
         subtitle="Moved to its own tab"
       >
         <div className="technical-links">
-          <a href="#detections">
+          <a href="#observations">
             <ScanSearch />
-            Open the Detections tab
+            Open the Observations tab
             <span>Filterable, paginated, documented</span>
             <ArrowRight />
           </a>
         </div>
         <p className="definition-note">
-          Every event workers posted — with column and event-type documentation
-          — now lives in the Detections tab.
+          Every observation workers submitted — with column and kind
+          documentation — now lives in the Observations tab.
         </p>
       </Panel>
 

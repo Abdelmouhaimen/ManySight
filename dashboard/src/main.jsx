@@ -12,18 +12,18 @@ import {
 } from "lucide-react";
 import { api, apiKey } from "./api.js";
 import { BrandMark, EnvironmentBadge, Toast } from "./components.jsx";
-import { DetectionsPage } from "./detections.jsx";
-import { InsightsPage } from "./insights.jsx";
+import { ObservationsPage } from "./observations.jsx";
+import { AnalyticsPage } from "./analytics.jsx";
 import { ConfigurePage, OverviewPage, ReviewPage, SourcesPage } from "./pages.jsx";
 import "./styles.css";
 
 const NAV = [
-  ["overview", "Overview", Gauge],
-  ["insights", "Insights", Activity],
+  ["overview", "Dashboard", Gauge],
+  ["analytics", "Analytics", Activity],
   ["review", "Review", BellRing],
-  ["detections", "Detections", ScanSearch],
+  ["observations", "Observations", ScanSearch],
   ["sources", "Sources", Camera],
-  ["configure", "Configure", Settings2],
+  ["setup", "Setup", Settings2],
 ];
 
 const SPACE_LABELS = {
@@ -39,6 +39,9 @@ function currentRoute() {
   const route = window.location.hash.replace("#", "");
   if (route === "events") return "review"; // legacy bookmarks
   if (route === "streams") return "sources"; // legacy bookmarks
+  if (route === "insights") return "analytics"; // legacy bookmarks — block+dataset model retired
+  if (route === "detections") return "observations"; // legacy bookmarks — renamed area
+  if (route === "configure") return "setup"; // legacy bookmarks — renamed area
   return NAV.some(([value]) => value === route) ? route : "overview";
 }
 
@@ -123,12 +126,12 @@ function App() {
   const Page =
     route === "overview"
       ? OverviewPage
-      : route === "insights"
-        ? InsightsPage
+      : route === "analytics"
+        ? AnalyticsPage
         : route === "review"
           ? ReviewPage
-          : route === "detections"
-            ? DetectionsPage
+          : route === "observations"
+            ? ObservationsPage
             : route === "sources"
               ? SourcesPage
               : ConfigurePage;

@@ -31,7 +31,7 @@ import {
   RangeSelect,
   SignalRow,
 } from "./components.jsx";
-import { InsightCard } from "./insights.jsx";
+import { AnalysisCard } from "./analytics.jsx";
 import { SpaceWorkbench } from "./space-workbench.jsx";
 import { TechnicalConfig } from "./technical-config.jsx";
 
@@ -51,7 +51,7 @@ function useDashboardData(range, liveTick = 0) {
       since = until - range,
       query = `since=${since}&until=${until}`;
     try {
-      const [summary, store, zones, sources, heat, dwell, occupancy, alerts, pinned] =
+      const [summary, store, zones, sources, heat, dwell, occupancy, alerts, pinned, latest] =
         await Promise.all([
           api.get(`/analytics/summary?${query}`),
           api.get("/store"),
@@ -61,7 +61,8 @@ function useDashboardData(range, liveTick = 0) {
           api.get(`/analytics/dwell?${query}`),
           api.get(`/analytics/occupancy?${query}`),
           api.get("/alerts?limit=60"),
-          api.get("/insights?pinned=true"),
+          api.get("/analyses?pinned=true"),
+          api.get("/observations/latest"),
         ]);
       setState({
         loading: false,
@@ -75,6 +76,7 @@ function useDashboardData(range, liveTick = 0) {
           occupancy,
           alerts,
           pinned,
+          latest,
           since,
           until,
         },
@@ -198,8 +200,8 @@ export function OverviewPage({ liveTick = 0, openSignal }) {
           action={
             <a
               className="round-link"
-              href="#insights"
-              aria-label="Open insight details"
+              href="#analytics"
+              aria-label="Open analytics details"
             >
               <ArrowRight size={16} />
             </a>
@@ -214,16 +216,45 @@ export function OverviewPage({ liveTick = 0, openSignal }) {
           />
         </Panel>
       </div>
+      <Panel
+        title="Current activity"
+        subtitle="Live read models, derived from raw observations at query time — never a second source of truth"
+      >
+        <div className="metric-grid">
+          <MetricCard
+            label="Active entities"
+            value={d.latest.detection.active_count.toLocaleString()}
+            note={`${d.latest.detection.entities.length} seen in the last 24h`}
+          />
+          {d.latest.measurement.series.slice(0, 3).map((m) => (
+            <MetricCard
+              key={`${m.source_id}:${m.name}:${m.label || ""}`}
+              label={m.name.replaceAll("_", " ")}
+              value={m.value?.toLocaleString?.() ?? m.value}
+              tone={m.stale ? "warning" : ""}
+              note={m.stale ? "stale" : `${m.unit || ""} · updated ${formatDateTime(m.last_seen_at)}`}
+            />
+          ))}
+          {d.latest.state.series.slice(0, 2).map((s) => (
+            <MetricCard
+              key={`${s.source_id}:${s.name}:${s.entity_id || ""}`}
+              label={s.name.replaceAll("_", " ")}
+              value={s.label}
+              tone={s.stale ? "warning" : ""}
+              note={s.stale ? "stale" : `for ${formatDuration(s.duration_s)}`}
+            />
+          ))}
+        </div>
+      </Panel>
       {d.pinned.length > 0 && (
         <div className="insight-grid">
           {d.pinned.map((definition) => (
-            <InsightCard
+            <AnalysisCard
               key={definition.id}
               definition={definition}
-              range={range}
+              rangeSeconds={range}
               context={{ store: d.store, zones: d.zones, sources: d.sources }}
               liveTick={liveTick}
-              readOnly
             />
           ))}
         </div>
@@ -714,7 +745,7 @@ export function ConfigurePage({ notify, refreshShell }) {
   return (
     <>
       <PageHeader
-        eyebrow="Configure"
+        eyebrow="Setup"
         title="Pilot setup"
         description="A guided path from logical source definition to an accepted operational signal."
       />
@@ -755,6 +786,7 @@ export function ConfigurePage({ notify, refreshShell }) {
           {tab === "workspace" && (
             <WorkspaceForm
               store={store}
+              notify={notify}
               onSaved={(saved) => {
                 setStore(saved);
                 refreshShell?.();
@@ -774,12 +806,15 @@ export function ConfigurePage({ notify, refreshShell }) {
               notify={notify}
             />
           )}
-          {tab === "analyses" && <JobsConfig jobs={jobs} onRefresh={load} />}
+          {tab === "analyses" && (
+            <JobsConfig jobs={jobs} onRefresh={load} notify={notify} />
+          )}
           {tab === "rules" && (
             <RulesConfig
               rules={rules}
               onRefresh={load}
               onAdd={() => setShowRule(true)}
+              notify={notify}
             />
           )}
           {tab === "technical" && <TechnicalConfig notify={notify} />}
@@ -804,7 +839,7 @@ export function ConfigurePage({ notify, refreshShell }) {
   );
 }
 
-function WorkspaceForm({ store, onSaved }) {
+function WorkspaceForm({ store, onSaved, notify }) {
   const [form, setForm] = useState({ ...store }),
     [saving, setSaving] = useState(false);
   const save = async () => {
@@ -819,6 +854,8 @@ function WorkspaceForm({ store, onSaved }) {
           height_m: Number(form.height_m),
         }),
       );
+    } catch (err) {
+      notify("Couldn't save workspace", err.message, "error");
     } finally {
       setSaving(false);
     }
@@ -891,23 +928,34 @@ function WorkspaceForm({ store, onSaved }) {
   );
 }
 
-function JobsConfig({ jobs, onRefresh }) {
+function JobsConfig({ jobs, onRefresh, notify }) {
   const toggleRegistration = async (job) => {
-    await api.put(`/jobs/${job.id}`, {
-      status: job.status === "active" ? "paused" : "active",
-    });
-    onRefresh();
+    try {
+      await api.put(`/jobs/${job.id}`, {
+        status: job.status === "active" ? "paused" : "active",
+      });
+      onRefresh();
+    } catch (err) {
+      notify("Couldn't update analysis", err.message, "error");
+    }
   };
   const commandWorker = async (worker, desiredState) => {
-    await api.put(`/workers/${worker.id}/desired-state`, {
-      desired_state: desiredState,
-    });
-    onRefresh();
+    try {
+      await api.put(`/workers/${worker.id}/desired-state`, {
+        desired_state: desiredState,
+      });
+      onRefresh();
+    } catch (err) {
+      notify("Couldn't send worker command", err.message, "error");
+    }
   };
   const remove = async (job) => {
-    if (window.confirm(`Delete job ${job.name}? Its events remain.`)) {
+    if (!window.confirm(`Delete job ${job.name}? Its events remain.`)) return;
+    try {
       await api.del(`/jobs/${job.id}`);
       onRefresh();
+    } catch (err) {
+      notify("Couldn't delete analysis", err.message, "error");
     }
   };
   return (
@@ -1008,15 +1056,22 @@ function JobsConfig({ jobs, onRefresh }) {
   );
 }
 
-function RulesConfig({ rules, onRefresh, onAdd }) {
+function RulesConfig({ rules, onRefresh, onAdd, notify }) {
   const toggle = async (rule) => {
-    await api.put(`/alert-rules/${rule.id}`, { enabled: !rule.enabled });
-    onRefresh();
+    try {
+      await api.put(`/alert-rules/${rule.id}`, { enabled: !rule.enabled });
+      onRefresh();
+    } catch (err) {
+      notify("Couldn't update threshold", err.message, "error");
+    }
   };
   const remove = async (rule) => {
-    if (window.confirm(`Delete ${rule.name}?`)) {
+    if (!window.confirm(`Delete ${rule.name}?`)) return;
+    try {
       await api.del(`/alert-rules/${rule.id}`);
       onRefresh();
+    } catch (err) {
+      notify("Couldn't delete threshold", err.message, "error");
     }
   };
   return (

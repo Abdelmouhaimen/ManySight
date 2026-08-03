@@ -635,14 +635,19 @@ export function StateSummary({ series }) {
   if (!series.length)
     return (
       <EmptyState title="No state history">
-        State-change events will create equipment or scene timelines.
+        State observations will create equipment or scene timelines.
       </EmptyState>
     );
   return (
     <div className="state-list">
       {series.map((item) => (
-        <div key={item.source_id}>
-          <strong>{item.source_name}</strong>
+        <div key={`${item.source_id}:${item.name || ""}:${item.entity_id || ""}`}>
+          <strong>
+            {item.source_name}
+            {item.name ? ` · ${item.name}` : ""}
+            {item.entity_id ? ` · ${item.entity_id}` : ""}
+          </strong>
+          {item.stale && <Badge tone="warning">stale</Badge>}
           <div>
             {Object.entries(item.totals).map(([label, seconds]) => (
               <Badge
