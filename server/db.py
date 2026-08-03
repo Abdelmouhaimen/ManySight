@@ -185,8 +185,9 @@ CREATE TABLE IF NOT EXISTS insight_definitions (
   created_at REAL,
   updated_at REAL
 );
--- Deprecated: superseded by `analyses` (unified saved-analysis model). Kept for
--- historical rows and best-effort migration; the API no longer writes new rows here.
+-- insight_definitions above is deprecated: superseded by `analyses` (unified
+-- saved-analysis model) below. Kept for historical rows and best-effort
+-- migration; the API no longer writes new rows to insight_definitions.
 CREATE TABLE IF NOT EXISTS analyses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -347,6 +348,24 @@ def init_db():
             con.execute("ALTER TABLE alert_rules ADD COLUMN condition_json TEXT")
         if "condition_state_json" not in rule_columns:
             con.execute("ALTER TABLE alert_rules ADD COLUMN condition_state_json TEXT DEFAULT '{}'")
+        # _migrate_insights_to_analyses() below indexes every one of these
+        # columns directly (row["visibility"], row["created_by"], row["status"],
+        # row["pinned"], row["sort_order"]) on every insight_definitions row --
+        # an older insight_definitions table missing any of them must be brought
+        # up to the current shape (with the same defaults as CREATE TABLE, so
+        # existing rows backfill deterministically) before that migration runs,
+        # exactly like every other table above.
+        insight_columns = {r[1] for r in con.execute("PRAGMA table_info(insight_definitions)").fetchall()}
+        insight_migrations = {
+            "pinned": "INTEGER DEFAULT 0",
+            "sort_order": "INTEGER DEFAULT 0",
+            "visibility": "TEXT NOT NULL DEFAULT 'visible'",
+            "created_by": "TEXT NOT NULL DEFAULT 'user'",
+            "status": "TEXT NOT NULL DEFAULT 'ready'",
+        }
+        for column, sql_type in insight_migrations.items():
+            if column not in insight_columns:
+                con.execute(f"ALTER TABLE insight_definitions ADD COLUMN {column} {sql_type}")
         # Count lines now default to the last instantaneous observation in each
         # interval. Update only legacy template text, never user-authored wording.
         legacy_count_limitations = (

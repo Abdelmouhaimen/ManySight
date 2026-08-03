@@ -29,6 +29,16 @@ def isolated_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def uninitialized_db(tmp_path, monkeypatch):
+    """Like isolated_db, but does NOT call init_db() -- for migration tests that
+    need to hand-build a pre-migration schema at the target path first and then
+    call db.init_db() themselves (possibly more than once)."""
+    monkeypatch.setattr(db, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "test.db"))
+    yield db
+
+
+@pytest.fixture
 def app(isolated_db, monkeypatch):
     """The FastAPI app, imported fresh against the isolated DB. Auth is
     disabled by default; tests that need it set STORELENS_API_KEY themselves
