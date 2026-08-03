@@ -5,13 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 StoreLens is the working POC infrastructure behind the **ManySight** physical-space
-intelligence dashboard: logical observation sources, a floor plan with named zones, per-camera
-pixel→meter homographies, a generic event stream, computed insights, and alerts. It
-deliberately contains **zero hardcoded CV logic** — the analysis half is an external AI
-coding agent (OpenAI Codex, or any MCP client) that opens cameras locally, writes and
-runs worker scripts, and posts observations back over REST or MCP. The hosted platform
-never opens feeds or stores camera connection URLs/credentials. `AGENTS.md` is that agent's
-operating manual; `skills/*/SKILL.md` are its step-by-step playbooks.
+intelligence dashboard. It is built around one strict boundary: **workers submit only
+direct observations — detection, measurement, state — and the platform derives zones,
+visits, dwell, occupancy, movement, state transitions, aggregations, analytics, and
+alerts.** It deliberately contains **zero hardcoded CV logic** — the analysis half is
+an external AI coding agent (OpenAI Codex, or any MCP client) that opens cameras locally,
+writes and runs worker scripts, and submits observations back over REST or MCP. The
+hosted platform never opens feeds or stores camera connection URLs/credentials.
+`AGENTS.md` is that agent's operating manual; `skills/*/SKILL.md` are its step-by-step
+playbooks. `PLATFORM_ROADMAP.md` is a forward-looking planning doc, not a description of
+what's currently built. `docs/adr/0001-observation-contract.md` explains why this
+redesign shape was chosen.
 
 ## Commands
 
@@ -29,8 +33,13 @@ uvicorn server.app:app --port 8000        # or: ./run.sh (respects $PORT)
 - Live demo motion without a camera: `python examples/simulate_shoppers.py --shoppers 6 --minutes 10`.
 - Standalone MCP server (for manual testing against a running StoreLens instance):
 `python mcp_server/server.py`, configured via `STORELENS_URL`/`STORELENS_API_KEY`/`STORELENS_SKILLS`.
-  Set `STORELENS_MCP_TRANSPORT=streamable-http` for the separately hosted remote MCP service.
-- There is no test suite or linter config in this repo currently.
+  Set `STORELENS_MCP_TRANSPORT=streamable-http` to serve it over HTTP instead of stdio.
+- `python -m compileall server mcp_server sdk examples scripts` and `pytest` are the
+  validation commands for backend changes (a minimal `pytest` suite lives under `tests/`,
+  added alongside the observation-contract redesign — there was no test suite before).
+  `scripts/smoke_test.sh` is a curl+python smoke test of the platform slice — run it
+  against a freshly seeded server (`uvicorn server.app:app --port 8000` +
+  `python scripts/seed_demo.py`).
 - `requirements.txt` intentionally carries no version pins ("Latest stable versions; no
   pins.") — preserve that convention if you touch it.
 
@@ -38,92 +47,195 @@ uvicorn server.app:app --port 8000        # or: ./run.sh (respects $PORT)
 
 **Two client surfaces, one server.** `server/` (FastAPI + plain SQLite, no ORM) is the
 single source of truth. It's driven two ways: (1) the MCP/REST surface that analysis
-workers and Codex use to read config and post events, and (2) the React dashboard, whose
-static build the same FastAPI app serves at `/` — there is no separate frontend server in
-production.
+workers and Codex use to read config and submit observations, and (2) the React dashboard,
+whose static build the same FastAPI app serves at `/` — there is no separate frontend
+server in production.
 
-**The event ingestion pipeline is the core of the system** (`server/routers/events.py:ingest`).
-Understanding it requires reading three files together:
-1. A posted event may carry `bbox`, `point_px`, or `point_map`. If only `bbox` is given, the
-   feet position (bottom-center of the box) becomes `point_px`.
-2. If the event's `source_id` has a stored homography, `point_px` is projected to
-   `point_map` (floor meters) via `services/homography.py` (normalized DLT, pure numpy).
-3. If no explicit `zone_id`/`zone` name is given, the projected map point is tested against
-   every zone polygon (`services/homography.py:point_in_polygon`) to auto-assign a zone.
+**The observation contract is the core of the system.** A worker submits exactly one of
+three kinds — `detection` (an observed entity with spatial evidence), `measurement` (an
+observed numeric value), `state` (an observed current categorical value) — via
+`POST /api/v1/observations/batch` (`server/routers/observations.py`). A worker must never
+send `zone_id`/`zone`, and never submit the retired derived kinds `zone_enter`/
+`zone_exit`/`zone_dwell`/`state_change`/`count` — those are rejected per-item with a
+`legacy_derived_observation` error. The legacy `POST /api/v1/events` endpoint
+(`server/routers/events.py`) still exists, unchanged in behavior, as a documented
+compatibility surface for old integrations and historical data — new code must use
+`/observations`, never `/events`. **Both endpoints share exactly one enrichment
+implementation**, `server/services/enrich.py::enrich_one` (plus `load_geometry_context`,
+`update_counters`, `publish_batch`) — this is the single place that:
+1. Picks the representative point in strict precedence: explicit `point_px`, then
+   foot/ankle keypoints, then bbox bottom-center, then leaves it empty if only a mask is
+   given. `/observations`' `bbox_px`/`point_px`/`keypoints_px` are normalized (corner-form
+   bbox, `[x,y]` arrays, `{name:[x,y]}` dict) into the internal `bbox`/`point_px`/
+   `keypoints` shapes before this runs.
+2. **Zone view matching**: if no explicit `zone_id`/`zone`/`zone_view_id` is given and the
+   source has registered zone views, each view is scored by its `membership_rule` (`point`
+   inside the ROI polygon, `bbox_overlap`, or `keypoints_inside`) and the highest-scoring
+   view above its `threshold` wins. `/observations` never accepts `zone_id`/`zone` at all.
+3. **Projection**: an explicit `point_map` is trusted as-is (documented as the path for a
+   trusted non-camera producer, e.g. a simulator — camera workers should send pixel
+   evidence). Otherwise the pixel point is projected via `services/homography.py`
+   (normalized DLT, pure numpy) using, in precedence order: an explicit
+   `projection_surface_id`, the matched zone view's surface, or the source's floor calibration.
+4. **Zone assignment**: the matched zone view's zone, otherwise the projected map point
+   tested against every zone polygon (`homography.point_in_polygon`).
+5. The stored row keeps the raw evidence plus which method was used and the zone/
+   calibration/surface/zone-view **revision** in effect at ingestion — geometry edits
+   affect only future rows.
 
-After enrichment, events are persisted, `services/alert_engine.py` evaluates all enabled
-alert rules synchronously against the just-inserted batch (webhooks fire on daemon threads
-so ingestion never blocks on the network), and `services/sse.py`'s in-memory `broker`
-fans the enriched events out over `/api/v1/stream` (capped at 25 events per batch, plus a
-`batch_summary` marker for bulk backfills, so a large replay doesn't flood browsers).
-Analytics endpoints (`server/routers/analytics.py`: summary/heatmap/dwell/occupancy/
-transitions/states) are computed live from the `events` table on every read — there's no
-precomputed/materialized layer.
+After enrichment, observations are persisted (one `events` table serves both endpoints —
+see "Schema" below), `services/alert_engine.py:evaluate_batch` evaluates completed
+conditions for the just-inserted batch (webhooks fire on daemon threads so ingestion never
+blocks on the network), and `services/enrich.py:publish_batch` fans them out over SSE.
+**Ongoing/time-based alert conditions do not depend on ingestion at all**: `server/app.py`
+runs a `lifespan`-managed asyncio task (`_alert_poll_loop`, interval
+`STORELENS_ALERT_POLL_INTERVAL_S`, default 15s) that calls
+`alert_engine.evaluate_ongoing` unconditionally — this is what makes loitering,
+over-capacity, stuck-state, and unified `analysis_condition` alerts fire even when a zone
+or series goes quiet, instead of only re-checking when another event happens to land there.
 
-**Derive-only contract**: workers post raw observations (detections, `zone_enter`/
-`zone_exit` pairs, label-only `state_change` flips, per-frame `count` samples), never
-computed aggregates. `services/derive.py` is the single home for dwell/state derivation
-used by both analytics and the alert engine: dwell always comes from enter/exit pairs
-(in-progress visits included, capped at `MAX_DWELL_S`), state durations from consecutive
-`state_change` timestamps. `zone_dwell` events are deprecated — accepted and stored for
-backward compat, but their values are never read. The alert engine also fires on ongoing
-conditions (loiter without exit, state still active past threshold), evaluated per
-ingested batch.
+**Derivation** (`services/derive.py`) has two generations that are merged, not replaced:
+- Legacy: `derive_dwells` pairs `zone_enter`/`zone_exit` rows; `state_before`/`current_state`
+  read the latest `state_change` row.
+- Current: `derive_visits_from_detections` groups ordered, zone-assigned `detection` rows
+  by `(entity_id, zone_id)` into visit sessions — a gap ≤ `MAX_GAP_S` bridges missed
+  frames, a visit only counts once it has ≥ `MIN_CONFIRM_SAMPLES` detections (so one noisy
+  frame at a boundary is never a confirmed entry/exit), and the trailing session is
+  "open" or "closed" depending on whether the last sample is within `MAX_GAP_S` of `now`.
+  `coalesce_state_intervals` merges consecutive identical `state` samples into intervals
+  (repeated identical samples must never inflate the transition count) and marks the
+  trailing interval `stale` once its last sample is older than `STATE_STALE_S`, rather than
+  extending it forever. `aggregate_measurement` respects `value_kind` (`gauge`: never
+  summed; `delta`: summed and rated; `cumulative`: counter-reset-aware rate, never negative).
+- `derive_visits(since, until, zone_id)` = legacy + current, concatenated — this is what
+  `analytics.py:dwell()` and the alert engine call, so historical and current-contract data
+  both contribute to the same numbers. `analytics.py:transitions()`/`states()` likewise
+  read `event_type IN ('zone_enter','detection')` / `('state_change','state')` together.
 
-**Insight registry** (`server/routers/insights.py` + `insight_definitions` table): the
-Insights tab renders only registered definitions — a title/question + a `block`
-(metric/line/bar/table/heatmap_map/flow_matrix/state_timeline) + a `dataset` (an
-analytics kind) + params. Block↔dataset compatibility is validated server-side
-(`BLOCK_DATASETS`). `GET /insights/templates` assembles a data-aware template catalog
-for the UI picker. Agents register insights over MCP (`register_insight`); pinned ones
-also render on Overview. Never render arbitrary definition content — the frontend maps
-blocks onto its fixed component registry (`dashboard/src/insights.jsx`).
+**Latest-value read models** (`server/routers/observations.py:latest_observations`,
+`GET /observations/latest`): current detections (active entities + last-seen + staleness),
+current measurements (latest sample per source+name+label+entity), current states
+(current label + duration + staleness per source+name+entity) — all computed live from
+the same `events` table at query time (window-function "latest row per key" pattern,
+matching how `analytics.py` has always worked), never a separate materialized copy.
 
-**GET /events pagination**: keyset cursor on `(ts, id)` (`cursor` param, opaque
-`"{ts!r}:{id}"`), response includes `total` and `next_cursor`. The Detections tab pages
-with it; new inserts don't break open cursors.
+**Unified analytics query engine** (`server/routers/analytics_query.py`):
+`POST /analytics/query` answers one `{subject, measures, filters, grouping, range,
+comparison}` question for any of the three subjects and returns a typed
+`{shape, dimensions, measures, rows, metadata}` — `shape` (`scalar`/`timeseries`/
+`categorical`/`heatmap`) tells the frontend how to render, never which chart to draw.
+`GET /analytics/capabilities` exposes valid measures per subject plus the labels/sources/
+zones/measurement-names/state-names/attribute-keys actually present, so the frontend and
+MCP never have to duplicate server compatibility rules. The legacy per-kind endpoints
+(`server/routers/analytics.py`: summary/heatmap/dwell/occupancy/counts/transitions/states)
+remain, unchanged, as the read path for `/events`-shaped questions and for backward
+compatibility — `analytics_query.py` is a second, complementary read surface over the same
+table, not a rewrite of the first.
 
-**Zones are geometry + label, never behavior**: what a zone means (restricted, queue)
-lives in alert rules and insights, not the zone row — workers posting enter/exit don't
-know zone semantics. `POST /zones` also accepts `polygon_px` + `source_id` (projected
-server-side through the camera homography, 409 if uncalibrated) so an agent can create
-a zone from points selected on a locally captured frame; exposed over MCP as `create_zone`.
+**Unified saved analyses** (`server/routers/analyses.py` + `analyses` table) replace the
+block+dataset+params insight model: a saved analysis is `{subject, measures, filters,
+grouping, presentation}` — `presentation` is a cosmetic renderer hint, changing it never
+creates a second record (`db.py:analysis_hash` normalizes the analytical identity for
+duplicate detection). The legacy `insight_definitions` table and `server/routers/insights.py`
+remain for historical rows; `db.py:_migrate_insights_to_analyses` runs once at `init_db()`
+and best-effort-translates every existing insight into an `analyses` row
+(`migrated_from_insight_id` + `migration_note` explain the mapping — nothing is silently
+dropped, even when the mapping is approximate).
 
-**DB layer** (`server/db.py`): raw `sqlite3` in WAL mode, dict rows, no migrations
-framework — `init_db()` runs `CREATE TABLE IF NOT EXISTS` then hand-rolled `ALTER TABLE ...
-ADD COLUMN` checks for columns added after the fact; follow that pattern when adding
-columns. This is a **single-tenant POC**: most tables assume one store row (`id=1`,
-hardcoded in `server/routers/store.py` and friends).
+**Geometry model — zone, zone view, projection surface are three different things**
+(`server/routers/geometry.py`, `server/routers/zones.py`) — unchanged by the observation
+contract redesign:
+- A **zone** is the canonical footprint in map metres. Editing it increments its `revision`.
+- A **zone view** belongs to one zone *and* one camera. Stores the visible outer polygon,
+  an optional inset detection ROI, and a membership rule (`point`/`bbox_overlap`/
+  `keypoints_inside`). `POST /zones` also accepts `polygon_px` + `source_id` directly.
+- A **projection surface** is an additional named pixel→map homography for a plane other
+  than the floor, computed the same DLT way from ≥4 point pairs. `height_m` is descriptive
+  metadata only — never subtracted from map Y.
+- Zones remain geometry + label, never behavior — workers never resolve or send one.
+
+**GET /observations pagination** (and legacy `/events`): keyset cursor on `(ts, id)`
+(`cursor` param, opaque `"{ts!r}:{id}"`), response includes `total` and `next_cursor`. The
+Observations tab pages with it; new inserts don't break open cursors.
+
+**Schema** (`server/db.py`): raw `sqlite3` in WAL mode, dict rows, no migrations framework —
+`init_db()` runs `CREATE TABLE IF NOT EXISTS` then hand-rolled `ALTER TABLE ... ADD COLUMN`
+checks; follow that pattern when adding columns. The observation contract redesign is
+**additive**: the `events` table gained `schema_version`, `observation_id` (unique
+idempotency key, partial index `WHERE observation_id IS NOT NULL`), `worker_id`, `name`,
+`entity_type`, `value_kind`, `unit`, `confidence`, `identity_scope`,
+`identity_model_version` — legacy rows keep `schema_version=1` and their original
+`event_type`; new rows use `schema_version=2` and `event_type` holds the new `kind`.
+`track_id` doubles as the API's `entity_id`; `label`/`attributes` carry per-kind meaning
+(documented in `docs/adr/0001-observation-contract.md`). `alert_rules` gained
+`analysis_json`/`condition_json`/`condition_state_json` for the unified `analysis_condition`
+kind, additive alongside the legacy `kind`/`params_json`. This is a **single-tenant POC**:
+most tables assume one store row (`id=1`, hardcoded in `server/routers/store.py` and friends).
 
 **MCP server** (`mcp_server/server.py`) is a thin bridge, not a direct import of `server/`
 — every tool call is an HTTP request to the same REST API a human dashboard user would
-hit. It also serves `list_skills()`/`get_skill(name)` by reading `skills/*/SKILL.md`
-directly off disk, so Codex gets the same playbooks whether it's working inside this repo
-or connected remotely. When you change event semantics or add an analytics endpoint, keep
-the matching skill doc and this file's docstrings in sync.
+hit. Primary tools: `submit_observations`, `get_observation_contract`, `list_observations`,
+`get_latest_observations`, `query_analytics`, `list_analysis_capabilities`,
+`create_analysis`/`list_analyses`/`update_analysis`/`delete_analysis`. Legacy tools
+(`submit_events`, `get_analytics`, `register_insight` — now a best-effort adapter onto
+`create_analysis` — `list_insights`/`update_insight`/`delete_insight`) remain, docstring-
+flagged as legacy, for historical/backward-compat use. Also exposes the full geometry
+surface (`create_zone`, `create_projection_surface`/`create_zone_view` + their `list_`/
+`update_`/`delete_` counterparts, `project_points`/`unproject_points`) and worker lifecycle
+tools (`register_job`, `register_worker`, `heartbeat_worker`, `request_worker_state`), and
+serves `list_skills()`/`get_skill(name)` by reading `skills/*/SKILL.md` off disk. When you
+change observation semantics or add an analytics endpoint, keep the matching skill doc and
+this file's docstrings in sync.
 
 **Worker SDK** (`sdk/python/storelens.py`): the client library that analysis workers
 (scripts an external coding agent writes at runtime — not part of this repo's own runtime)
-import. Provides the `StoreLens` REST client, a dependency-free `CentroidTracker` (greedy
-nearest-centroid), and local (no-HTTP) `project`/`point_in_zone` helpers mirroring the
-server's own homography/zone logic. `examples/*.py` are runnable reference workers
-(shopper simulator, motion-based heatmap tracker, dwell, fridge state) — degrade gracefully
-to background-subtraction blobs when OpenCV/ultralytics aren't available; crib from these
+import. Primary methods: `submit_detection`/`submit_measurement`/`submit_state` (buffered,
+auto-flush at `batch_size`, idempotency-keyed) and `query_analytics`/`save_analysis`.
+`add_event`/`post_events`/`flush` (the legacy `/events` contract) still work — `add_event`
+emits a `DeprecationWarning` when `event_type` is one of the retired derived kinds. Also
+provides a dependency-free `CentroidTracker` (greedy nearest-centroid) and local (no-HTTP)
+`project`/`point_in_zone` helpers. `examples/*.py` are runnable reference workers (shopper
+simulator, motion-based heatmap/dwell tracker, fridge state, a synthetic measurement curve)
+— every one now submits only detection/measurement/state observations; crib from these
 when changing the SDK contract.
 
+**Endpoint config & discovery** (`server/platform_config.py` + `config/endpoints.json`):
+a small JSON registry of named profiles (currently just `local`), each with a `public_url`,
+`mcp_url`, and `cors_origins`. `STORELENS_ENDPOINT_PROFILE` picks the active profile;
+`STORELENS_PUBLIC_URL`/`STORELENS_PUBLIC_MCP_URL`/`STORELENS_CORS_ORIGINS` override it
+without editing the file — useful if you self-host behind a reverse proxy or a non-default
+port. The resolved registry drives CORS setup in `server/app.py` and is served at
+`/api/v1/platform-config`, plus agent-discovery endpoints `/agent.md` (alias `/agend.md`),
+`/llms.txt`, and `/.well-known/storelens.json` — all rendered from the same resolved URLs
+so a remote agent can self-onboard, and all updated to describe the observation contract.
+`STORELENS_PUBLIC_READS=true` lets unauthenticated `GET`s through the `STORELENS_API_KEY`
+guard. This project ships no hosted deployment of its own — it's run locally by whoever
+clones it; there is no separate container/cloud path.
+
 **Dashboard** (`dashboard/`, React 19 + Vite, no react-router): `main.jsx` owns hash-based
-routing (`#overview`/`#insights`/`#review`/`#detections`/`#sources`/`#configure`; legacy
-`#events` and `#streams` redirect to their replacements) and the app shell (live SSE indicator, toasts, alert
-badge). `api.js` is a thin fetch wrapper that reads the API key from `localStorage` and
-appends it as `X-API-Key` or `?api_key=`. `pages.jsx` holds Overview/Review/Sources/
-Configure; `insights.jsx` the registry-driven Insights catalogue (and `InsightCard`, also
-used for Overview pinning); `detections.jsx` the raw-observation browser with its in-page
-docs panel; `space-workbench.jsx`/`technical-config.jsx` the Configure sub-tabs. Shared
-chart/table primitives (incl. `RangeSelect`, `FlowTable`, `StateSummary`, `DataTable`)
-live in `components.jsx` — note `pages.jsx` imports from `insights.jsx`, so `insights.jsx`
-must only import from `components.jsx`/`api.js` to avoid a cycle. `EventSource` on
-`/api/v1/stream` drives live updates, reconciled with a periodic `refreshShell()` poll
-every 5th SSE tick.
+routing. Current routes: `#overview` (Dashboard — pinned analyses + live current-value
+cards), `#analytics` (`analytics.jsx` — the unified analysis builder/list, replacing the
+retired block+dataset insight model), `#review`, `#observations` (`observations.jsx` — the
+raw-observation browser with its in-page docs panel, replacing `detections.jsx`),
+`#sources`, `#setup` (`pages.jsx:ConfigurePage` — unchanged internally, just relabeled).
+Legacy hash bookmarks `#events`/`#streams`/`#insights`/`#detections`/`#configure` redirect
+to their current names. `api.js` is a thin fetch wrapper (now with `patch`, used by
+`PATCH /analyses/{id}`) that reads the API key from `localStorage` and appends it as
+`X-API-Key` or `?api_key=`. `analytics.jsx` exports `AnalysisCard` (used both on its own
+page and pinned on Dashboard) and must only import from `components.jsx`/`api.js` to avoid
+an import cycle with `pages.jsx`. Shared chart/table primitives (`RangeSelect`, `FlowTable`,
+`StateSummary`, `DataTable`, `MultiLineChart`, `ActivityMap`, ...) live in `components.jsx`.
+`EventSource` on `/api/v1/stream` drives live updates — the stream now also carries
+normalized event names (`observation.created`, `current_detection.updated`/
+`current_measurement.updated`/`current_state.updated`, `analysis.invalidated`,
+`alert.created`, `worker.updated`) alongside the legacy `cv_event`/`batch_summary`/`alert`
+so old and current dashboard builds both work against one stream — reconciled with a
+periodic `refreshShell()` poll every 5th SSE tick.
 
 **Auth**: a single optional `STORELENS_API_KEY` env var, checked by a FastAPI middleware
-for any `/api/*` path except `/api/v1/health` — no per-user accounts.
+for any `/api/*` path except `/api/v1/health` — no per-user accounts. `CORSMiddleware` is
+registered *after* this middleware in `server/app.py` so it ends up outermost (Starlette
+runs the last-registered middleware first) — otherwise a cross-origin preflight gets
+401'd by the guard before CORS headers are ever attached. When
+`STORELENS_PUBLIC_READS=true`, unauthenticated `GET`/`HEAD`/`OPTIONS` requests bypass the
+key check (writes still require it) — used for public demo deployments.

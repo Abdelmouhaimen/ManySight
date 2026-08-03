@@ -1,9 +1,9 @@
 # StoreLens manual testing tutorial
 
-StoreLens is the hosted observation and insight layer. It stores logical source records,
-geometry, worker lifecycle, raw observations, derived analytics, and dashboard insight
-definitions. It does **not** open a webcam/RTSP feed or store its URL and credentials.
-The worker or Codex task opens the camera on the device where it runs.
+StoreLens is the hosted observation and analytics layer. It stores logical source records,
+geometry, worker lifecycle, raw observations (detection/measurement/state), derived
+analytics, and saved dashboard analyses. It does **not** open a webcam/RTSP feed or store
+its URL and credentials. The worker or Codex task opens the camera on the device where it runs.
 
 ## 1. Install and start the platform
 
@@ -43,8 +43,8 @@ Verify manually:
   `rtsp://`/`http://` value.
 - `POST /api/v1/sources/{id}/snapshot` returns 405 because the hosted app cannot capture
   a frame.
-- **Detections** is empty until a worker sends observations.
-- **Insights** is empty until an insight definition is registered.
+- **Observations** is empty until a worker submits detection/measurement/state rows.
+- **Analytics** is empty until a saved analysis is created.
 
 ## 3. Connect Codex through MCP
 
@@ -62,8 +62,9 @@ STORELENS_URL = "http://localhost:8000"
 Restart Codex, then start a new task with a short prompt:
 
 > Start with the StoreLens platform guide. Use my logical webcam source to count people
-> in real time. Open the webcam locally, register and run a worker, send raw per-frame
-> count observations labelled `person`, verify them, and register a line insight.
+> in real time. Open the webcam locally, register and run a worker, submit raw
+> per-interval measurement observations named `people_present`, verify them, and save
+> a line analysis.
 
 Codex should discover the source and platform contract over MCP. It may create the
 worker code in its own workspace. Camera access stays on the Codex/worker machine.
@@ -74,28 +75,33 @@ A worker should:
 
 1. Resolve the camera locally, for example webcam device `0` or an RTSP URL stored in a
    local environment variable/keychain.
-2. Register a job with the source ID and `count` event type.
+2. Register a job with the source ID and `measurement` event type.
 3. Register a worker instance and heartbeat every 5–15 seconds.
-4. Read frames and post observations in batches every 1–5 seconds.
-5. Obey `stop`/`restart` returned by heartbeats and close open zone visits at shutdown.
-6. Verify rows through `get_events` and analytics, then register an insight.
+4. Read frames and submit observations in batches every 1–5 seconds.
+5. Obey `stop`/`restart` returned by heartbeats. Never resolve a zone, pair an enter/exit,
+   or compute a state change — the worker submits only detection/measurement/state.
+6. Verify rows through `get_latest_observations`/`query_analytics`, then save an analysis.
 
-For a people-count curve, each event is a raw sample, not a precomputed chart:
+For a people-count curve, each observation is a raw sample, not a precomputed chart:
 
 ```json
 {
+  "schema_version": 2,
+  "observation_id": "cam1-1784390400125",
+  "kind": "measurement",
   "source_id": 1,
-  "event_type": "count",
-  "label": "person",
+  "name": "people_present",
   "value": 2,
-  "ts": 1784390400.125
+  "value_kind": "gauge",
+  "timestamp": 1784390400.125
 }
 ```
 
 After observations arrive, **Sources** changes from `never` to `active`, shows the
-ingestion time and worker state, and increments the event count. **Detections** shows
-timestamps with seconds and milliseconds. A line insight uses the `counts` dataset and
-parameters such as `source_id`, `label`, aggregation, and bucket size.
+ingestion time and worker state, and increments the event count. **Observations** shows
+timestamps with seconds and milliseconds. A line analysis uses `subject: "measurement"`
+with `measures: ["latest"]` (or `"average"`), filtered by `measurement_names` and grouped
+by time with a chosen bucket size.
 
 ## 5. Test source CRUD through MCP
 
@@ -116,37 +122,24 @@ An RTSP source should expose only a reference, for example
 `{"local_secret_ref":"main_hall_rtsp"}`. The actual RTSP URL belongs in the worker's
 secret store, never in StoreLens.
 
-## 6. Connect to the hosted Cloudflare MCP transport
-
-The deployment advertises its exact URLs through `/api/v1/platform-config` and
-`/agent.md`. Keep the MCP bearer token in an environment variable and add this to Codex:
-
-```toml
-[mcp_servers.storelens_cloud]
-url = "https://your-storelens-host.example/mcp"
-bearer_token_env_var = "STORELENS_CLOUD_MCP_TOKEN"
-```
-
-Restart Codex after setting `STORELENS_CLOUD_MCP_TOKEN`. The hosted Worker validates the
-Bearer token before forwarding MCP requests; StoreLens then uses its private REST key for
-tool mutations. See `deploy/cloudflare/README.md` for deployment and persistence details.
-
-## 7. Test geometry and derived analytics
+## 6. Test geometry and derived analytics
 
 Frames used for calibration are captured locally. Agents send only matching pixel/map
 points and zone-view polygons to StoreLens.
 
-- Heatmap: `detection` rows with map/pixel points.
-- Count curve: `count` rows with `label` and per-frame `value`.
-- Dwell: matching `zone_enter` and `zone_exit` rows with stable `track_id`.
-- Flow: zone enters by stable track.
-- State timeline: `state_change` only when the state flips, plus a startup anchor.
+- Heatmap / density: `detection` rows with a map/pixel point.
+- Measurement curve: `measurement` rows with `name` and a per-interval `value`.
+- Dwell / visits: ordinary tracked `detection` rows in a zone — no enter/exit pair needed;
+  StoreLens groups consecutive same-zone detections per entity into a visit itself.
+- Flow / transitions: the same tracked `detection` rows, read as a per-entity zone sequence.
+- State timeline: `state` rows sent on every sample, including repeats — StoreLens
+  coalesces consecutive identical samples into intervals itself.
 
 For a mattress, shelf, table, or conveyor, use a named planar projection surface. Do
 not subtract height from map Y. StoreLens preserves the geometry revisions used when
-each event was ingested.
+each observation was ingested.
 
-## 8. Optional deterministic example data
+## 7. Optional deterministic example data
 
 The seed is optional and replaces local sources/zones with synthetic records:
 
@@ -155,14 +148,13 @@ python scripts/seed_demo.py
 ```
 
 It creates logical sources with no camera credentials or snapshots, raw historical
-observations, and several insight definitions. It is useful for chart and analytics
-checks but is not required for a real manual test.
+observations (detection/measurement/state only — no legacy zone-entry or state-change
+rows), and several saved analyses. It is useful for chart and analytics checks but is
+not required for a real manual test.
 
-## 9. Current production boundary
+## 8. Current boundary
 
 This implementation provides source decoupling, source CRUD over REST/MCP, discovery,
-and a remote MCP transport foundation. Before serving unrelated customers, add tenant
-isolation, user/agent OAuth, scoped authorization, encrypted deployment secrets,
-retention/audit controls, rate limits, and a supervisor for edge workers. A Ginse
-marketplace action also needs its signed `/run` and idempotency contract; it should
-invoke this workflow, not move camera access into the hosted dashboard.
+and a remote MCP transport foundation. Anyone self-hosting beyond a single workspace
+should add authorization scoping, retention/audit controls, rate limits, and a
+supervisor for edge workers — none of that is implemented today.
