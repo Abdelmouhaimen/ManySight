@@ -5,7 +5,16 @@ uvicorn[standard]
 numpy
 pillow
 requests
-mcp
+# mcp is the one deliberate exception to "no pins": the v1 -> v2 SDK release
+# renamed FastMCP to MCPServer and moved host/port/stateless_http/
+# transport_security off the constructor onto run() (see mcp_server/_transport.py,
+# the compatibility boundary this codebase now uses instead of importing the
+# SDK's server classes directly). mcp_server/server.py is implemented and
+# tested against the v2 API only. Pin to the v2 line so an unpinned install
+# never silently regresses to a v1 API this code no longer speaks, and re-pin
+# (after updating mcp_server/_transport.py and its tests) whenever the SDK
+# ships a v3.
+mcp>=2.0.0,<3
 # Optional — needed only by workers that open local video and by the CV examples.
 # Comment out if you only run the simulator / seeded demo.
 opencv-python

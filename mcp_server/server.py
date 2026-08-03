@@ -17,13 +17,11 @@ import sys
 import urllib.parse
 import urllib.request
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.server import TransportSecuritySettings
-
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from mcp_server._transport import build_server, run_server
 from server.platform_config import resolve as resolve_platform_config
 
 PLATFORM_ENDPOINTS = resolve_platform_config()
@@ -53,16 +51,8 @@ MCP_ALLOWED_ORIGINS = [
     ).split(",") if value.strip()
 ]
 
-mcp = FastMCP(
+mcp = build_server(
     "storelens",
-    host=MCP_HOST,
-    port=MCP_PORT,
-    stateless_http=True,
-    transport_security=TransportSecuritySettings(
-        enable_dns_rebinding_protection=MCP_DNS_REBINDING_PROTECTION,
-        allowed_hosts=MCP_ALLOWED_HOSTS,
-        allowed_origins=MCP_ALLOWED_ORIGINS,
-    ),
     instructions=(
         "StoreLens is an agent-operated computer-vision platform for physical spaces. "
         "On the first StoreLens request, always call get_skill('storelens-platform') and "
@@ -659,4 +649,8 @@ if __name__ == "__main__":
     transport = os.environ.get("STORELENS_MCP_TRANSPORT", "stdio")
     if transport not in {"stdio", "streamable-http"}:
         raise SystemExit("STORELENS_MCP_TRANSPORT must be stdio or streamable-http")
-    mcp.run(transport=transport)
+    run_server(
+        mcp, transport, host=MCP_HOST, port=MCP_PORT,
+        dns_rebinding_protection=MCP_DNS_REBINDING_PROTECTION,
+        allowed_hosts=MCP_ALLOWED_HOSTS, allowed_origins=MCP_ALLOWED_ORIGINS,
+    )
