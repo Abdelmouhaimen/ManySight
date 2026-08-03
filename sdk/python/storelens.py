@@ -1,27 +1,32 @@
 """StoreLens worker SDK — a tiny client for analysis scripts (the ones Codex writes).
 
-Workers post raw observations (detections, zone_enter/zone_exit pairs, label-only
-state_change flips, per-frame counts) — the platform derives dwell, durations, and
-every insight. Never post computed aggregates (zone_dwell is deprecated/ignored).
+Observe locally, derive centrally: workers submit only three observation kinds —
+detection (an observed entity with spatial evidence), measurement (an observed
+numeric value), and state (an observed current categorical value). The platform
+derives zones, visits, dwell, occupancy, movement, state transitions/durations,
+and every analysis from these raw rows. Workers must never resolve zones, send
+zone_id/zone, or calculate zone entry/exit, dwell, occupancy, state changes, or
+durations — see get_observation_contract()/GET /api/v1/observations/contract.
 
 Typical worker loop:
     from storelens import StoreLens, CentroidTracker
     sl = StoreLens("http://localhost:8000")
     src = sl.source(1)  # logical metadata only; no camera credential is returned
-    job = sl.register_job("Dwell at checkout", event_types=["detection", "zone_enter", "zone_exit"])
+    job = sl.register_job("Checkout presence", event_types=["detection"])
     worker = sl.register_worker("checkout-worker", version="1")
     cap = sl.open_capture(src, local_connection=0)
     ...
     command = sl.heartbeat(metrics={"fps": fps})
     if command["should_stop"]:
         break
-    sl.add_event(source_id=src["id"], event_type="detection", track_id=tid, point_px={"x": u, "y": v})
-    sl.flush()   # or use `with sl.batch():` — events auto-flush every `batch_size`
+    sl.submit_detection(source_id=src["id"], entity_id=tid, point_px=(u, v))
+    sl.flush()   # or use `with sl.batch():` — observations auto-flush every `batch_size`
 """
 import atexit
 import json
 import os
 import time
+import uuid
 
 import requests
 
@@ -35,7 +40,8 @@ class StoreLens:
         self.batch_size = batch_size
         self.job_id = None
         self.worker_instance_id = None
-        self._buffer: list[dict] = []
+        self._buffer: list[dict] = []       # legacy /events buffer
+        self._obs_buffer: list[dict] = []   # current /observations/batch buffer
         atexit.register(self.flush)
 
     # ---------- HTTP ----------
@@ -130,21 +136,161 @@ class StoreLens:
         self.flush()
         return self.heartbeat("error" if error else "stopped", last_error=error)
 
+    # ---------- observations (current contract: detection | measurement | state) ----------
+    def add_observation(self, kind: str, source_id: int, **fields) -> None:
+        """Buffer one observation; flushes automatically at batch_size. Prefer the
+        typed submit_detection/submit_measurement/submit_state helpers below —
+        this is their shared plumbing. Never pass zone_id/zone or a legacy kind
+        (zone_enter/zone_exit/zone_dwell/state_change/count); StoreLens rejects
+        those with a legacy_derived_observation error."""
+        if kind not in {"detection", "measurement", "state"}:
+            raise ValueError("kind must be detection, measurement, or state — "
+                             "StoreLens derives zone/dwell/occupancy/state-change events itself")
+        observation = {
+            "schema_version": 2,
+            "observation_id": fields.pop("observation_id", None) or str(uuid.uuid4()),
+            "kind": kind, "timestamp": fields.pop("ts", None) or time.time(), "source_id": source_id,
+            "worker_id": fields.pop("worker_id", None) or self.worker_instance_id,
+            "job_id": fields.pop("job_id", None) or self.job_id,
+        }
+        observation.update({k: v for k, v in fields.items() if v is not None})
+        self._obs_buffer.append(observation)
+        if len(self._obs_buffer) >= self.batch_size:
+            self.flush_observations()
+
+    def submit_detection(self, source_id: int, entity_id: str | None = None,
+                         point_px: tuple | None = None, bbox_px: tuple | None = None,
+                         keypoints_px: dict | None = None, point_map: tuple | dict | None = None,
+                         label: str | None = None, entity_type: str | None = None,
+                         confidence: float | None = None, attributes: dict | None = None,
+                         identity_scope: str = "worker_run", identity_model_version: str | None = None,
+                         ts: float | None = None, observation_id: str | None = None) -> None:
+        """Buffer one observed entity with spatial evidence. `point_px` is [x,y];
+        `bbox_px` is [x0,y0,x1,y1] (corner form, not [x,y,w,h]); `keypoints_px` is
+        {name: [x,y]} (e.g. {"left_ankle": [190,455]}) — StoreLens picks the
+        representative point in that precedence: point_px, then foot/ankle
+        keypoints, then bbox bottom-center. `point_map` ([x,y] or {x,y} in map
+        metres) is only for a trusted non-camera producer that already knows the
+        floor position (e.g. a simulator or a non-visual sensor); a camera worker
+        should send pixel evidence instead and let StoreLens project it.
+        `entity_id` is an opaque per-track id (never a verified human identity);
+        `identity_scope` documents how far it is safe to treat two entity_ids as
+        "the same" (default: only within this worker run)."""
+        geometry = {}
+        if point_px is not None:
+            geometry["point_px"] = list(point_px)
+        if bbox_px is not None:
+            geometry["bbox_px"] = list(bbox_px)
+        if keypoints_px is not None:
+            geometry["keypoints_px"] = {k: list(v) for k, v in keypoints_px.items()}
+        if point_map is not None:
+            geometry["point_map"] = ({"x": point_map[0], "y": point_map[1]}
+                                     if not isinstance(point_map, dict) else point_map)
+        self.add_observation(
+            "detection", source_id, entity_id=entity_id, entity_type=entity_type, label=label,
+            confidence=confidence, attributes=attributes, geometry=geometry or None,
+            identity_scope=identity_scope, identity_model_version=identity_model_version,
+            ts=ts, observation_id=observation_id)
+
+    def submit_measurement(self, source_id: int, name: str, value: float, label: str | None = None,
+                           value_kind: str = "gauge", unit: str | None = None,
+                           entity_id: str | None = None, point_map: tuple | dict | None = None,
+                           confidence: float | None = None, attributes: dict | None = None,
+                           ts: float | None = None, observation_id: str | None = None) -> None:
+        """Buffer one observed numeric sample. `value_kind`: gauge (instantaneous,
+        default — e.g. people currently waiting), delta (an increment observed
+        this sample), or cumulative (a monotonically increasing producer
+        counter — StoreLens detects resets so a worker restart never produces a
+        negative rate). Never post a time-aggregated or precomputed total.
+        A measurement can only be zone-assigned if it carries geometry (e.g.
+        `point_map`, for a count with no single associated entity) or shares an
+        `entity_id` with a recent detection — omit both and it simply won't be
+        zoned."""
+        geometry = None
+        if point_map is not None:
+            geometry = {"point_map": ({"x": point_map[0], "y": point_map[1]}
+                                      if not isinstance(point_map, dict) else point_map)}
+        self.add_observation("measurement", source_id, name=name, value=value, value_kind=value_kind,
+                             unit=unit, label=label, entity_id=entity_id, confidence=confidence,
+                             attributes=attributes, geometry=geometry, ts=ts, observation_id=observation_id)
+
+    def submit_state(self, source_id: int, name: str, label: str, entity_id: str | None = None,
+                     info: dict | None = None, confidence: float | None = None,
+                     ts: float | None = None, observation_id: str | None = None) -> None:
+        """Buffer one observed current categorical state (e.g. name="door_state",
+        label="open"). Send this on every sample, not only on change — StoreLens
+        coalesces repeated identical samples into intervals and derives
+        transitions/durations itself; never send a computed duration or a
+        state_change event. Set `entity_id` when more than one independently
+        stateful entity shares this source and name (e.g. two fridges)."""
+        self.add_observation("state", source_id, name=name, label=label, entity_id=entity_id,
+                             info=info, confidence=confidence, ts=ts, observation_id=observation_id)
+
+    def flush_observations(self) -> dict | None:
+        if not self._obs_buffer:
+            return None
+        batch, self._obs_buffer = self._obs_buffer, []
+        return self._req("POST", "/observations/batch", {"job_id": self.job_id, "observations": batch})
+
+    def submit_observations(self, observations: list[dict]) -> dict:
+        """Post a batch of already-built observation dicts immediately (bypasses
+        the buffer). Prefer submit_detection/submit_measurement/submit_state for
+        normal use."""
+        return self._req("POST", "/observations/batch", {"job_id": self.job_id, "observations": observations})
+
+    def query_analytics(self, subject: str, measures: list[str], filters: dict | None = None,
+                        grouping: dict | None = None, range: dict | None = None,
+                        comparison: dict | None = None) -> dict:
+        """Answer one analytical question directly — see
+        server/routers/analytics_query.py for the full subject/measure/grouping
+        vocabulary, or GET /api/v1/analytics/capabilities for what fits the data
+        actually present."""
+        return self._req("POST", "/analytics/query", {
+            "subject": subject, "measures": measures, "filters": filters or {},
+            "grouping": grouping or {}, "range": range or {}, "comparison": comparison or {}})
+
+    def save_analysis(self, name: str, subject: str, measures: list[str], filters: dict | None = None,
+                      grouping: dict | None = None, **kwargs) -> dict:
+        """Save a data question so it appears on the dashboard. This is a
+        question, not a chart — switching how it renders later is a `patch` on
+        the same record (`presentation`), never a second analysis."""
+        return self._req("POST", "/analyses", {
+            "name": name, "subject": subject, "measures": measures,
+            "filters": filters or {}, "grouping": grouping or {}, **kwargs})
+
+    # ---------- legacy events (event_type-based contract) ----------
+    _LEGACY_DERIVED_TYPES = {"zone_enter", "zone_exit", "zone_dwell", "state_change", "count"}
+
     def add_event(self, **event):
-        """Buffer one event; flushes automatically at batch_size. See API docs for fields:
-        ts, source_id, event_type, track_id, zone_id/zone, point_px/point_map/bbox,
-        keypoints/mask, point_kind, projection_surface_id, zone_view_id, value, label,
-        attributes."""
+        """DEPRECATED for new work — prefer submit_detection/submit_measurement/
+        submit_state. Buffers one legacy event; flushes automatically at
+        batch_size. Still works against /events for backward compatibility, but
+        zone_enter/zone_exit/zone_dwell/state_change/count are events StoreLens
+        now derives itself — a new worker should never compute and send them."""
+        if event.get("event_type") in self._LEGACY_DERIVED_TYPES:
+            import warnings
+            warnings.warn(
+                f"add_event(event_type='{event['event_type']}') sends a platform-derived event. "
+                "New workers should submit_detection/submit_measurement/submit_state instead and "
+                "let StoreLens derive dwell/occupancy/state changes itself.",
+                DeprecationWarning, stacklevel=2,
+            )
         event.setdefault("ts", time.time())
         self._buffer.append(event)
         if len(self._buffer) >= self.batch_size:
             self.flush()
 
     def flush(self) -> dict | None:
-        if not self._buffer:
-            return None
-        batch, self._buffer = self._buffer, []
-        return self._req("POST", "/events", {"job_id": self.job_id, "events": batch})
+        """Flushes both the legacy event buffer and the observation buffer.
+        Returns the legacy /events response (or None if that buffer was empty)
+        for backward compatibility; check flush_observations() separately if
+        you need that response too."""
+        result = None
+        if self._buffer:
+            batch, self._buffer = self._buffer, []
+            result = self._req("POST", "/events", {"job_id": self.job_id, "events": batch})
+        self.flush_observations()
+        return result
 
     def post_events(self, events: list[dict], job_id: int | None = None) -> dict:
         return self._req("POST", "/events", {"job_id": job_id or self.job_id, "events": events})
