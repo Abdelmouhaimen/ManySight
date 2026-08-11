@@ -25,7 +25,7 @@ from .. import db
 from ..services import alert_engine, enrich
 from ..services.sse import broker
 
-router = APIRouter(tags=["events"])
+router = APIRouter()
 
 EVENT_TYPES = {"detection", "zone_enter", "zone_exit", "zone_dwell", "transition", "state_change", "count", "custom"}
 
@@ -63,7 +63,13 @@ def _parse_ts(ts) -> float:
     return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp()
 
 
-@router.post("/events")
+@router.post(
+    "/events",
+    deprecated=True,
+    tags=["legacy-events"],
+    summary="Submit legacy events (compatibility only)",
+    description="Use POST /observations/batch for all new workers.",
+)
 async def ingest(batch: EventBatch):
     if not batch.events:
         return {"inserted": 0, "projected": 0, "zone_assigned": 0,
@@ -128,7 +134,13 @@ async def ingest(batch: EventBatch):
             "zone_view_assigned": zone_view_assigned, "alerts": len(alerts)}
 
 
-@router.get("/events")
+@router.get(
+    "/events",
+    deprecated=True,
+    tags=["legacy-events"],
+    summary="List legacy and underlying event rows",
+    description="Compatibility query surface. Prefer GET /observations for schema-v2 data.",
+)
 def query_events(since: float | None = None, until: float | None = None,
                  event_type: str | None = None, zone_id: int | None = None,
                  source_id: int | None = None, job_id: int | None = None,
@@ -169,7 +181,7 @@ def query_events(since: float | None = None, until: float | None = None,
     return {"events": rows, "count": len(rows), "total": total, "next_cursor": next_cursor}
 
 
-@router.get("/stream")
+@router.get("/stream", tags=["stream"], summary="Stream platform updates using server-sent events")
 async def stream():
     q = broker.subscribe()
 

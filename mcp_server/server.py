@@ -1,4 +1,4 @@
-"""StoreLens MCP server — the bridge that lets Codex (or any MCP client) operate the platform.
+"""StoreLens MCP server — an agent-facing adapter for the StoreLens REST API.
 
 Run standalone:            python mcp_server/server.py
 Register with Codex CLI:   see codex.config.example.toml at the repo root.
@@ -257,7 +257,7 @@ def create_projection_surface(source_id: int, name: str, points: list[dict],
 @mcp.tool()
 def update_projection_surface(surface_id: int, patch: dict) -> dict:
     """Update a named plane and recompute its homography. Its revision increments;
-    existing events keep the surface revision used when they were ingested."""
+    existing observations keep the surface revision used when they were ingested."""
     return _req("PUT", f"/projection-surfaces/{surface_id}", patch)
 
 
@@ -309,8 +309,9 @@ def delete_zone_view(view_id: int) -> dict:
 @mcp.tool()
 def register_job(name: str, description: str = "", source_ids: list[int] | None = None,
                  event_types: list[str] | None = None) -> dict:
-    """Register an analysis job BEFORE posting events. Returns the job with its id; pass that
-    job_id to submit_events so the platform can attribute and monitor your analysis."""
+    """Register an analysis job before posting observations. Returns the job with its id;
+    pass that job_id to schema-v2 observations so the platform can attribute and monitor
+    the work."""
     return _req("POST", "/jobs", {
         "name": name, "description": description,
         "source_ids": source_ids or [], "event_types": event_types or [],

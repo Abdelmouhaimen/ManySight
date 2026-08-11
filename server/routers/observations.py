@@ -130,12 +130,13 @@ def _to_enrich_dict(ob: ObservationIn, ts: float, fallback_job_id: int | None) -
     return ev
 
 
-@router.get("/observations/contract")
+@router.get("/observations/contract", summary="Get the current worker observation contract")
 def observation_contract():
     """Machine-readable summary of the current worker contract: the three kinds,
     required fields per kind, and what workers must never send. Mirrors AGENTS.md
     and the storelens-platform skill so an agent can self-check a payload."""
     return {
+        "schema_version": 2,
         "kinds": sorted(enrich.OBSERVATION_KINDS),
         "required_fields": {"common": ["schema_version", "observation_id", "kind", "timestamp", "source_id"],
                             **REQUIRED_BY_KIND},
@@ -164,7 +165,7 @@ def observation_contract():
     }
 
 
-@router.post("/observations/batch")
+@router.post("/observations/batch", summary="Submit schema-v2 raw observations")
 async def submit_observations(batch: ObservationBatch):
     if not batch.observations:
         return {"accepted": 0, "duplicates": 0, "rejected": []}
@@ -294,7 +295,7 @@ def _serialize_observation(r: dict, zone_names: dict) -> dict:
     }
 
 
-@router.get("/observations")
+@router.get("/observations", summary="List stored observations")
 def list_observations(since: float | None = None, until: float | None = None,
                       kind: str | None = None, source_id: int | None = None,
                       worker_id: int | None = None, entity_id: str | None = None,
@@ -413,7 +414,7 @@ def _current_states(since: float, now: float, source_id: int | None) -> dict:
     return {"kind": "state", "series": series}
 
 
-@router.get("/observations/latest")
+@router.get("/observations/latest", summary="Get current read models derived from observations")
 def latest_observations(kind: str | None = None, source_id: int | None = None,
                         zone_id: int | None = None, name: str | None = None,
                         since: float | None = None):
@@ -439,7 +440,7 @@ def latest_observations(kind: str | None = None, source_id: int | None = None,
     }
 
 
-@router.get("/observations/{observation_id}")
+@router.get("/observations/{observation_id}", summary="Get one stored observation")
 def get_observation(observation_id: int):
     row = db.q1("SELECT * FROM events WHERE id=?", (observation_id,))
     if not row:

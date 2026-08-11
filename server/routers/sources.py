@@ -99,8 +99,8 @@ def _validate_source(kind: str, connection_mode: str, management: str,
                 if normalized in FORBIDDEN_LOCATOR_KEYS:
                     raise HTTPException(
                         422,
-                        f"{path}.{key} may contain camera access or credentials; "
-                        "store them on the worker device and use local_secret_ref instead",
+                        f"{path}.{key} may contain camera access or credentials; use a "
+                        "storelens_managed connection or an external_secret local_secret_ref instead",
                     )
                 walk(item, f"{path}.{key}")
         elif isinstance(value, list):
@@ -109,7 +109,8 @@ def _validate_source(kind: str, connection_mode: str, management: str,
         elif isinstance(value, str) and re.match(r"^(rtsp|rtsps|https?)://", value, re.I):
             raise HTTPException(
                 422,
-                f"{path} must not contain a network camera URL; use a local_secret_ref",
+                f"{path} must not contain a network camera URL; use a storelens_managed "
+                "connection or an external_secret local_secret_ref instead",
             )
 
     walk(locator)
@@ -270,13 +271,13 @@ def _get(source_id: int) -> dict:
     return row
 
 
-@router.get("/sources")
+@router.get("/sources", summary="List safe logical source metadata")
 def list_sources():
     runtime = _runtime_by_source()
     return [serialize(r, runtime.get(r["id"])) for r in db.q("SELECT * FROM sources ORDER BY id")]
 
 
-@router.post("/sources", status_code=201)
+@router.post("/sources", status_code=201, summary="Create a managed or external-secret source")
 def create_source(body: SourceIn):
     name = body.name.strip()
     if not name:
@@ -305,12 +306,12 @@ def create_source(body: SourceIn):
     return serialize(_get(sid))
 
 
-@router.get("/sources/{source_id}")
+@router.get("/sources/{source_id}", summary="Get safe logical source metadata")
 def get_source(source_id: int):
     return serialize(_get(source_id), _runtime_by_source().get(source_id))
 
 
-@router.put("/sources/{source_id}")
+@router.put("/sources/{source_id}", summary="Update source metadata or protected connection configuration")
 def update_source(source_id: int, body: SourcePatch):
     row = _get(source_id)
     kind = body.kind or row["kind"]
@@ -374,7 +375,11 @@ def _require_credential_access(request: Request):
         raise HTTPException(401, "invalid or missing credential access key")
 
 
-@router.get("/sources/{source_id}/connection")
+@router.get(
+    "/sources/{source_id}/connection",
+    summary="Resolve a source connection for an authorized worker",
+    description="Sensitive, header-authenticated endpoint. Do not log or persist its response.",
+)
 def get_source_connection(source_id: int, request: Request):
     _require_credential_access(request)
     row = _get(source_id)
@@ -400,7 +405,7 @@ def get_source_connection(source_id: int, request: Request):
     return result
 
 
-@router.delete("/sources/{source_id}")
+@router.delete("/sources/{source_id}", summary="Delete a source and its geometry configuration")
 def delete_source(source_id: int):
     _get(source_id)
     db.ex("DELETE FROM zone_views WHERE source_id=?", (source_id,))

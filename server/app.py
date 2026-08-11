@@ -1,8 +1,10 @@
-"""StoreLens — agent-powered computer-vision analytics for physical spaces.
+"""StoreLens — spatial and temporal analytics from locally observed evidence.
 
 Run:  uvicorn server.app:app --host 0.0.0.0 --port 8000
 UI:   http://localhost:8000        API docs: http://localhost:8000/docs
-Auth: optional — set STORELENS_API_KEY to require X-API-Key (or ?api_key=) on /api/*.
+Auth: optional — set STORELENS_API_KEY to require X-API-Key on /api/*.
+The query-string key remains available for browser SSE compatibility; headers are
+preferred for other clients.
 """
 import asyncio
 import contextlib
@@ -54,10 +56,11 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="StoreLens",
     version="1.0.0",
-    description="POC infrastructure for ManySight physical-space intelligence: logical observation sources, global map "
-                "zones, floor and named-plane localization, camera decision ROIs, a generic evidence-rich "
-                "event stream, heartbeat-backed workers, reviewable insights, and alerts. "
-                "AI agents connect through MCP, access cameras locally, run models, and post observations back here.",
+    description="Infrastructure for turning raw camera and sensor observations into spatial and "
+                "temporal analytics. StoreLens manages logical sources, protected connection configuration, mapped "
+                "geometry, heartbeat-backed workers, schema-v2 detection/measurement/state observations, derived "
+                "analytics, saved analyses, and alerts. Local workers open sources and run models; the platform "
+                "does not proxy feeds or execute worker code.",
     lifespan=lifespan,
 )
 
@@ -128,7 +131,7 @@ def agent_guide(request: Request):
     mcp_url = endpoints["mcp_url"]
     return f"""# Use StoreLens from an agent
 
-StoreLens is a hosted observation and insight platform. It never opens or proxies a camera
+StoreLens is an observation and analytics platform. It never opens or proxies a camera
 feed and never runs computer-vision models. It can keep source credentials encrypted for
 explicitly privileged worker resolution; the worker still opens the feed locally and posts
 raw observations over HTTPS.
@@ -172,7 +175,7 @@ In either mode StoreLens is provenance and coordination, not a stream proxy.
 def llms_index(request: Request):
     endpoints = _endpoint_config(request)
     return f"""# StoreLens
-> Agent-operated computer-vision observation and insight platform.
+> Spatial and temporal analytics from observations produced by local workers.
 
 - Agent instructions: {endpoints["agent_guide_url"]}
 - Runtime endpoint registry: {endpoints["platform_config_url"]}
@@ -193,7 +196,7 @@ def storelens_discovery(request: Request):
         "openapi": endpoints["openapi_url"],
         "docs": endpoints["docs_url"],
         "rest_base": endpoints["rest_url"],
-        "camera_access": "agent_local",
+        "camera_access": "worker_local",
         "platform_config": endpoints["platform_config_url"],
         "endpoint_profile": endpoints["profile"],
     }
@@ -207,6 +210,7 @@ _server_dir = os.path.dirname(__file__)
 _dashboard_dist = os.path.join(os.path.dirname(_server_dir), "dashboard", "dist")
 
 if not os.path.isdir(_dashboard_dist):
-    raise RuntimeError("ManySight dashboard build is missing. Run `npm install && npm run build` in dashboard/.")
+    raise RuntimeError("The bundled dashboard build is missing. Run `npm install --prefix dashboard` and "
+                       "`npm run build --prefix dashboard` from the repository root.")
 
 app.mount("/", StaticFiles(directory=_dashboard_dist, html=True), name="ui")

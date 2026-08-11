@@ -1,4 +1,4 @@
-"""Analysis jobs — how AI workers (Codex-authored scripts) announce themselves."""
+"""Analysis jobs and heartbeat-backed external worker instances."""
 import json
 import uuid
 

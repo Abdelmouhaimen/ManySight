@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 
 from .. import db
 
-router = APIRouter(tags=["insights"])
+router = APIRouter(tags=["legacy-insights"])
 
 
 def serialize(row: dict, zone_names: dict[int, str] | None = None) -> dict:
@@ -28,7 +28,7 @@ def serialize(row: dict, zone_names: dict[int, str] | None = None) -> dict:
             "created_at": row["created_at"], "updated_at": row["updated_at"]}
 
 
-@router.get("/insights")
+@router.get("/insights", deprecated=True, summary="List historical insight definitions")
 def list_insights(include_hidden: bool = False, pinned: bool = False):
     where = []
     if not include_hidden:
@@ -41,7 +41,7 @@ def list_insights(include_hidden: bool = False, pinned: bool = False):
             for r in db.q(f"SELECT * FROM insight_definitions {clause} ORDER BY sort_order, id")]
 
 
-@router.get("/insights/{insight_id}")
+@router.get("/insights/{insight_id}", deprecated=True, summary="Get a historical insight definition")
 def get_insight(insight_id: int):
     row = db.q1("SELECT * FROM insight_definitions WHERE id=?", (insight_id,))
     if not row:
@@ -49,7 +49,7 @@ def get_insight(insight_id: int):
     return serialize(row)
 
 
-@router.delete("/insights/{insight_id}")
+@router.delete("/insights/{insight_id}", deprecated=True, summary="Delete a historical insight definition")
 def delete_insight(insight_id: int):
     if not db.q1("SELECT id FROM insight_definitions WHERE id=?", (insight_id,)):
         raise HTTPException(404, "insight not found")

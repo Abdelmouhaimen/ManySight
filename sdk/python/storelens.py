@@ -1,4 +1,4 @@
-"""StoreLens worker SDK — a tiny client for analysis scripts (the ones Codex writes).
+"""StoreLens worker SDK — a small client for external analysis workers.
 
 Observe locally, derive centrally: workers submit only three observation kinds —
 detection (an observed entity with spatial evidence), measurement (an observed
@@ -11,10 +11,10 @@ durations — see get_observation_contract()/GET /api/v1/observations/contract.
 Typical worker loop:
     from storelens import StoreLens, CentroidTracker
     sl = StoreLens("http://localhost:8000")
-    src = sl.source(1)  # logical metadata only; no camera credential is returned
+    src = sl.source(1)  # safe source metadata; managed credentials remain redacted
     job = sl.register_job("Checkout presence", event_types=["detection"])
     worker = sl.register_worker("checkout-worker", version="1")
-    cap = sl.open_capture(src, local_connection=0)
+    cap = sl.open_capture(src)
     ...
     command = sl.heartbeat(metrics={"fps": fps})
     if command["should_stop"]:
