@@ -102,3 +102,28 @@ def test_no_data_reset_existing_rows_survive_init(isolated_db):
     isolated_db.init_db()
     count = isolated_db.q1("SELECT COUNT(*) n FROM sources")["n"]
     assert count == 1
+
+
+def test_legacy_webcam_locator_is_promoted_but_external_ref_is_preserved(uninitialized_db):
+    con = uninitialized_db.connect()
+    con.execute(
+        "CREATE TABLE sources (id INTEGER PRIMARY KEY, name TEXT, kind TEXT, url TEXT, "
+        "locator_json TEXT DEFAULT '{}', capabilities_json TEXT DEFAULT '[]', created_at REAL)"
+    )
+    con.execute(
+        "INSERT INTO sources VALUES (1,'Legacy webcam','webcam','0','{}','[]',0)"
+    )
+    con.execute(
+        "INSERT INTO sources VALUES (2,'External camera','http','',?, '[]',0)",
+        (json.dumps({"local_secret_ref": "CAMERA_URL"}),),
+    )
+    con.commit()
+    con.close()
+
+    uninitialized_db.init_db()
+    webcam = uninitialized_db.q1("SELECT * FROM sources WHERE id=1")
+    external = uninitialized_db.q1("SELECT * FROM sources WHERE id=2")
+    assert webcam["connection_management"] == "storelens_managed"
+    assert json.loads(webcam["connection_config_json"]) == {"device_index": 0}
+    assert external["connection_management"] == "external_secret"
+    assert json.loads(external["locator_json"]) == {"local_secret_ref": "CAMERA_URL"}

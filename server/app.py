@@ -70,6 +70,12 @@ PUBLIC_READS = os.environ.get("STORELENS_PUBLIC_READS", "false").lower() in {"1"
 @app.middleware("http")
 async def api_key_guard(request: Request, call_next):
     if API_KEY and request.url.path.startswith("/api/") and request.url.path != "/api/v1/health":
+        # The connection-resolution endpoint has its own stronger, header-only
+        # credential access check. Do not make a distinct credential key also
+        # satisfy the general API-key middleware.
+        if request.method == "GET" and request.url.path.startswith("/api/v1/sources/") \
+                and request.url.path.endswith("/connection"):
+            return await call_next(request)
         if PUBLIC_READS and request.method in {"GET", "HEAD", "OPTIONS"}:
             return await call_next(request)
         supplied = request.headers.get("x-api-key") or request.query_params.get("api_key")
@@ -87,7 +93,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-API-Key", "MCP-Protocol-Version"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-StoreLens-Credential-Key", "MCP-Protocol-Version"],
 )
 
 
@@ -99,6 +105,8 @@ def health():
         "ts": db.now(),
         "auth_required": bool(API_KEY),
         "public_reads": PUBLIC_READS,
+        "managed_credentials_configured": bool(os.environ.get("STORELENS_CREDENTIAL_KEY")),
+        "credential_access_configured": bool(os.environ.get("STORELENS_CREDENTIAL_ACCESS_KEY") or API_KEY),
         "endpoint_profile": resolve_platform_config()["profile"],
     }
 
@@ -120,9 +128,10 @@ def agent_guide(request: Request):
     mcp_url = endpoints["mcp_url"]
     return f"""# Use StoreLens from an agent
 
-StoreLens is a hosted observation and insight platform. It never opens a camera feed,
-stores camera credentials, or runs computer-vision models. The agent runs the worker on
-the device or edge gateway that can reach the source and posts raw observations over HTTPS.
+StoreLens is a hosted observation and insight platform. It never opens or proxies a camera
+feed and never runs computer-vision models. It can keep source credentials encrypted for
+explicitly privileged worker resolution; the worker still opens the feed locally and posts
+raw observations over HTTPS.
 
 ## Endpoints
 
@@ -137,10 +146,10 @@ the device or edge gateway that can reach the source and posts raw observations 
 
 1. Connect to the MCP endpoint and load the `storelens-platform` skill.
 2. Call `list_sources`. Reuse the requested logical source or call `create_source`.
-   A source locator may contain `device_index` or `local_secret_ref`, but never a URL,
-   username, password, token, or API key.
-3. Resolve camera access locally. For example, a webcam locator with `device_index: 0`
-   means OpenCV `VideoCapture(0)` on the worker device.
+   Choose either `storelens_managed` structured connection details or an
+   `external_secret` locator with `local_secret_ref`.
+3. Resolve camera access in the worker with the privileged source-connection endpoint or
+   an external environment/keychain reference. Normal source reads never reveal secrets.
 4. Register a job, then register a worker and heartbeat every 5-15 seconds.
 5. Submit only three observation kinds to `POST {endpoints["rest_url"]}/observations/batch`:
    `detection` (an observed entity with spatial evidence), `measurement` (an observed
@@ -153,8 +162,9 @@ the device or edge gateway that can reach the source and posts raw observations 
    `POST {endpoints["rest_url"]}/analytics/query`, then save a `POST {endpoints["rest_url"]}/analyses`
    definition — a data question (subject/measures/filters/grouping), not a chart.
 
-Camera credentials stay in a local environment variable, keychain, or ignored worker
-configuration. StoreLens source metadata is provenance and coordination, not a stream proxy.
+Managed credentials are encrypted at rest with `STORELENS_CREDENTIAL_KEY` and are returned
+only by the header-authenticated connection endpoint. External-secret mode remains available.
+In either mode StoreLens is provenance and coordination, not a stream proxy.
 """
 
 

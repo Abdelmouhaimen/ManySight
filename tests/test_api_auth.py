@@ -70,6 +70,20 @@ def test_public_reads_still_blocks_unauthenticated_write(public_read_app):
         assert response.status_code == 401
 
 
+def test_public_reads_does_not_expose_source_connection(public_read_app, monkeypatch):
+    monkeypatch.setenv("STORELENS_CREDENTIAL_ACCESS_KEY", "resolve-only")
+    from fastapi.testclient import TestClient
+    with TestClient(public_read_app) as client:
+        source = client.post(
+            "/api/v1/sources",
+            headers={"X-API-Key": "secret123"},
+            json={"name": "external", "kind": "http", "locator": {"local_secret_ref": "CAMERA"}},
+        ).json()
+        path = f"/api/v1/sources/{source['id']}/connection"
+        assert client.get(path).status_code == 401
+        assert client.get(path, headers={"X-StoreLens-Credential-Key": "resolve-only"}).status_code == 200
+
+
 def test_cors_preflight_gets_headers_when_key_required(keyed_client):
     """Regression test for the fixed bug: CORSMiddleware must be outermost so a
     preflight OPTIONS request gets Access-Control-Allow-Origin even though the

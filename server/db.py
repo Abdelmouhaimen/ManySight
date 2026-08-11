@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS sources (
   name TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'rtsp',            -- rtsp | webrtc | http | webcam | file
   connection_mode TEXT NOT NULL DEFAULT 'agent_local', -- agent_local | edge_gateway
+  connection_management TEXT NOT NULL DEFAULT 'external_secret', -- external_secret | storelens_managed
+  connection_config_json TEXT NOT NULL DEFAULT '{}',   -- safe, structured connection fields
+  connection_revision INTEGER NOT NULL DEFAULT 0,
   locator_json TEXT NOT NULL DEFAULT '{}',      -- non-secret local device / secret reference
   capabilities_json TEXT NOT NULL DEFAULT '[]', -- video | audio | detections | custom
   metadata_json TEXT NOT NULL DEFAULT '{}',     -- non-secret agent/domain metadata
@@ -210,6 +213,13 @@ CREATE TABLE IF NOT EXISTS analyses (
   created_at REAL,
   updated_at REAL
 );
+CREATE TABLE IF NOT EXISTS source_credentials (
+  source_id INTEGER PRIMARY KEY,
+  encrypted_payload TEXT NOT NULL,
+  credential_type TEXT NOT NULL DEFAULT 'source_connection',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_analyses_query_hash ON analyses(query_hash);
 -- Durable receipt for the one-time legacy insight migration.  This lives
 -- separately from `analyses` so deleting a migrated analysis does not make it
@@ -251,6 +261,9 @@ def init_db():
             "last_observation_at": "REAL",
             "last_ingestion_at": "REAL",
             "event_count": "INTEGER NOT NULL DEFAULT 0",
+            "connection_management": "TEXT NOT NULL DEFAULT 'external_secret'",
+            "connection_config_json": "TEXT NOT NULL DEFAULT '{}'",
+            "connection_revision": "INTEGER NOT NULL DEFAULT 0",
         }
         for column, sql_type in source_migrations.items():
             if column not in source_columns:
@@ -273,9 +286,17 @@ def init_db():
                     "UPDATE sources SET locator_json=?, capabilities_json=? WHERE id=?",
                     (json.dumps(locator), json.dumps(capabilities), source["id"]),
                 )
-        # The online architecture never retains camera connection material. Once
-        # safe webcam indices have been migrated, scrub dormant legacy fields so
-        # upgrading an old database does not leave credentials behind.
+        # Safe webcam indices were historically stored in locator_json. Promote
+        # them to the managed connection model without touching external refs.
+        con.execute(
+            "UPDATE sources SET connection_management='storelens_managed', "
+            "connection_config_json=locator_json, connection_revision=1 "
+            "WHERE kind='webcam' AND connection_management='external_secret' "
+            "AND json_extract(locator_json, '$.device_index') IS NOT NULL"
+        )
+        # Dormant legacy columns are not part of the managed credential model.
+        # Scrub them after safe webcam migration so old plaintext never survives;
+        # new secrets belong only in authenticated ciphertext in source_credentials.
         scrub_values = {
             "url": "''",
             "username": "''",
