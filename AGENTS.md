@@ -7,10 +7,12 @@ heartbeat-backed worker instances, and a generic stream of raw observations it t
 analyses (presence, dwell, flow, states, measurement trends) and alerts. **You** pick the models,
 write the worker scripts, run them, and post observations back.
 
-Camera access is agent-local. The hosted platform never opens a feed, captures a
-snapshot, or stores camera URLs and credentials. A source locator contains only safe
-local hints such as `device_index` or `local_secret_ref`; resolve the actual connection
-on the worker device from its environment or keychain.
+Camera access is worker-local. StoreLens never opens or proxies a feed or captures a
+snapshot. A source can use `storelens_managed` structured connection settings with
+encrypted credentials, or `external_secret` with `locator.local_secret_ref`. Ordinary
+source reads never reveal credentials. Only an explicitly authorized worker or MCP client
+may call the privileged connection-resolution endpoint, and it must use the result only
+in memory to open the source locally.
 
 ## Observe locally, derive centrally
 

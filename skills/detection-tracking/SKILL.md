@@ -60,6 +60,11 @@ foot/ankle keypoints, then bbox bottom-center, then left empty if only a mask is
 
 ## Worker template
 
+`open_capture` resolves a managed source only when needed and keeps connection material
+in worker memory. Never paste a resolved URL, username, or password into generated source
+code, logs, observation attributes, job configuration, or heartbeat metrics. An explicit
+`local_connection` remains available for a deliberate worker-local override.
+
 ```python
 import os, sys, time
 sys.path.insert(0, "sdk/python")

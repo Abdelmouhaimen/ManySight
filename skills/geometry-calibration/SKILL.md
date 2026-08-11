@@ -5,6 +5,11 @@ description: Use when setting up or fixing zones, camera calibration, zone views
 
 # Geometry & calibration
 
+Capture calibration frames on the worker machine with `StoreLens.open_capture(source)`.
+For a managed source, privileged resolution happens locally; never echo its connection
+details or copy credentials into calibration points, screenshots, observation attributes,
+or generated worker code. StoreLens itself does not open or proxy the feed.
+
 A physical zone and its appearance in one camera are deliberately separate concepts.
 Workers never resolve any of this themselves — they submit pixel evidence and StoreLens
 does the rest — but an agent configuring the space needs to understand the model to set

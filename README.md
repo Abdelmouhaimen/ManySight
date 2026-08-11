@@ -16,8 +16,9 @@ observation — `detection`, `measurement`, `state` — and never resolves a zon
 dwell, occupancy, movement, or a state change; StoreLens derives all of that itself. See
 [`docs/adr/0001-observation-contract.md`](docs/adr/0001-observation-contract.md) for why.
 
-Camera access is deliberately agent-local. The hosted StoreLens service never opens a
-feed or stores camera credentials. Workers resolve a webcam index, RTSP URL, or file on
+Camera access is deliberately worker-local. StoreLens never opens or proxies a feed.
+Sources can use encrypted StoreLens-managed credentials or retain an external worker
+secret reference. In both modes, workers open the webcam, RTSP/HTTP stream, or file on
 the device/edge gateway where they run and send only observations over HTTPS.
 
 ```
@@ -72,6 +73,20 @@ command = "python"
 args = ["/path/to/repo/mcp_server/server.py"]
 env = { STORELENS_URL = "http://localhost:8000" }
 ```
+
+For managed source credentials, configure two independent deployment secrets:
+
+```text
+STORELENS_CREDENTIAL_KEY=<URL-safe base64 encoding of exactly 32 random bytes>
+STORELENS_CREDENTIAL_ACCESS_KEY=<strong key used only by authorized workers/MCP clients>
+```
+
+The first key encrypts credentials at rest with AES-256-GCM and is never generated or
+stored by StoreLens. The second protects the explicit
+`GET /api/v1/sources/{id}/connection` resolution endpoint. Normal source API responses,
+the dashboard, and ordinary MCP discovery never return usernames or passwords. Set
+`STORELENS_CREDENTIAL_ACCESS_KEY` in the MCP environment only when that MCP client is
+authorized to launch local workers. See [`docs/source-connections.md`](docs/source-connections.md).
 
 Then ask Codex things like:
 

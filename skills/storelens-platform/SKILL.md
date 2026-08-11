@@ -11,7 +11,7 @@ not prior conversation or demo assumptions, as the source of truth.
 ## Understand the platform
 
 StoreLens is infrastructure for computer-vision analysis of physical spaces. It stores
-logical non-secret source descriptors, a floor map, named global zones, floor calibration,
+logical source descriptors and encrypted managed credentials, a floor map, named global zones, floor calibration,
 named projection planes, per-camera zone views/decision ROIs, analysis and worker-instance
 registrations, raw observations, derived analytics, alerts, and saved analyses.
 
@@ -31,10 +31,13 @@ Keep the three surfaces distinct:
 A worker must not require MCP. MCP is an agent adapter, not a camera subscriber or
 worker runtime.
 
-Camera access is agent-local. StoreLens never opens a feed, captures a snapshot, or
-returns a camera URL/password. A logical source may advertise a safe `device_index` or
-`local_secret_ref`; resolve the real connection from an environment variable, keychain,
-or ignored file on the device where the worker runs.
+Camera access is worker-local. StoreLens never opens or proxies a feed or captures a
+snapshot. A source uses either `storelens_managed` or `external_secret`. Managed sources
+keep structured non-secret connection fields separately from AES-GCM-encrypted credentials;
+ordinary discovery never returns the credentials. An authorized worker may resolve them
+with `get_source_connection`, using a dedicated credential-access key, and must keep the
+result in memory. External sources resolve `locator.local_secret_ref` from an environment
+variable, keychain, or ignored file on the worker device.
 
 ## Find the API
 
@@ -67,7 +70,8 @@ the observation contract.
 ## Follow the default workflow
 
 1. **Discover.** Call `list_sources`, `get_store_map`, and `list_zones`. If a source is
-   missing, call `create_source` with non-secret local hints. Inspect relevant frames
+   missing, call `create_source` with managed connection fields or a non-secret external
+   reference. Inspect relevant frames
    directly on the worker device. Never invent source IDs, zones, camera coverage,
    placement, or calibration.
 2. **Clarify the measurement.** State what an entity, count, visit, state, or alert will
@@ -127,8 +131,9 @@ evidence silently.
 
 - Prefer a lightweight, supported model that directly measures the requested concept.
 - Keep a worker and its virtual environment in the user-designated workspace or edge gateway.
-- Store configuration in environment variables or ignored local files; never print
-  camera credentials or API keys.
+- Keep resolved connection material in memory and never print camera credentials or API
+  keys. Use `StoreLens.open_capture(source)`, which prefers an explicit local override,
+  then managed resolution, then an external reference.
 - Use anonymous tracking and stable per-run `entity_id`s when tracking is required.
 - Sample detections around 1-2 Hz per entity unless the measurement needs another rate.
 - Batch submissions, handle disconnects, retry with bounds, and flush on shutdown.
