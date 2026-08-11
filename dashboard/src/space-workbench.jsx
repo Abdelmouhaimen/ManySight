@@ -5,7 +5,6 @@ import {
   Crosshair,
   Eraser,
   ExternalLink,
-  FileUp,
   MapPin,
   MousePointer2,
   Pencil,
@@ -20,6 +19,7 @@ import {
 } from "lucide-react";
 import { api } from "./api.js";
 import { Badge, EmptyState, Modal, Panel } from "./components.jsx";
+import { PlanDigitizer } from "./plan-digitizer.jsx";
 
 const ZONE_TYPES = [
   "area",
@@ -102,7 +102,8 @@ function CameraGlyph({ source, selected, onClick }) {
       }}
     >
       <polygon points={wedge} className="camera-fov" />
-      <circle cx={x} cy={y} r=".19" />
+      <circle className="camera-focus-ring" cx={x} cy={y} r=".31" />
+      <circle className="camera-position" cx={x} cy={y} r=".19" />
       <path
         d={`M ${x} ${y} L ${x + Math.cos((rotation * Math.PI) / 180) * 0.52} ${y + Math.sin((rotation * Math.PI) / 180) * 0.52}`}
       />
@@ -253,56 +254,6 @@ function MapSurface({
         <Ruler size={13} /> Grid spacing: 1 metre
       </div>
     </div>
-  );
-}
-
-function MetricBlueprintImport({ onRefresh, notify }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const upload = async (file) => {
-    if (!window.confirm(
-      "Import this metric plan? It replaces the current coordinate frame and clears existing camera placements and floor calibrations so they cannot project into the wrong map.",
-    )) return;
-    setBusy(true);
-    setError("");
-    try {
-      const result = await api.upload("/store/import-metric-blueprint", file);
-      await onRefresh();
-      notify(
-        "Metric blueprint imported",
-        `${result.polygon_count} polygon${result.polygon_count === 1 ? "" : "s"} · ${result.width_m.toFixed(2)} × ${result.height_m.toFixed(2)} m · ${result.invalidated_calibrations} calibration${result.invalidated_calibrations === 1 ? "" : "s"} cleared`,
-      );
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Panel
-      title="Import floor plan"
-      subtitle="Metric ZIP exported by Plan → metric blueprint"
-      action={
-        <label className="button button-dark">
-          <FileUp size={14} /> {busy ? "Importing…" : "Import plan ZIP"}
-          <input
-            aria-label="Metric blueprint ZIP"
-            type="file"
-            accept=".zip,application/zip"
-            hidden
-            disabled={busy}
-            onChange={(event) => event.target.files?.[0] && upload(event.target.files[0])}
-          />
-        </label>
-      }
-    >
-      <p className="form-note">
-        Imports floor polygons and metric dimensions from floor_polygon.json.
-        This replaces the map coordinate frame. Existing camera placements and floor
-        calibrations are cleared, then must be confirmed again with point pairs.
-      </p>
-      {error && <div className="form-error" role="alert">{error}</div>}
-    </Panel>
   );
 }
 
@@ -537,7 +488,7 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
 
   return (
     <div className="space-workbench stack">
-      <MetricBlueprintImport onRefresh={onRefresh} notify={notify} />
+      <PlanDigitizer onRefresh={onRefresh} notify={notify} />
       <Panel
         title="Floor map workbench"
         subtitle="Draw geometry in metres and place logical source markers"

@@ -1,10 +1,8 @@
 """Store floor plan: name, dimensions (meters), walls and text labels."""
-import io
 import json
 import math
-import zipfile
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import db
@@ -19,6 +17,21 @@ class StorePatch(BaseModel):
     width_m: float | None = None
     height_m: float | None = None
     map: dict | None = None  # {"walls": [[{x,y},...]], "labels": [{x,y,text}]}
+
+
+class BlueprintPoint(BaseModel):
+    x: float
+    y: float
+
+
+class BlueprintTrace(BaseModel):
+    image_width: int
+    image_height: int
+    polygons_px: list[list[BlueprintPoint]]
+    scale_points_px: list[BlueprintPoint]
+    known_distance_m: float
+    origin_px: BlueprintPoint
+    y_axis_up: bool = True
 
 
 def serialize(row: dict) -> dict:
@@ -59,53 +72,44 @@ def update_store(body: StorePatch):
     return serialize(db.q1("SELECT * FROM stores WHERE id=1"))
 
 
-@router.post("/store/import-metric-blueprint")
-async def import_metric_blueprint(bundle: UploadFile = File(...)):
-    """Import map-only metric geometry from plan_blueprint_digitizer."""
-    payload = await bundle.read()
-    if len(payload) > 25 * 1024 * 1024:
-        raise HTTPException(413, "blueprint ZIP exceeds the 25 MB limit")
-    try:
-        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-            names = archive.namelist()
-            for name in names:
-                parts = name.replace("\\", "/").split("/")
-                if name.startswith(("/", "\\")) or ".." in parts:
-                    raise HTTPException(422, "blueprint ZIP contains an unsafe path")
-            if "floor_polygon.json" not in names:
-                raise HTTPException(422, "blueprint ZIP is missing floor_polygon.json")
-            info = archive.getinfo("floor_polygon.json")
-            if info.file_size > 2 * 1024 * 1024:
-                raise HTTPException(422, "floor_polygon.json is too large")
-            document = json.loads(archive.read("floor_polygon.json"))
-    except HTTPException:
-        raise
-    except (zipfile.BadZipFile, json.JSONDecodeError, KeyError) as exc:
-        raise HTTPException(422, f"invalid metric-blueprint ZIP: {exc}") from exc
+@router.post("/store/blueprint")
+def save_blueprint(body: BlueprintTrace):
+    """Convert a browser-side plan trace into StoreLens metric map geometry.
 
-    units = document.get("coordinate_system", {}).get("units")
-    if units not in {"meters", "metres", "m"}:
-        raise HTTPException(422, "floor_polygon.json must use metres")
-    polygons = document.get("polygons")
-    if not isinstance(polygons, list) or not polygons:
-        raise HTTPException(422, "floor_polygon.json must contain at least one polygon")
+    The source image never reaches this endpoint; only pixel coordinates and a
+    user-confirmed distance are persisted.
+    """
+    if body.image_width < 2 or body.image_height < 2:
+        raise HTTPException(422, "image dimensions must be at least 2 by 2 pixels")
+    if not math.isfinite(body.known_distance_m) or body.known_distance_m <= 0:
+        raise HTTPException(422, "known distance must be a positive finite number")
+    if len(body.scale_points_px) != 2:
+        raise HTTPException(422, "exactly two scale points are required")
+    if not body.polygons_px:
+        raise HTTPException(422, "at least one floor polygon is required")
+    if any(len(polygon) < 3 for polygon in body.polygons_px):
+        raise HTTPException(422, "every floor polygon needs at least three points")
 
-    clean = []
-    for polygon in polygons:
-        if not isinstance(polygon, list) or len(polygon) < 3:
-            raise HTTPException(422, "every floor polygon needs at least three points")
-        converted = []
-        for point in polygon:
-            try:
-                x, y = float(point["x"]), float(point["y"])
-            except (KeyError, TypeError, ValueError) as exc:
-                raise HTTPException(422, "floor coordinates must be finite numbers") from exc
-            if not math.isfinite(x) or not math.isfinite(y):
-                raise HTTPException(422, "floor coordinates must be finite numbers")
-            converted.append({"x": x, "y": y})
-        clean.append(converted)
+    supplied_points = [
+        *body.scale_points_px,
+        body.origin_px,
+        *(point for polygon in body.polygons_px for point in polygon),
+    ]
+    if any(not math.isfinite(point.x) or not math.isfinite(point.y) for point in supplied_points):
+        raise HTTPException(422, "blueprint coordinates must be finite numbers")
+    pixel_distance = math.hypot(
+        body.scale_points_px[1].x - body.scale_points_px[0].x,
+        body.scale_points_px[1].y - body.scale_points_px[0].y,
+    )
+    if pixel_distance <= 1e-6:
+        raise HTTPException(422, "scale points must be distinct")
+    pixels_per_metre = pixel_distance / body.known_distance_m
 
-    all_points = [point for polygon in clean for point in polygon]
+    metric = [[{
+        "x": (point.x - body.origin_px.x) / pixels_per_metre,
+        "y": ((body.origin_px.y - point.y) if body.y_axis_up else (point.y - body.origin_px.y)) / pixels_per_metre,
+    } for point in polygon] for polygon in body.polygons_px]
+    all_points = [point for polygon in metric for point in polygon]
     min_x = min(point["x"] for point in all_points)
     max_x = max(point["x"] for point in all_points)
     min_y = min(point["y"] for point in all_points)
@@ -113,40 +117,52 @@ async def import_metric_blueprint(bundle: UploadFile = File(...)):
     width_m, height_m = max_x - min_x, max_y - min_y
     if width_m <= 1e-6 or height_m <= 1e-6:
         raise HTTPException(422, "floor polygon has zero width or height")
-
-    y_up = document.get("coordinate_system", {}).get("y_axis") == "up"
     normalized = [[{
         "x": round(point["x"] - min_x, 6),
-        "y": round(max_y - point["y"] if y_up else point["y"] - min_y, 6),
-    } for point in polygon] for polygon in clean]
+        "y": round(max_y - point["y"] if body.y_axis_up else point["y"] - min_y, 6),
+    } for point in polygon] for polygon in metric]
 
-    current = serialize(db.q1("SELECT * FROM stores WHERE id=1"))
-    current_map = current.get("map") or {}
-    next_map = {
-        **current_map,
-        "floor_polygons": normalized,
-        "walls": [polygon + [polygon[0]] for polygon in normalized],
-        "blueprint_import": {
-            "schema_version": document.get("schema_version", 1),
-            "source_filename": bundle.filename,
-            "known_distance_m": document.get("scale", {}).get("known_distance_m"),
-        },
-    }
-    db.ex(
-        "UPDATE stores SET width_m=?, height_m=?, map_json=? WHERE id=1",
-        (width_m, height_m, json.dumps(next_map)),
-    )
-    invalidated_calibrations = db.q1(
-        "SELECT COUNT(*) AS total FROM sources WHERE calibration_json IS NOT NULL"
-    )["total"]
-    cleared_placements = db.q1(
-        "SELECT COUNT(*) AS total FROM sources WHERE map_x IS NOT NULL"
-    )["total"]
-    db.ex(
-        "UPDATE sources SET calibration_json=NULL, calibration_revision=calibration_revision+1 "
-        "WHERE calibration_json IS NOT NULL"
-    )
-    db.ex("UPDATE sources SET map_x=NULL, map_y=NULL WHERE map_x IS NOT NULL")
+    con = db.connect()
+    try:
+        current = serialize(dict(con.execute("SELECT * FROM stores WHERE id=1").fetchone()))
+        current_map = current.get("map") or {}
+        next_map = {
+            **current_map,
+            "floor_polygons": normalized,
+            "walls": [polygon + [polygon[0]] for polygon in normalized],
+            "blueprint_trace": {
+                "schema_version": 1,
+                "coordinate_system": {
+                    "units": "meters",
+                    "x_axis": "image-right",
+                    "y_axis": "up" if body.y_axis_up else "image-down",
+                },
+                "source_image": {"width": body.image_width, "height": body.image_height},
+                "scale": {
+                    "pixels_per_meter": pixels_per_metre,
+                    "known_distance_m": body.known_distance_m,
+                    "origin_pixel": body.origin_px.model_dump(),
+                },
+            },
+        }
+        invalidated_calibrations = con.execute(
+            "SELECT COUNT(*) FROM sources WHERE calibration_json IS NOT NULL"
+        ).fetchone()[0]
+        cleared_placements = con.execute(
+            "SELECT COUNT(*) FROM sources WHERE map_x IS NOT NULL"
+        ).fetchone()[0]
+        con.execute(
+            "UPDATE stores SET width_m=?, height_m=?, map_json=? WHERE id=1",
+            (width_m, height_m, json.dumps(next_map)),
+        )
+        con.execute(
+            "UPDATE sources SET calibration_json=NULL, calibration_revision=calibration_revision+1 "
+            "WHERE calibration_json IS NOT NULL"
+        )
+        con.execute("UPDATE sources SET map_x=NULL, map_y=NULL WHERE map_x IS NOT NULL")
+        con.commit()
+    finally:
+        con.close()
     return {
         "store": serialize(db.q1("SELECT * FROM stores WHERE id=1")),
         "polygon_count": len(normalized),
