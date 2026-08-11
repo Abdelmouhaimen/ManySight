@@ -120,7 +120,11 @@ function AnalysisBody({ definition, context, result, loading, error }) {
         const key = String(row[splitKey] ?? "—");
         (groups[key] ||= []).push({ t: row.t, count: row[measures[0]] ?? 0 });
       });
-      const series = Object.entries(groups).map(([label, points]) => ({ label, points }));
+      const sourceNames = Object.fromEntries((context.sources || []).map((source) => [String(source.id), source.name]));
+      const series = Object.entries(groups).map(([label, points]) => ({
+        label: splitKey === "source_id" ? sourceNames[label] || `Source ${label}` : label,
+        points,
+      }));
       return <MultiLineChart series={series} empty="No data in this period." />;
     }
     return <MultiLineChart
@@ -210,7 +214,7 @@ function BuilderModal({ existing, capabilities, zones, onClose, onSaved }) {
           entity_types: [entityType],
           ...(zone ? { zone_ids: [zone.id] } : {}),
         },
-        grouping: { primary: "time", bucket: "0.5s", split_by: [] },
+        grouping: { primary: "time", split_by: [] },
         presentation: "line",
         pinned: existing?.pinned || false,
       };
@@ -315,7 +319,7 @@ export function AnalyticsPage({ notify }) {
       <PageHeader
         eyebrow="Analytics"
         title="Entity counts over time"
-        description="Choose an entity type and, optionally, one zone. Each point counts unique matching track IDs in a processed 0.5-second window; confirmed empty windows are zero and missing samples stay unknown."
+        description="Choose an entity type and, optionally, one zone. Each point is the count submitted for one processed camera frame at its exact timestamp; zero is explicit and neighboring timestamps are never merged."
         actions={
           <>
             <RangeSelect value={rangeSeconds} onChange={setRangeSeconds} />

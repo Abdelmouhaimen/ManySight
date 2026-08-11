@@ -153,7 +153,7 @@ def observation_contract():
             "label": "<entity_type>",
             "value": "number of matching detections in this processed frame, including 0",
             "timestamp": "same timestamp as every detection emitted from the frame",
-            "purpose": "distinguishes an observed zero from a missing/offline sample in 0.5-second presence windows",
+            "purpose": "provides the instantaneous camera/entity-type count at the exact submitted timestamp",
         },
         "representative_point_precedence": [
             "explicit geometry.point_px",

@@ -217,14 +217,14 @@ class StoreLens:
     def submit_detection_frame(self, source_id: int, entity_type: str, count: int,
                                ts: float | None = None, attributes: dict | None = None,
                                observation_id: str | None = None) -> None:
-        """Mark one processed detection frame, including frames with zero matches.
+        """Submit the entity count observed in one processed frame.
 
         Submit this once per inference sample with the same timestamp used by
-        every detection from that frame. StoreLens uses it only as completeness
-        evidence for half-second presence windows: detections still determine
-        identities and zone membership, while this marker distinguishes an
-        observed zero from a missing/offline sample.
+        every detection from that frame. The value, including zero, is the
+        instantaneous camera/entity-type count at that exact timestamp.
         """
+        if count < 0:
+            raise ValueError("detection frame count must be non-negative")
         self.submit_measurement(
             source_id=source_id,
             name="detection_frame_count",
@@ -232,7 +232,7 @@ class StoreLens:
             label=entity_type,
             value_kind="gauge",
             unit="tracks",
-            attributes={"frame_sample": True, "window_s": 0.5, **(attributes or {})},
+            attributes=attributes,
             ts=ts,
             observation_id=observation_id,
         )

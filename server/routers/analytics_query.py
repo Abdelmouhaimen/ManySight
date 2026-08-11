@@ -33,7 +33,6 @@ SPLIT_DIMENSIONS = {"label", "entity_type", "entity_id", "source", "state_label"
 # attribute key instead (checked separately since the key set is open-ended).
 DAY = 86400.0
 MAX_BUCKETS = 500
-ENTITY_COUNT_WINDOW_S = 0.5
 DETECTION_FRAME_COUNT_NAME = "detection_frame_count"
 
 
@@ -290,48 +289,9 @@ def _query_detection(q: QueryIn, since: float, until: float) -> dict:
         return {"shape": "categorical", "dimensions": ["zone_id"], "measures": q.measures, "rows": rows, "metadata": {}}
     if grouping.primary == "time":
         if q.measures == ["active_entities"]:
-            window_s = ENTITY_COUNT_WINDOW_S
-            identity_key = (
-                "CASE COALESCE(identity_scope, 'worker_run') "
-                "WHEN 'workspace' THEN 'workspace:' || track_id "
-                "WHEN 'source' THEN 'source:' || source_id || ':' || track_id "
-                "ELSE 'worker:' || COALESCE(CAST(worker_id AS TEXT), 'source-' || source_id) || ':' || track_id END"
-            )
-            if predicate:
-                identities_by_window = defaultdict(set)
-                for event in db.q(
-                    f"SELECT ts, track_id, identity_scope, source_id, worker_id, attributes "
-                    f"FROM events WHERE {' AND '.join(base_where)} AND track_id IS NOT NULL",
-                    base_args,
-                ):
-                    if not predicate(event["attributes"]):
-                        continue
-                    scope = event.get("identity_scope") or "worker_run"
-                    if scope == "workspace":
-                        key = ("workspace", event["track_id"])
-                    elif scope == "source":
-                        key = ("source", event["source_id"], event["track_id"])
-                    else:
-                        key = ("worker", event.get("worker_id") or f"source-{event['source_id']}", event["track_id"])
-                    identities_by_window[int(event["ts"] // window_s)].add(key)
-                counts_by_window = {
-                    window_id: len(identities) for window_id, identities in identities_by_window.items()
-                }
-            else:
-                count_rows_by_window = db.q(
-                    f"SELECT CAST(ts / ? AS INTEGER) window_id, "
-                    f"COUNT(DISTINCT {identity_key}) active_entities "
-                    f"FROM events WHERE {' AND '.join(base_where)} AND track_id IS NOT NULL "
-                    f"GROUP BY window_id ORDER BY window_id",
-                    [window_s, *base_args],
-                )
-                counts_by_window = {
-                    row["window_id"]: row["active_entities"] for row in count_rows_by_window
-                }
-
-            # A detection proves its own window was processed. Explicit frame
-            # count measurements additionally prove zero-detection windows.
-            # Missing markers remain absent/unknown rather than becoming zero.
+            # A detection-frame measurement is an instantaneous count for one
+            # source and entity type. Preserve its producer timestamp exactly:
+            # there is deliberately no time bucketing or cross-source merging.
             marker_where = ["event_type='measurement'", "name=?", "ts BETWEEN ? AND ?"]
             marker_args = [DETECTION_FRAME_COUNT_NAME, since, until]
             entity_types = filters.get("entity_types") or []
@@ -344,49 +304,72 @@ def _query_detection(q: QueryIn, since: float, until: float) -> dict:
                     marker_where.append(f"{column} IN ({','.join('?' for _ in values)})")
                     marker_args.extend(values)
 
-            marker_rows = [] if predicate else db.q(
-                f"SELECT CAST(ts / ? AS INTEGER) window_id, source_id "
-                f"FROM events WHERE {' AND '.join(marker_where)} GROUP BY window_id, source_id",
-                [window_s, *marker_args],
+            marker_rows = db.q(
+                f"SELECT id, ts, source_id, value FROM events "
+                f"WHERE {' AND '.join(marker_where)} ORDER BY ts, source_id, id",
+                marker_args,
             )
-            expected_sources = set(filters.get("source_ids") or [row["source_id"] for row in marker_rows])
-            marker_sources_by_window = defaultdict(set)
-            for row in marker_rows:
-                marker_sources_by_window[row["window_id"]].add(row["source_id"])
-            complete_windows = {
-                window_id for window_id, source_ids in marker_sources_by_window.items()
-                if expected_sources and expected_sources.issubset(source_ids)
-            }
-            known_windows = sorted(set(counts_by_window) | complete_windows)
-            window_rows = [
-                {"t": window_id * window_s, "active_entities": counts_by_window.get(window_id, 0)}
-                for window_id in known_windows
-            ]
 
-            # For large histories, choose one real half-second result from each
-            # display slice. IDs are never unioned between windows.
-            source_points = len(window_rows)
-            max_points = 5000
-            display_stride = 1
-            if source_points > max_points:
-                display_stride = (source_points + max_points - 1) // max_points
-                window_rows = [
-                    max(window_rows[index:index + display_stride], key=lambda row: row["active_entities"])
-                    for index in range(0, source_points, display_stride)
-                ]
+            # Exact-timestamp detection counts remain useful for historical
+            # workers without frame-count measurements and for filters (zone or
+            # attributes) whose scoped count cannot be read from a whole-frame
+            # marker. Workers use one shared timestamp for a frame's detections.
+            identities_by_sample = defaultdict(set)
+            for event in db.q(
+                f"SELECT ts, track_id, identity_scope, source_id, worker_id, attributes "
+                f"FROM events WHERE {' AND '.join(base_where)} AND track_id IS NOT NULL "
+                f"ORDER BY ts, source_id",
+                base_args,
+            ):
+                if predicate and not predicate(event["attributes"]):
+                    continue
+                scope = event.get("identity_scope") or "worker_run"
+                if scope == "workspace":
+                    identity = ("workspace", event["track_id"])
+                elif scope == "source":
+                    identity = ("source", event["source_id"], event["track_id"])
+                else:
+                    identity = (
+                        "worker",
+                        event.get("worker_id") or f"source-{event['source_id']}",
+                        event["track_id"],
+                    )
+                identities_by_sample[(event["ts"], event["source_id"])].add(identity)
+            detection_counts = {
+                sample: len(identities) for sample, identities in identities_by_sample.items()
+            }
+
+            scoped_count = bool(filters.get("zone_ids") or predicate)
+            marker_samples = {(marker["ts"], marker["source_id"]) for marker in marker_rows}
+            samples = []
+            for marker in marker_rows:
+                sample = (marker["ts"], marker["source_id"])
+                count = detection_counts.get(sample, 0) if scoped_count else int(marker["value"])
+                samples.append((marker["ts"], marker["source_id"], marker["id"], count))
+            for (timestamp, source_id), count in detection_counts.items():
+                if (timestamp, source_id) not in marker_samples:
+                    samples.append((timestamp, source_id, 0, count))
+            samples.sort()
+
+            result_rows = []
+            source_ids = {source_id for _, source_id, _, _ in samples}
+            expose_source = len(source_ids) > 1
+            for timestamp, source_id, _, count in samples:
+                row = {"t": timestamp, "active_entities": count}
+                if expose_source:
+                    row["source_id"] = source_id
+                result_rows.append(row)
             return {
                 "shape": "timeseries",
-                "dimensions": ["t"],
+                "dimensions": ["t", "source_id"] if expose_source else ["t"],
                 "measures": q.measures,
-                "rows": window_rows,
+                "rows": result_rows,
                 "metadata": {
-                    "active_entity_semantics": "distinct scoped track IDs per processed 0.5-second window",
-                    "window_s": window_s,
-                    "zero_semantics": "zero only when every expected source posted a processed-frame marker",
-                    "expected_source_ids": sorted(expected_sources),
-                    "source_points": source_points,
-                    "sampled": source_points > max_points,
-                    "display_gap_s": window_s * display_stride * 1.5,
+                    "active_entity_semantics": "instantaneous camera/entity-type count at each exact producer timestamp",
+                    "timestamp_semantics": "exact producer timestamps; no time bucketing or cross-source aggregation",
+                    "zero_semantics": "zero only when the source explicitly posted a zero detection-frame count",
+                    "source_points": len(result_rows),
+                    "sampled": False,
                 },
             }
 

@@ -31,7 +31,7 @@ def test_time_grouping_returns_buckets(client, calibrated_source):
     assert sum(row["observations"] for row in result["rows"]) == 1
 
 
-def test_time_grouped_active_entities_counts_unique_tracks_per_half_second_window(client, calibrated_source):
+def test_time_grouped_active_entities_preserves_exact_detection_timestamps(client, calibrated_source):
     client.post("/api/v1/observations/batch", json={"observations": [
         make_detection(calibrated_source, "active-early-a", 1000.0, entity_id="a"),
         make_detection(calibrated_source, "active-early-b", 1000.0, entity_id="b"),
@@ -49,8 +49,8 @@ def test_time_grouped_active_entities_counts_unique_tracks_per_half_second_windo
         {"t": 1000.0, "active_entities": 2},
         {"t": 4000.0, "active_entities": 1},
     ]
-    assert result["metadata"]["active_entity_semantics"] == "distinct scoped track IDs per processed 0.5-second window"
-    assert result["metadata"]["window_s"] == 0.5
+    assert result["metadata"]["active_entity_semantics"] == "instantaneous camera/entity-type count at each exact producer timestamp"
+    assert "window_s" not in result["metadata"]
 
 
 def test_time_grouped_active_entities_does_not_accumulate_sequential_track_ids(client, calibrated_source):
@@ -72,50 +72,99 @@ def test_time_grouped_active_entities_does_not_accumulate_sequential_track_ids(c
     assert [row["active_entities"] for row in result["rows"]] == [1, 1, 1]
 
 
-def test_processed_frame_markers_make_zero_known_but_leave_missing_windows_unknown(client, calibrated_source):
+def test_processed_frame_counts_preserve_exact_zero_timestamps(client, calibrated_source):
     client.post("/api/v1/observations/batch", json={"observations": [
         make_measurement(
             calibrated_source, "frame-zero-a", 1000.1, "detection_frame_count", 0,
-            label="person", unit="tracks", attributes={"frame_sample": True, "window_s": 0.5},
+            label="person", unit="tracks",
         ),
         make_measurement(
             calibrated_source, "frame-zero-b", 1001.1, "detection_frame_count", 0,
-            label="person", unit="tracks", attributes={"frame_sample": True, "window_s": 0.5},
+            label="person", unit="tracks",
         ),
     ]})
     response = client.post("/api/v1/analytics/query", json={
         "subject": "detection", "measures": ["active_entities"],
         "filters": {"entity_types": ["person"], "source_ids": [calibrated_source]},
-        "grouping": {"primary": "time", "bucket": "0.5s"},
+        "grouping": {"primary": "time"},
         "range": {"since": 1000, "until": 1002},
     })
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["rows"] == [
-        {"t": 1000.0, "active_entities": 0},
-        {"t": 1001.0, "active_entities": 0},
+        {"t": 1000.1, "active_entities": 0},
+        {"t": 1001.1, "active_entities": 0},
     ]
-    assert result["metadata"]["zero_semantics"].startswith("zero only when")
+    assert result["metadata"]["zero_semantics"].startswith("zero only when the source explicitly")
+    assert "window_s" not in result["metadata"]
 
 
-def test_half_second_window_deduplicates_track_ids(client, calibrated_source):
+def test_frame_count_is_authoritative_at_its_exact_timestamp(client, calibrated_source):
     client.post("/api/v1/observations/batch", json={"observations": [
         make_detection(calibrated_source, "window-a", 1000.1, entity_id="a"),
-        make_detection(calibrated_source, "window-a-repeat", 1000.2, entity_id="a"),
-        make_detection(calibrated_source, "window-b", 1000.4, entity_id="b"),
+        make_detection(calibrated_source, "window-a-repeat", 1000.1, entity_id="a"),
+        make_detection(calibrated_source, "window-b", 1000.1, entity_id="b"),
         make_measurement(
-            calibrated_source, "window-marker", 1000.1, "detection_frame_count", 2,
-            label="person", unit="tracks", attributes={"frame_sample": True, "window_s": 0.5},
+            calibrated_source, "window-marker", 1000.1, "detection_frame_count", 7,
+            label="person", unit="tracks",
         ),
     ]})
     response = client.post("/api/v1/analytics/query", json={
         "subject": "detection", "measures": ["active_entities"],
         "filters": {"entity_types": ["person"], "source_ids": [calibrated_source]},
-        "grouping": {"primary": "time", "bucket": "0.5s"},
+        "grouping": {"primary": "time"},
         "range": {"since": 1000, "until": 1001},
     })
     assert response.status_code == 200, response.text
-    assert response.json()["rows"] == [{"t": 1000.0, "active_entities": 2}]
+    assert response.json()["rows"] == [{"t": 1000.1, "active_entities": 7}]
+
+
+def test_close_frame_timestamps_are_not_merged(client, calibrated_source):
+    client.post("/api/v1/observations/batch", json={"observations": [
+        make_measurement(
+            calibrated_source, "close-frame-a", 1000.10, "detection_frame_count", 1,
+            label="person", unit="tracks",
+        ),
+        make_measurement(
+            calibrated_source, "close-frame-b", 1000.20, "detection_frame_count", 2,
+            label="person", unit="tracks",
+        ),
+    ]})
+    response = client.post("/api/v1/analytics/query", json={
+        "subject": "detection", "measures": ["active_entities"],
+        "filters": {"entity_types": ["person"], "source_ids": [calibrated_source]},
+        "grouping": {"primary": "time", "bucket": "1h"},
+        "range": {"since": 1000, "until": 1001},
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["rows"] == [
+        {"t": 1000.1, "active_entities": 1},
+        {"t": 1000.2, "active_entities": 2},
+    ]
+
+
+def test_same_timestamp_frame_count_observations_are_not_summed(client, calibrated_source):
+    client.post("/api/v1/observations/batch", json={"observations": [
+        make_measurement(
+            calibrated_source, "same-time-a", 1000.1, "detection_frame_count", 1,
+            label="person", unit="tracks",
+        ),
+        make_measurement(
+            calibrated_source, "same-time-b", 1000.1, "detection_frame_count", 2,
+            label="person", unit="tracks",
+        ),
+    ]})
+    response = client.post("/api/v1/analytics/query", json={
+        "subject": "detection", "measures": ["active_entities"],
+        "filters": {"entity_types": ["person"], "source_ids": [calibrated_source]},
+        "grouping": {"primary": "time"},
+        "range": {"since": 1000, "until": 1001},
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["rows"] == [
+        {"t": 1000.1, "active_entities": 1},
+        {"t": 1000.1, "active_entities": 2},
+    ]
 
 
 def test_zone_grouping(client, calibrated_source):

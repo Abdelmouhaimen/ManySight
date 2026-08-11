@@ -17,10 +17,10 @@ A stream of `detection` observations with a stable `entity_id` and spatial evide
 For standing floor traffic, use the person's **feet** (`geometry.point_px`, or let
 StoreLens pick foot/ankle keypoints or the bbox bottom-center — see precedence below).
 Post 1–2 per second per entity for ordinary spatial analytics; don't post every
-camera frame at 30fps. For zero-capable 0.5-second presence windows, run inference
-at 4 Hz or faster and call `submit_detection_frame` once per sample, including
-empty frames, with the same timestamp as that sample's detections. Missing frame
-markers mean unknown, never zero.
+camera frame at 30fps. For zero-capable presence series, call
+`submit_detection_frame` once per processed sample, including empty frames, with the
+same timestamp as that sample's detections. The submitted count is shown at that exact
+timestamp; neighboring samples and different cameras are not merged.
 
 Never send `zone_id`/`zone`, and never emit an enter/exit pair or a computed dwell value
 yourself — StoreLens assigns the zone from geometry and derives visits/dwell/flow from

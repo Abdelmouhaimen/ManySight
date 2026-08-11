@@ -7,7 +7,7 @@ floor plan and derives the heatmap, presence, visits, and dwell itself — this
 worker never computes a heatmap or a zone.
 
 Usage:
-    python examples/heatmap_tracker.py --source 1 [--url http://localhost:8000] [--fps 4]
+    python examples/heatmap_tracker.py --source 1 [--url http://localhost:8000] [--fps 2]
 """
 import sys
 import time
@@ -50,8 +50,8 @@ def motion_detector():
 
 def main():
     ap = parse_args_base(__doc__)
-    ap.add_argument("--fps", type=float, default=4.0,
-                    help="inference publication rate; 4 Hz reliably covers 0.5 s windows")
+    ap.add_argument("--fps", type=float, default=2.0,
+                    help="inference publication rate (default: 2 samples/s)")
     args = ap.parse_args()
     sl = StoreLens(args.url, args.api_key)
     src = sl.source(args.source)
@@ -67,8 +67,8 @@ def main():
 
     sl.register_job(f"Heatmap – {src['name']}", "person feet positions and processed-frame samples",
                     source_ids=[src["id"]], event_types=["detection", "measurement"])
-    print("Contract: this worker sends detections plus a zero-capable processed-frame "
-          "sample — StoreLens derives zones, presence windows, heatmaps, and dwell.")
+    print("Contract: this worker sends detections plus an exact-timestamp frame count, "
+          "including zero — StoreLens derives zones, presence, heatmaps, and dwell.")
     sl.register_worker("heatmap-tracker", version="1")
     cap = sl.open_capture(src, args.connection)
     tracker = CentroidTracker(max_distance=90)
