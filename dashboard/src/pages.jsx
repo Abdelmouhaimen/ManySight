@@ -541,7 +541,8 @@ export function SourcesPage({ liveTick = 0, notify }) {
     [loading, setLoading] = useState(true),
     [error, setError] = useState(null),
     [filter, setFilter] = useState("all"),
-    [showSourceCreator, setShowSourceCreator] = useState(false);
+    [showSourceCreator, setShowSourceCreator] = useState(false),
+    [editingSource, setEditingSource] = useState(null);
   const load = async () => {
     try {
       setSources(await api.get("/sources"));
@@ -661,6 +662,9 @@ export function SourcesPage({ liveTick = 0, notify }) {
                       <span className="badge-dot" />
                       {source.observation_status}
                     </Badge>
+                    <button className="icon-button" onClick={() => setEditingSource(source)} aria-label={`Edit ${source.name}`}>
+                      <Settings2 size={15} />
+                    </button>
                     <button className="icon-button danger" onClick={() => deleteSource(source)} aria-label={`Delete ${source.name}`}>
                       <Trash2 size={15} />
                     </button>
@@ -728,6 +732,17 @@ export function SourcesPage({ liveTick = 0, notify }) {
             setShowSourceCreator(false);
             await load();
             notify?.("Source created", `${source.name} is ready to place and calibrate.`);
+          }}
+        />
+      )}
+      {editingSource && (
+        <SourceEditorModal
+          source={editingSource}
+          onClose={() => setEditingSource(null)}
+          onSaved={async (source) => {
+            setEditingSource(null);
+            await load();
+            notify?.("Source updated", `${source.name} connection settings were saved.`);
           }}
         />
       )}

@@ -890,11 +890,19 @@ export function LocalSourcePreview({ source }) {
   );
 }
 
-export function SourceEditorModal({ onClose, onSaved }) {
+export function SourceEditorModal({ source = null, onClose, onSaved }) {
+  const existing = source?.connection || {};
   const [form, setForm] = useState({
-    name: "Looped hallway camera",
-    kind: "http",
-    local_secret_ref: "STORELENS_DEMO_STREAM_0",
+    name: source?.name || "Camera",
+    kind: source?.kind || "http",
+    connection_management: source?.connection_management || "storelens_managed",
+    local_secret_ref: source?.locator?.local_secret_ref || "",
+    device_index: existing.device_index ?? 0,
+    host: existing.host || "", port: existing.port ?? 554,
+    path: existing.path || "/live", transport: existing.transport || "tcp",
+    url: existing.url || "", auth_type: existing.auth_type || "none",
+    file_path: source?.kind === "file" ? existing.path || "" : "",
+    username: "", password: "", clear_credentials: false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -903,16 +911,28 @@ export function SourceEditorModal({ onClose, onSaved }) {
     setError("");
     try {
       if (!form.name.trim()) throw new Error("Enter a source name.");
-      if (!form.local_secret_ref.trim()) throw new Error("Enter a safe local reference.");
-      const source = await api.post("/sources", {
+      const managed = form.connection_management === "storelens_managed";
+      if (!managed && !form.local_secret_ref.trim()) throw new Error("Enter a local secret reference.");
+      let connection = {};
+      if (managed && form.kind === "webcam") connection = { device_index: Number(form.device_index) };
+      if (managed && form.kind === "rtsp") connection = { host: form.host.trim(), port: Number(form.port), path: form.path.trim(), transport: form.transport };
+      if (managed && form.kind === "http") connection = { url: form.url.trim(), auth_type: form.auth_type };
+      if (managed && form.kind === "file") connection = { path: form.file_path.trim() };
+      const replacing = form.username.length > 0 || form.password.length > 0;
+      if (replacing && (!form.username || !form.password)) throw new Error("Enter both username and password to replace credentials.");
+      const payload = {
         name: form.name.trim(),
         kind: form.kind,
         connection_mode: "agent_local",
-        locator: { local_secret_ref: form.local_secret_ref.trim() },
+        connection_management: form.connection_management,
+        connection,
+        locator: managed ? {} : { local_secret_ref: form.local_secret_ref.trim() },
         capabilities: ["video"],
-        metadata: { demo: true },
-      });
-      await onSaved(source);
+      };
+      if (replacing) payload.credentials = { username: form.username, password: form.password };
+      if (source && form.clear_credentials) payload.clear_credentials = true;
+      const saved = source ? await api.put(`/sources/${source.id}`, payload) : await api.post("/sources", payload);
+      await onSaved(saved);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -921,12 +941,12 @@ export function SourceEditorModal({ onClose, onSaved }) {
   };
   return (
     <Modal
-      title="Add camera source"
+      title={source ? "Edit camera source" : "Add camera source"}
       onClose={onClose}
       footer={
         <>
           <button className="button button-secondary" onClick={onClose}>Cancel</button>
-          <button className="button button-dark" onClick={save} disabled={saving}><Save size={14} /> {saving ? "Creating…" : "Create source"}</button>
+          <button className="button button-dark" onClick={save} disabled={saving}><Save size={14} /> {saving ? "Saving…" : source ? "Save source" : "Create source"}</button>
         </>
       }
     >
@@ -937,7 +957,7 @@ export function SourceEditorModal({ onClose, onSaved }) {
         </label>
         <label className="field">
           <span>Video type</span>
-          <select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value })}>
+          <select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value, connection_management: event.target.value === "webrtc" ? "external_secret" : form.connection_management })}>
             <option value="http">HTTP / MJPEG</option>
             <option value="rtsp">RTSP</option>
             <option value="webrtc">WebRTC</option>
@@ -946,13 +966,43 @@ export function SourceEditorModal({ onClose, onSaved }) {
           </select>
         </label>
         <label className="field">
-          <span>Local stream reference</span>
-          <input value={form.local_secret_ref} onChange={(event) => setForm({ ...form, local_secret_ref: event.target.value })} />
+          <span>Credential management</span>
+          <select value={form.connection_management} onChange={(event) => setForm({ ...form, connection_management: event.target.value })}>
+            <option value="storelens_managed" disabled={form.kind === "webrtc"}>Encrypted in StoreLens</option>
+            <option value="external_secret">External worker secret</option>
+          </select>
         </label>
+        {form.connection_management === "external_secret" && <label className="field field-full">
+          <span>Local secret reference</span>
+          <input value={form.local_secret_ref} onChange={(event) => setForm({ ...form, local_secret_ref: event.target.value })} placeholder="CAMERA_STREAM_URL" />
+        </label>}
+        {form.connection_management === "storelens_managed" && form.kind === "webcam" && <label className="field field-full">
+          <span>Device index</span>
+          <input type="number" min="0" value={form.device_index} onChange={(event) => setForm({ ...form, device_index: event.target.value })} />
+        </label>}
+        {form.connection_management === "storelens_managed" && form.kind === "rtsp" && <>
+          <label className="field"><span>Host or IP</span><input value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} placeholder="192.168.1.20" /></label>
+          <label className="field"><span>Port</span><input type="number" min="1" max="65535" value={form.port} onChange={(event) => setForm({ ...form, port: event.target.value })} /></label>
+          <label className="field"><span>Path</span><input value={form.path} onChange={(event) => setForm({ ...form, path: event.target.value })} placeholder="/live" /></label>
+          <label className="field"><span>Transport</span><select value={form.transport} onChange={(event) => setForm({ ...form, transport: event.target.value })}><option value="tcp">TCP</option><option value="udp">UDP</option></select></label>
+        </>}
+        {form.connection_management === "storelens_managed" && form.kind === "http" && <>
+          <label className="field field-full"><span>HTTP / MJPEG URL</span><input value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} placeholder="http://camera.local/stream.mjpg" /></label>
+          <label className="field"><span>Authentication</span><select value={form.auth_type} onChange={(event) => setForm({ ...form, auth_type: event.target.value })}><option value="none">None</option><option value="basic">Basic</option></select></label>
+        </>}
+        {form.connection_management === "storelens_managed" && form.kind === "file" && <label className="field field-full"><span>Worker-local file path</span><input value={form.file_path} onChange={(event) => setForm({ ...form, file_path: event.target.value })} /></label>}
+        {form.connection_management === "storelens_managed" && ["rtsp", "http"].includes(form.kind) && (form.kind !== "http" || form.auth_type === "basic") && <>
+          <label className="field"><span>Username {source && "(replace)"}</span><input autoComplete="off" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label>
+          <label className="field"><span>Password {source && "(replace)"}</span><input type="password" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
+        </>}
+        {form.connection_management === "storelens_managed" && source?.credential_status?.configured && <>
+          <div className="field field-full form-note">Credentials are configured. Leave replacement fields blank to preserve them.</div>
+          <label className="field field-full"><span><input type="checkbox" checked={form.clear_credentials} onChange={(event) => setForm({ ...form, clear_credentials: event.target.checked })} /> Explicitly clear saved credentials</span></label>
+        </>}
       </div>
       <p className="form-note">
-        StoreLens saves this non-secret reference, not a URL or credentials. For this
-        demo the worker resolves STORELENS_DEMO_STREAM_0 on the same machine.
+        StoreLens never opens or proxies this feed. Managed credentials are encrypted and
+        available only to explicitly authorized workers; normal source views stay secret-free.
       </p>
       {error && <div className="form-error" role="alert">{error}</div>}
     </Modal>

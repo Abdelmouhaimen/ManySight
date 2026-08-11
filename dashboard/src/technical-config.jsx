@@ -36,7 +36,7 @@ export function TechnicalConfig({ notify }) {
         <div className="agent-contract">
           <div className="agent-flow" aria-label="Analysis workflow">
             {[
-              ["1", "Register", "Create a logical source without camera credentials"],
+              ["1", "Register", "Create a managed or external-secret logical source"],
               [
                 "2",
                 "Inspect",
@@ -67,8 +67,8 @@ export function TechnicalConfig({ notify }) {
               </Badge>
               <ul>
                 <li>
-                  Register and inspect non-secret logical source metadata through
-                  the API or MCP.
+                  Register and inspect safe logical source metadata through the
+                  API or MCP; authorized workers can resolve managed connections.
                 </li>
                 <li>
                   Choose or write a classifier/tracker worker for an approved
@@ -90,16 +90,16 @@ export function TechnicalConfig({ notify }) {
               </Badge>
               <ul>
                 <li>
-                  StoreLens never subscribes to a webcam or RTSP feed and never
-                  stores camera credentials.
+                  StoreLens never subscribes to or proxies a webcam or RTSP feed;
+                  managed credentials stay encrypted and require privileged resolution.
                 </li>
                 <li>
                   A job marked active is registration metadata, not proof that
                   its worker is alive.
                 </li>
                 <li>
-                  Source access, model runtime, and credentials must exist where
-                  the worker runs.
+                  Source reachability and model runtime must exist where the worker
+                  runs; resolved credentials must remain in worker memory.
                 </li>
                 <li>
                   Outputs require sample-based validation before operational
