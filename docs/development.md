@@ -1,0 +1,105 @@
+# Development and deployment
+
+## Prerequisites and installation
+
+StoreLens currently targets Python 3.11+ and Node.js 20+. From the repository root:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt -r requirements-test.txt
+npm install --prefix dashboard
+npm run build --prefix dashboard
+```
+
+On macOS or Linux use `source .venv/bin/activate`. OpenCV is included because the
+Python SDK and public camera examples can open video; the platform server itself does
+not perform computer vision.
+
+## Run the platform
+
+```powershell
+python -m uvicorn server.app:app --host 127.0.0.1 --port 8000
+```
+
+The server requires `dashboard/dist`, which is produced by the dashboard build. On
+macOS or Linux, `./run.sh` is a convenience wrapper that binds to `0.0.0.0` and reads
+the optional `PORT` variable.
+
+For dashboard development, run the API and Vite separately:
+
+```powershell
+npm run dev --prefix dashboard
+```
+
+The endpoint registry in `config/endpoints.json` defines local and hosted profiles.
+`GET /api/v1/platform-config` returns the active public URLs without exposing the
+registry file path.
+
+## Configuration
+
+| Variable | Purpose |
+|---|---|
+| `STORELENS_DATA` | Data directory; defaults to `./data` and contains `storelens.db`. |
+| `STORELENS_API_KEY` | Optional API key for `/api/*`; clients normally send `X-API-Key`. Browser SSE and protected media URLs use the compatibility query parameter. |
+| `STORELENS_PUBLIC_READS` | Allows unauthenticated read requests when true; credential resolution remains protected. |
+| `STORELENS_CREDENTIAL_KEY` | URL-safe base64 encoding of exactly 32 random bytes for managed credential encryption. |
+| `STORELENS_CREDENTIAL_ACCESS_KEY` | Header-only key for privileged source-connection resolution; falls back to the API key if omitted. |
+| `STORELENS_ALERT_POLL_INTERVAL_S` | Periodic alert evaluation interval; defaults to 15 seconds. |
+| `STORELENS_ENDPOINT_CONFIG` | Optional path to an endpoint registry JSON file. |
+| `STORELENS_ENDPOINT_PROFILE` | Endpoint profile name; defaults to the registry's active profile. |
+| `STORELENS_PUBLIC_URL` | Public platform URL advertised by discovery endpoints. |
+| `STORELENS_PUBLIC_MCP_URL` | Public Streamable HTTP MCP URL. |
+| `STORELENS_CORS_ORIGINS` | Comma-separated browser origins. |
+| `STORELENS_URL` | Platform base URL used by the MCP process. |
+| `STORELENS_REST_URL` | Optional REST-base override used by MCP. |
+| `STORELENS_SKILLS` | Optional MCP skill-directory override. |
+| `STORELENS_MCP_TRANSPORT` | `stdio` (default) or `streamable-http`. |
+| `STORELENS_MCP_HOST` / `STORELENS_MCP_PORT` | Streamable HTTP bind settings; defaults to `127.0.0.1:8001`. |
+| `STORELENS_MCP_ALLOWED_HOSTS` / `STORELENS_MCP_ALLOWED_ORIGINS` | Streamable HTTP host/origin allowlists. |
+
+Do not place secrets in tracked files or command-line query parameters. The dashboard
+uses a query-string API key only where browser APIs cannot attach a header; avoid this
+compatibility path for ordinary clients because URLs are more likely to be logged. An
+API key is optional rather than a complete production authentication system; deployments are
+responsible for TLS, network controls, key rotation, backups, and process isolation.
+
+## MCP transports
+
+Local clients normally launch `python mcp_server/server.py` over stdio. To run the
+separate Streamable HTTP service:
+
+```powershell
+$env:STORELENS_MCP_TRANSPORT = "streamable-http"
+$env:STORELENS_MCP_HOST = "127.0.0.1"
+$env:STORELENS_MCP_PORT = "8001"
+python mcp_server/server.py
+```
+
+Configure authentication and allowed hosts/origins before exposing that service beyond
+the loopback interface.
+
+## Tests and validation
+
+```powershell
+python -m pytest -q
+npm run build --prefix dashboard
+```
+
+There is no configured repository-wide formatter, linter, static type checker, or
+documentation build at present. The test suite uses temporary databases and restores
+environment state through `tests/conftest.py`.
+
+After starting the server, verify `/`, `/docs`, `/openapi.json`,
+`/api/v1/platform-config`, and `/api/v1/health`. `scripts/smoke_test.sh` is a macOS/Linux
+API smoke check for a running development server.
+
+## Demo data and local video
+
+`python scripts/seed_demo.py` replaces workspace, geometry, sources, alert rules,
+historical alerts, and non-migrated analyses with synthetic data, then adds synthetic
+observation history and jobs. It is destructive to the selected `STORELENS_DATA`
+database and must not be used against retained data.
+
+`demo/loop_video_stream.py` loops a local video as an MJPEG endpoint for development.
+It is not a camera gateway or a required StoreLens service. See `demo/README.md`.

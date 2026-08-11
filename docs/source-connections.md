@@ -4,6 +4,10 @@ StoreLens coordinates source access but is not a video proxy. A worker running w
 camera or file is reachable opens the source and submits observations. The server never
 connects to the feed.
 
+A `Source` is the logical device plus non-secret connection configuration. A
+`Credential` is separately protected authentication material. Normal source discovery
+returns the former and only a redacted credential-status summary of the latter.
+
 ## Two independent choices
 
 `connection_mode` describes where the worker runs (`agent_local` or `edge_gateway`).
@@ -17,6 +21,10 @@ connects to the feed.
 Supported managed configurations are webcam `device_index`; RTSP host/port/path,
 transport, and optional username/password; HTTP(S)/MJPEG URL with optional Basic auth;
 and a worker-local file path. URLs containing embedded user information are rejected.
+
+Managed WebRTC, sensor, and custom connections are not implemented. Those source kinds
+can use external-secret configuration where a worker-specific integration understands
+the referenced value.
 
 ## Deployment keys
 
@@ -39,13 +47,30 @@ Edits preserve credentials when the `credentials` field is omitted, replace them
 new credentials object is supplied, and remove them only with `clear_credentials: true`
 or a deliberate switch to external management.
 
+Back up the encryption key separately from the SQLite database. A database backup
+without its matching key cannot recover managed credentials; storing the key only beside
+the database defeats the intended separation. The repository does not currently include
+an automated key-rotation command.
+
 ## Worker resolution
 
 The Python SDK resolves capture input in this order:
 
 1. explicit `local_connection` passed by worker code;
-2. privileged StoreLens-managed resolution;
+2. a managed webcam's public device index, or privileged managed resolution for other kinds;
 3. an external `local_secret_ref` environment value.
 
 Set `STORELENS_CREDENTIAL_ACCESS_KEY` only for workers that are authorized to resolve
 managed connections. Never log the resolution response or assembled camera URL.
+
+The SDK's normal worker flow is:
+
+```python
+client = StoreLens(platform_url, api_key=api_key)
+source = client.source(source_id)
+capture = client.open_capture(source)
+```
+
+An explicit `local_connection` remains available for development and integration
+overrides. `STORELENS_SOURCE_CONNECTION` is accepted by the example argument parser as
+such an override; it is not the preferred managed-source configuration mechanism.

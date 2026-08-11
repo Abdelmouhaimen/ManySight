@@ -1,7 +1,7 @@
 # ADR 0001: Observe locally, derive centrally
 
 Date: 2026-08-03
-Status: implemented (this redesign)
+Status: accepted and implemented
 
 ## Context
 
@@ -106,14 +106,9 @@ not a second write path that could drift from it.
 
 ## Consequences
 
-- Accepted: two generations of ingestion contract coexist in one table
-  indefinitely (or until a future migration removes the legacy path). This is
-  the deliberate lowest-risk migration the redesign asked for — no data reset,
-  no forced rewrite of historical rows.
-- Accepted: the dashboard's Setup area still exposes `Sources` as a separate
-  top-level tab rather than being folded into a single consolidated "Setup"
-  section — a lower-risk choice under this change's scope than restructuring
-  working navigation.
+- Accepted: two generations of ingestion contract coexist in one table until a
+  deliberate migration removes the legacy path. This avoids a data reset or
+  forced rewrite of historical rows.
 - Known gap: there is no dashboard UI yet to create an `analysis_condition`
   alert rule (REST/MCP only) — the alert *model* is unified, but the rule
   builder UI wasn't extended to the general case in this pass.

@@ -1,12 +1,12 @@
 # StoreLens skills
 
-Playbooks that teach a coding agent (Codex) how to run analyses on the platform.
+Playbooks that teach a coding agent how to run analyses on the platform.
 Each folder has a `SKILL.md`: when to use it, the exact MCP/REST calls, observation
 conventions, and a runnable worker-script template.
 
 They are discoverable two ways:
-- **In-repo**: Codex reads `AGENTS.md`, which indexes this folder.
-- **Over MCP**: the `list_skills` / `get_skill` tools serve these files, so Codex can
+- **In-repo**: compatible agents read `AGENTS.md`, which indexes this folder.
+- **Over MCP**: the `list_skills` / `get_skill` tools serve these files, so an agent can
   follow them even when working outside this repository.
 
 | skill | purpose |

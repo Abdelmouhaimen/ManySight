@@ -9,6 +9,10 @@ saved-analysis catalogue.
 Run once (server may be running or not — writes the same SQLite DB):
     python scripts/seed_demo.py
 Then open http://localhost:8000 — every tab is populated.
+
+Warning: this development utility replaces the workspace map, zones, sources,
+alert rules, historical alerts, and non-migrated saved analyses in STORELENS_DATA.
+Use a disposable database.
 """
 import json
 import os

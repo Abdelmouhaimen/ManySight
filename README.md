@@ -1,192 +1,207 @@
-# StoreLens · ManySight dashboard POC
+# StoreLens
 
-**The working camera-to-insight POC behind the ManySight physical-space intelligence dashboard.**
+StoreLens is intended to be an open-source platform for turning observations from cameras and
+sensors into spatial and temporal analytics for physical spaces. It stores source
+configuration and mapped geometry, accepts raw observations from local workers,
+projects spatial evidence into a floor plan, and derives visits, dwell, occupancy,
+transitions, analyses, and alerts.
 
-StoreLens provides the POC infrastructure for configurable video intelligence across
-stores, schools, workplaces, warehouses, and other physical spaces: logical sources, a floor
-plan with named zones, floor and named-plane pixel→meter homographies, per-camera decision
-ROIs, a generic observation stream, analytics and alerts. It deliberately contains
-**zero hardcoded CV logic**. The *analysis* half is an AI coding agent (OpenAI **Codex**,
-or any MCP client): it looks at your cameras, picks models, writes worker scripts, runs
-them, and submits observations back — guided by the **skills** shipped in this repo and
-served over MCP.
+**StoreLens** is the platform, REST API, SDK, and MCP integration. **ManySight** is
+the bundled web dashboard. The dashboard name is retained as a user-interface
+brand; the repository and API use StoreLens terminology.
 
-**Observe locally, derive centrally.** A worker submits only three kinds of raw
-observation — `detection`, `measurement`, `state` — and never resolves a zone or computes
-dwell, occupancy, movement, or a state change; StoreLens derives all of that itself. See
-[`docs/adr/0001-observation-contract.md`](docs/adr/0001-observation-contract.md) for why.
+> **Release status:** this repository is under active development. It currently
+> uses SQLite, represents mapped surfaces with planar homographies, and relies on
+> external worker processes for inference. It does not yet contain an open-source
+> license; see [License](#license).
 
-Camera access is deliberately worker-local. StoreLens never opens or proxies a feed.
-Sources can use encrypted StoreLens-managed credentials or retain an external worker
-secret reference. In both modes, workers open the webcam, RTSP/HTTP stream, or file on
-the device/edge gateway where they run and send only observations over HTTPS.
+## What StoreLens does
 
-```
- ┌──────────────┐   RTSP/HTTP/WebRTC/…   ┌─────────────────────────────┐
- │   cameras    │ ─────────────────────▶ │  workers (written by Codex)  │
- └──────────────┘                        │  detect · track · classify   │
-        ▲  source metadata, map,         └──────────────┬──────────────┘
-        │  map, zones, homography                       │ detection/measurement/state
- ┌──────┴───────────────── MCP + REST ────────────────▼──────────────┐
- │                        StoreLens server                            │
- │  Cameras · Space Map (walls/zones/calibration) · Observations      │
- │  Derived analytics (visits/dwell/occupancy/flow/states) · Alerts   │
- └──────────────────────────────┬────────────────────────────────────┘
-                                │ SSE + charts
-                        ┌───────▼────────┐          ┌────────────┐
-                        │  Analytics UI   │          │ n8n / hooks │
-                        └────────────────┘          └────────────┘
-```
+- Registers camera, video, file, and sensor sources with managed or external-secret
+  connection configuration.
+- Stores a metric floor plan, zones, camera placement, floor calibrations,
+  projection surfaces, and per-camera zone views.
+- Accepts schema-v2 `detection`, `measurement`, and `state` observations.
+- Assigns zones and derives visits, dwell, occupancy, transitions, state intervals,
+  saved analyses, and alerts from those observations.
+- Exposes a web dashboard, REST/OpenAPI API, Python worker SDK, and MCP server.
 
-## Quickstart
+StoreLens does not prescribe a computer-vision model or camera vendor, treat
+anonymous tracker IDs as verified identities, infer cross-camera identity, proxy
+camera feeds through the platform server, or run arbitrary worker code inside the
+server process.
 
-```bash
-pip install -r requirements.txt
-npm install --prefix dashboard
-npm run build --prefix dashboard
-python scripts/seed_demo.py            # optional: fully populated demo store
-uvicorn server.app:app --port 8000
-```
+## Architecture
 
-Open **http://localhost:8000** — six operational sections:
-
-1. **Dashboard** — live current-value cards (active entities, latest measurements, current states), tracked visits, activity map, pinned analyses, and recent reviewable signals.
-2. **Analytics** — a user-curated catalogue of saved analyses (a subject + measures + filters + grouping — never a chart definition) rendered from the unified analytics query engine. Users add them from a capability-aware builder; agents save them over MCP.
-3. **Review** — human review queue with new/in-review/resolved/dismissed states and notes.
-4. **Observations** — every raw detection/measurement/state workers submitted: filterable, paginated, with in-page documentation of each column, kind, and the enrichment pipeline.
-5. **Sources** — logical source provenance, observation freshness, event volume, and heartbeat-backed worker state.
-6. **Setup** — workspace type, native floor-map editor, global polygon zones, source placement/FOV, stored geometry revisions, worker state, thresholds, API settings, and agent contract.
-
-Live demo motion without any camera:
-
-```bash
-python examples/simulate_shoppers.py --shoppers 6 --minutes 10
-```
-
-## Connect Codex
-
-Add the MCP server to `~/.codex/config.toml` (see `codex.config.example.toml`):
-
-```toml
-[mcp_servers.storelens]
-command = "python"
-args = ["/path/to/repo/mcp_server/server.py"]
-env = { STORELENS_URL = "http://localhost:8000" }
-```
-
-For managed source credentials, configure two independent deployment secrets:
+The core rule is **observe locally, derive centrally**:
 
 ```text
-STORELENS_CREDENTIAL_KEY=<URL-safe base64 encoding of exactly 32 random bytes>
-STORELENS_CREDENTIAL_ACCESS_KEY=<strong key used only by authorized workers/MCP clients>
+Camera / video / sensor
+        |
+        v
+local worker (capture, inference, tracking)
+        |
+        v
+raw detection / measurement / state observations
+        |
+        v
+StoreLens
+  geometry enrichment -> zone assignment -> temporal derivation
+        |
+        v
+analytics / alerts / ManySight dashboard
 ```
 
-The first key encrypts credentials at rest with AES-256-GCM and is never generated or
-stored by StoreLens. The second protects the explicit
-`GET /api/v1/sources/{id}/connection` resolution endpoint. Normal source API responses,
-the dashboard, and ordinary MCP discovery never return usernames or passwords. Set
-`STORELENS_CREDENTIAL_ACCESS_KEY` in the MCP environment only when that MCP client is
-authorized to launch local workers. See [`docs/source-connections.md`](docs/source-connections.md).
+Workers open sources where the device or stream is reachable. They submit direct
+evidence, not StoreLens-owned results: no canonical zone IDs, entry/exit events,
+dwell, occupancy, transitions, state changes, or dashboard aggregates. StoreLens
+records the geometry revisions used at ingestion and derives higher-level results.
 
-Then ask Codex things like:
+Read [Architecture](docs/architecture.md) and the
+[observation-contract decision](docs/adr/0001-observation-contract.md) for details.
 
-> *"Measure dwell time of men vs women around the checkout and put it on my dashboard."*
+## Quick start
 
-Codex will: `get_skill("storelens-platform")` → `list_skills()` → load the closest recipe →
-`list_sources()` / `create_source(...)` → inspect the camera locally → read
-`get_store_map()` and its zone views/planes →
-`register_job(...)` → write, register, and run a worker (see `examples/`) →
-`submit_observations(...)` → `create_analysis(...)` → the card appears in **Analytics**.
-The full agent contract is in [`AGENTS.md`](AGENTS.md); recipes are in
-[`skills/`](skills/README.md).
+Prerequisites are Python 3.11+ and Node.js 20+.
 
-## The observation contract (what makes it multi-purpose)
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt -r requirements-test.txt
+npm install --prefix dashboard
+npm run build --prefix dashboard
+python -m uvicorn server.app:app --host 127.0.0.1 --port 8000
+```
 
-Workers submit raw observations — what the model saw, never computed aggregates — as
-exactly one of three kinds. The platform preserves the model evidence and enriches each
-row (bbox/keypoints/mask → representative point → selected-plane projection → zone-view
-or map assignment) and **derives** every metric server-side, so numbers stay replayable
-and explainable:
+On macOS or Linux, activate the environment with `source .venv/bin/activate`.
+The built dashboard is served by FastAPI, so build it before importing
+`server.app` or starting the server.
 
-| you submit | the platform derives |
+Once running:
+
+| Interface | URL |
 |---|---|
-| `detection` + `geometry.point_px` + optional `label`/`entity_type` | floor heatmap, presence, and visit/dwell/flow — filterable/comparable by class |
-| `measurement` + `name` + `value` (+ `value_kind`) | classifier population curve, queue length, any numeric trend — never sum a `gauge` sample yourself |
-| `state` + `name` + `label`, sent on every sample including repeats | state timelines, coalesced intervals, derived durations, duration alerts |
-| any observation + `attributes` | group-by splits in Analytics (e.g. dwell by gender) |
-| `create_alert_rule` + `webhook_url` (legacy kinds, or the general `analysis_condition`) | toasts, alert log, n8n workflows — evaluated on a periodic timer, not only on ingestion |
-| `create_analysis` (subject + measures + filters + grouping) | a live card in Analytics, optionally pinned to Dashboard |
+| ManySight dashboard | <http://127.0.0.1:8000/> |
+| Interactive API | <http://127.0.0.1:8000/docs> |
+| OpenAPI schema | <http://127.0.0.1:8000/openapi.json> |
+| Health | <http://127.0.0.1:8000/api/v1/health> |
+| Runtime endpoint configuration | <http://127.0.0.1:8000/api/v1/platform-config> |
+| Agent guide | <http://127.0.0.1:8000/agent.md> |
 
-Never send `zone_id`/`zone`, and never submit the retired derived kinds `zone_enter`/
-`zone_exit`/`zone_dwell`/`state_change`/`count` — `POST /observations/batch` rejects them
-per-item with `legacy_derived_observation`. The older `POST /events` contract with those
-kinds still exists as a documented compatibility surface for historical integrations only.
+The default SQLite database is `data/storelens.db`. Use the dashboard's
+**Setup** section to define the workspace, trace a floor plan, create zones, add
+sources, and calibrate cameras.
 
-## Geometry model
+## Source connections
 
-A physical zone and its appearance in a camera are deliberately separate:
+A source combines a logical device with non-secret connection configuration.
+Sensitive authentication material is stored or resolved separately:
 
-- A **zone** is the canonical footprint in map metres. Editing it increments its
-  revision; old events keep the revision used when they were ingested.
-- A **zone view** belongs to one zone and one camera. It stores the visible outer
-  polygon, an inset decision ROI, and a membership rule: representative point,
-  bounding-box overlap, or pose-keypoints-inside.
-- The source calibration is the **floor plane**. A **projection surface** is another
-  horizontal plane for a mattress, table, shelf, conveyor, or platform, computed from
-  at least four camera↔map point pairs. Its height is descriptive metadata. Never
-  subtract physical height from map Y; a 2D homography has no vertical axis.
+- `storelens_managed` stores validated connection fields on the source and encrypts
+  credentials in the database. An authorized worker resolves the connection through
+  a dedicated, header-authenticated endpoint.
+- `external_secret` stores only `locator.local_secret_ref`; the worker resolves that
+  reference from its own environment, keychain, or ignored configuration.
 
-Agents configure calibration, zone views, and projection planes through MCP/REST using
-frames captured on the worker device. The hosted dashboard never requests a camera frame.
+Normal source discovery never returns credentials. StoreLens still does not connect
+to the feed: source resolution only gives an authorized local worker the information
+it needs to open the source itself. See
+[Source connections and credentials](docs/source-connections.md) for deployment keys,
+supported fields, backup implications, and trust boundaries.
 
-Events retain `bbox`, `keypoints`, optional compressed `mask`, `point_kind`, the chosen
-surface/view IDs, assignment method, and all geometry revisions. Detections therefore
-remain explainable even after geometry is edited.
+## Minimal worker
 
-## Worker lifecycle
+After creating a source in the dashboard or API:
 
-Jobs describe analyses; worker instances describe running processes. A worker registers
-after launch and heartbeats every 5–15 seconds. The dashboard marks it stale after 30
-seconds and can request stop or restart. The heartbeat response tells the worker to exit;
-a deployment supervisor (systemd, Docker, Kubernetes, etc.) must perform the relaunch.
-The StoreLens web process never executes arbitrary worker scripts.
+```python
+import time
+import sys
 
-## Repo layout
+sys.path.insert(0, "sdk/python")
+from storelens import StoreLens
 
+client = StoreLens("http://127.0.0.1:8000", api_key="")
+source = client.source(1)
+capture = client.open_capture(source)
+
+client.register_job(
+    "Person detections",
+    "Tracked person observations from source 1",
+    source_ids=[source["id"]],
+    event_types=["detection"],
+)
+client.register_worker("person-detector", version="1")
+
+ok, frame = capture.read()
+if ok:
+    # Replace these coordinates with output from your detector/tracker.
+    client.submit_detection(
+        source_id=source["id"],
+        entity_id="track-1",
+        entity_type="person",
+        point_px=(320, 470),
+        ts=time.time(),
+    )
+    client.flush_observations()
 ```
-server/            FastAPI app: REST API, SSE, analytics, React build host
-  routers/         sources · store · zones · geometry · jobs/workers · events (legacy) · observations ·
-                    analytics (legacy per-kind) · analytics_query (unified) · analyses · alerts · insights (legacy)
-  services/        plane homography (DLT) · polygon/box geometry · enrich (shared ingestion pipeline) ·
-                    derive · SSE · alert engine (per-batch + periodic ongoing evaluator)
-dashboard/         ManySight React/Vite operational dashboard
-mcp_server/        MCP server for Codex (tools + skill discovery + analysis registry)
-sdk/python/        storelens.py — worker SDK (client, tracker, projection)
-skills/            agent playbooks: detection-tracking · measurement · state-observation ·
-                    geometry-calibration · alerts-workflows · analytics
-examples/          runnable workers: simulator · heatmap/dwell tracker · fridge state · measurement curve
-scripts/           seed_demo.py — populated demo store + 3h of history + saved-analysis catalogue
-docs/adr/          architecture decision records
-tests/             pytest suite (written alongside the observation-contract redesign)
+
+Run a real worker as a long-lived process, heartbeat every 5–15 seconds, and obey
+cooperative stop/restart requests. The SDK lives at
+[`sdk/python/storelens.py`](sdk/python/storelens.py); examples are in
+[`examples/`](examples/). See [Workers and observations](docs/workers.md) before
+writing a new integration.
+
+## MCP
+
+The MCP server is an agent-facing adapter over the REST API. It exposes platform
+discovery, geometry, job/worker coordination, observations, analytics, alerts, and
+the playbooks in [`skills/`](skills/). It does not process video itself.
+
+For a local stdio MCP client:
+
+```powershell
+$env:STORELENS_URL = "http://127.0.0.1:8000"
+python mcp_server/server.py
 ```
 
-## Configuration
+[`codex.config.example.toml`](codex.config.example.toml) shows one client-specific
+configuration. The same MCP server can use Streamable HTTP for remote deployments;
+see [Development and deployment](docs/development.md).
 
-Public links and endpoint paths live in [`config/endpoints.json`](config/endpoints.json).
-Choose a profile with `STORELENS_ENDPOINT_PROFILE`; deployment variables override its
-URLs. The resolved registry is served at `/api/v1/platform-config`, so dashboards,
-workers, discovery files, and MCP skills do not need a hard-coded deployment host.
+## Documentation
 
-| env | purpose |
-|---|---|
-| `STORELENS_API_KEY` | if set, `/api/*` requires `X-API-Key` (UI: ⚙ settings) |
-| `STORELENS_DATA` | data dir (SQLite), default `./data` |
-| `STORELENS_ENDPOINT_PROFILE` / `STORELENS_ENDPOINT_CONFIG` | selected endpoint profile and optional registry file |
-| `STORELENS_PUBLIC_URL` / `STORELENS_PUBLIC_MCP_URL` | URLs advertised by `/agent.md` and discovery metadata |
-| `STORELENS_CORS_ORIGINS` | comma-separated browser origins; defaults to local dashboard URLs |
-| `STORELENS_URL` / `STORELENS_SKILLS` | upstream platform and skill path used by MCP |
-| `STORELENS_MCP_TRANSPORT` | `stdio` or `streamable-http` |
-| `STORELENS_MCP_HOST` / `STORELENS_MCP_PORT` | MCP bind address, default `127.0.0.1:8001` |
+- [Architecture and current scope](docs/architecture.md)
+- [Source connections and credentials](docs/source-connections.md)
+- [Workers and observations](docs/workers.md)
+- [Development and deployment](docs/development.md)
+- [Agent playbooks](skills/README.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 
-Agent discovery is served at `/agent.md`, `/llms.txt`, and
-`/.well-known/storelens.json`. API reference: interactive OpenAPI docs at `/docs`.
+The interactive API and `/openapi.json` are the authoritative REST contract.
+`GET /api/v1/observations/contract` describes the worker payload at runtime.
+
+## Development
+
+```powershell
+python -m pytest -q
+npm run build --prefix dashboard
+```
+
+No separate formatter, linter, or type-check command is configured in the current
+repository. More setup, environment variables, demo tooling, and test commands are
+documented in [docs/development.md](docs/development.md).
+
+## Contributing
+
+Bug reports and pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md)
+before starting work. Do not include camera credentials, source URLs containing
+credentials, recordings, database files, or other sensitive site data in issues or
+commits.
+
+## License
+
+**No explicit open-source license is currently present.** Until the maintainers add
+an approved license, copyright law reserves all rights and this repository should
+not be described or redistributed as legally open source. Selecting and adding a
+license is a release blocker.

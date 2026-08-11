@@ -1,50 +1,53 @@
-# StoreLens hallway demo files
+# Local looped-video demo
 
-## Projects
+`loop_video_stream.py` is a development utility that exposes a local video as an MJPEG
+stream. It is not a StoreLens service, camera gateway, or production streaming server.
 
-- StoreLens dashboard/API: `C:\Users\abdo-\Desktop\projects\storelens`
-- Reconstruction experiment (not required for this manual workflow):
-  `C:\Users\abdo-\Desktop\projects\video_floorplan_localizer`
+## Start the stream
 
-Plan tracing is built into StoreLens under **Setup → Space & zones → Digitize plan**.
-The source image stays in the browser; only traced metric geometry is saved.
-
-## Demo video camera
-
-The loop helper is `demo\loop_video_stream.py`. It needs OpenCV, which is already a
-StoreLens optional dependency.
+From the repository root:
 
 ```powershell
-python demo\loop_video_stream.py --video "C:\path\to\camera-video.mp4"
+python demo/loop_video_stream.py --video "C:\path\to\video.mp4"
 ```
 
-It exposes:
+Defaults:
 
-- viewer: `http://127.0.0.1:8765/`
-- MJPEG camera: `http://127.0.0.1:8765/stream.mjpg`
-- still for calibration: `http://127.0.0.1:8765/snapshot.jpg`
+- viewer: <http://127.0.0.1:8765/>
+- MJPEG stream: <http://127.0.0.1:8765/stream.mjpg>
+- current JPEG frame: <http://127.0.0.1:8765/snapshot.jpg>
 
-To run the zero-capable people worker at two exact-timestamp samples per second:
+Use `--host`, `--port`, `--fps`, or `--no-loop` to change the behavior. The utility
+serves frames without authentication; keep it on a trusted development interface.
+
+## Register it as a managed source
+
+In ManySight, open **Sources**, add an HTTP source, choose **StoreLens managed**, and
+enter `http://127.0.0.1:8765/stream.mjpg`. A worker on the same machine can then use:
+
+```python
+from storelens import StoreLens
+
+client = StoreLens("http://127.0.0.1:8000", api_key="")
+source = client.source(source_id)
+capture = client.open_capture(source)
+```
+
+The worker needs the configured credential-resolution key when the source contains
+managed credentials. This unauthenticated demo stream does not.
+
+## External-secret alternative
+
+Choose **External secret** and set the source's local secret reference to a descriptive
+environment-variable name such as `STORELENS_DEMO_STREAM_0`. Set that variable only on
+the worker machine:
 
 ```powershell
-$env:STORELENS_SOURCE_CONNECTION = "http://127.0.0.1:8765/stream.mjpg"
-python examples/heatmap_tracker.py --source 3 --fps 2
+$env:STORELENS_DEMO_STREAM_0 = "http://127.0.0.1:8765/stream.mjpg"
 ```
 
-The worker publishes one `detection_frame_count` sample per inference cycle,
-including zero-person frames. StoreLens plots that count at its exact timestamp;
-neighboring samples are not bucketed or accumulated.
+`client.open_capture(source)` resolves the reference automatically. Use this mode when
+connection material should remain outside the StoreLens database.
 
-In StoreLens, create an HTTP source whose local reference is
-`STORELENS_DEMO_STREAM_0`. A local worker resolves that reference to the MJPEG URL;
-the URL itself is not stored by the platform. Paste the MJPEG URL into the source's
-browser-preview field to view it directly in the dashboard.
-
-## Manual geometry workflow
-
-1. Open StoreLens → Setup → Space & zones → Digitize plan.
-2. Choose the plan image, trace the walkable polygon, mark a known distance, and save it.
-3. Add or select the camera source and place it on the map.
-4. Open the snapshot URL and save the image locally.
-5. Click Calibrate camera, upload that still, and match at least four floor points.
-6. Compute and save, then use Test projection.
+Source reachability is always relative to the worker machine. Replace loopback with an
+address reachable by the worker when the stream and worker run on different hosts.
