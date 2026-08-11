@@ -457,7 +457,7 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
   const deleteZone = async (zone) => {
     if (
       !window.confirm(
-        `Delete ${zone.name}? Existing events keep their stored zone ID.`,
+        `Delete ${zone.name}? Existing observations keep their stored zone ID.`,
       )
     )
       return;
@@ -853,16 +853,13 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
 
 export function LocalSourcePreview({ source }) {
   const storageKey = `storelens.local-preview.${source.id}`;
-  const demoAddress = source.locator?.local_secret_ref === "STORELENS_DEMO_STREAM_0"
-    ? "http://127.0.0.1:8765/stream.mjpg"
-    : "";
-  const [address, setAddress] = useState(() => localStorage.getItem(storageKey) || demoAddress);
-  const [connected, setConnected] = useState(() => localStorage.getItem(storageKey) || demoAddress);
+  const [address, setAddress] = useState(() => localStorage.getItem(storageKey) || "");
+  const [connected, setConnected] = useState(() => localStorage.getItem(storageKey) || "");
   useEffect(() => {
-    const value = localStorage.getItem(storageKey) || demoAddress;
+    const value = localStorage.getItem(storageKey) || "";
     setAddress(value);
     setConnected(value);
-  }, [storageKey, demoAddress]);
+  }, [storageKey]);
   const connect = () => {
     const value = address.trim();
     localStorage.setItem(storageKey, value);
@@ -872,7 +869,7 @@ export function LocalSourcePreview({ source }) {
     <div className="local-source-preview stack">
       <div className="section-heading">
         <div>
-          <span className="tiny-label">Local demo footage</span>
+          <span className="tiny-label">Worker-local footage</span>
           <h3>Browser preview</h3>
         </div>
       </div>

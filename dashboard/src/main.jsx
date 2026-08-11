@@ -162,8 +162,8 @@ function App() {
           <strong>{shell.store?.name || "Loading workspace"}</strong>
           <small>
             {SPACE_LABELS[shell.store?.space_type] ||
-              "Physical-space intelligence"}{" "}
-            · POC
+              "Physical-space analytics"}{" "}
+            · StoreLens
           </small>
         </div>
         <div className="topbar-status">
@@ -196,9 +196,9 @@ function App() {
           ))}
         </nav>
         <div className="sidebar-note">
-          <span>POC</span>
+          <span>Validation</span>
           <p>
-            Metrics and health states require pilot validation before
+            Validate model output, calibration, and alert thresholds before
             operational use.
           </p>
         </div>

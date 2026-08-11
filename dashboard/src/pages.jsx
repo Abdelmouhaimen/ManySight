@@ -132,7 +132,7 @@ export function OverviewPage({ liveTick = 0, openSignal }) {
           day: "numeric",
           month: "long",
         })}
-        description="Operational signals from the selected period. POC metrics remain explicitly defined."
+        description="Operational signals derived from observations in the selected period."
         actions={
           <>
             <RangeSelect value={range} onChange={setRange} />
@@ -185,12 +185,12 @@ export function OverviewPage({ liveTick = 0, openSignal }) {
           className="traffic-panel"
           title="Visitor traffic"
           subtitle="Distinct tracked people by time bucket"
-          action={<Badge tone="violet">POC definition</Badge>}
+          action={<Badge tone="violet">Anonymous tracks</Badge>}
         >
           <LineChart
             points={d.occupancy.series}
             unit=" people"
-            empty="Tracking events with stable IDs will populate this chart."
+            empty="Tracked detections with stable IDs will populate this chart."
           />
         </Panel>
         <Panel
@@ -278,7 +278,7 @@ export function OverviewPage({ liveTick = 0, openSignal }) {
           ))}
           {!d.alerts.length && (
             <EmptyState title="Nothing needs review">
-              New threshold or event signals will appear here.
+              New threshold or observation-derived signals will appear here.
             </EmptyState>
           )}
         </div>
@@ -797,8 +797,8 @@ export function ConfigurePage({ notify, refreshShell }) {
     <>
       <PageHeader
         eyebrow="Setup"
-        title="Pilot setup"
-        description="A guided path from logical source definition to an accepted operational signal."
+        title="Workspace setup"
+        description="Configure sources, mapped geometry, workers, analyses, and alert rules."
       />
       <div className="setup-progress">
         {[
@@ -818,7 +818,7 @@ export function ConfigurePage({ notify, refreshShell }) {
           {[
             ["workspace", "Workspace", Settings2],
             ["space", "Space & zones", Map],
-            ["analyses", "Analyses", Activity],
+            ["analyses", "Jobs & workers", Activity],
             ["rules", "Thresholds", BellRing],
             ["technical", "Technical details", Code2],
           ].map(([value, label, Icon]) => (
@@ -843,7 +843,7 @@ export function ConfigurePage({ notify, refreshShell }) {
                 refreshShell?.();
                 notify(
                   "Workspace updated",
-                  "ManySight now uses the new workspace details.",
+                  "The workspace now uses the saved details.",
                 );
               }}
             />
@@ -881,7 +881,7 @@ export function ConfigurePage({ notify, refreshShell }) {
             load();
             notify(
               "Threshold created",
-              "New events will be evaluated against this rule.",
+              "New observations and periodic checks will be evaluated against this rule.",
             );
           }}
         />
@@ -987,7 +987,7 @@ function JobsConfig({ jobs, onRefresh, notify }) {
       });
       onRefresh();
     } catch (err) {
-      notify("Couldn't update analysis", err.message, "error");
+      notify("Couldn't update job", err.message, "error");
     }
   };
   const commandWorker = async (worker, desiredState) => {
@@ -1001,18 +1001,18 @@ function JobsConfig({ jobs, onRefresh, notify }) {
     }
   };
   const remove = async (job) => {
-    if (!window.confirm(`Delete job ${job.name}? Its events remain.`)) return;
+    if (!window.confirm(`Delete job ${job.name}? Its observations remain.`)) return;
     try {
       await api.del(`/jobs/${job.id}`);
       onRefresh();
     } catch (err) {
-      notify("Couldn't delete analysis", err.message, "error");
+      notify("Couldn't delete job", err.message, "error");
     }
   };
   return (
     <Panel
-      title="Analyses & workers"
-      subtitle="Registered analyses plus heartbeat-backed runtime state"
+      title="Jobs & workers"
+      subtitle="Registered analysis jobs plus heartbeat-backed runtime state"
     >
       <div className="experimental-note">
         <AlertTriangle size={17} />
@@ -1038,7 +1038,7 @@ function JobsConfig({ jobs, onRefresh, notify }) {
               <div>
                 <strong>{job.name}</strong>
                 <small>
-                  {job.event_count.toLocaleString()} events · last{" "}
+                  {job.event_count.toLocaleString()} observations · last{" "}
                   {formatDateTime(job.last_event_at)}
                 </small>
                 <small>
@@ -1098,8 +1098,8 @@ function JobsConfig({ jobs, onRefresh, notify }) {
           );
         })}
         {!jobs.length && (
-          <EmptyState title="No analyses registered">
-            Codex or a worker registers a job before posting events.
+          <EmptyState title="No jobs registered">
+            A worker or authorized agent registers a job before posting observations.
           </EmptyState>
         )}
       </div>

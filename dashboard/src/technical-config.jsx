@@ -40,9 +40,9 @@ export function TechnicalConfig({ notify }) {
               [
                 "2",
                 "Inspect",
-                "Codex opens the camera and inspects frames on the worker device",
+                "An authorized local worker opens the camera and inspects frames",
               ],
-              ["3", "Run", "An external worker subscribes and runs a model"],
+              ["3", "Run", "The worker runs a model and produces direct observations"],
               [
                 "4",
                 "Explain",
@@ -63,7 +63,7 @@ export function TechnicalConfig({ notify }) {
             <section>
               <Badge tone="positive">
                 <Check size={12} />
-                Codex can
+                Agents and workers can
               </Badge>
               <ul>
                 <li>
@@ -71,11 +71,11 @@ export function TechnicalConfig({ notify }) {
                   API or MCP; authorized workers can resolve managed connections.
                 </li>
                 <li>
-                  Choose or write a classifier/tracker worker for an approved
+                  Choose or write a classifier/tracker worker for a defined
                   question.
                 </li>
                 <li>
-                  Register the analysis job and submit structured event batches.
+                  Register the analysis job and submit structured observation batches.
                 </li>
                 <li>
                   Verify which job, source, zone, and rule produced a dashboard
@@ -113,7 +113,7 @@ export function TechnicalConfig({ notify }) {
 
       <Panel
         title="Raw observation explorer"
-        subtitle="Moved to its own tab"
+        subtitle="Browse stored worker evidence"
       >
         <div className="technical-links">
           <a href="#observations">
@@ -124,15 +124,15 @@ export function TechnicalConfig({ notify }) {
           </a>
         </div>
         <p className="definition-note">
-          Every observation workers submitted — with column and kind
-          documentation — now lives in the Observations tab.
+          Stored worker observations, including kind and geometry provenance,
+          are available in the Observations tab.
         </p>
       </Panel>
 
       <div className="technical-grid">
         <Panel
           title="API access"
-          subtitle="Local browser credential for a protected POC server"
+          subtitle="Browser credential for a key-protected StoreLens API"
         >
           <label className="field">
             <span>API key</span>
@@ -163,11 +163,11 @@ export function TechnicalConfig({ notify }) {
           </div>
           <div className="definition-card compact-definition">
             <Code2 />
-            <h3>Codex / MCP</h3>
+            <h3>Agents / MCP</h3>
             <p>
-              Connect StoreLens MCP so Codex can register logical sources,
-              follow a skill recipe, register a job, and verify submitted
-              observations. Frames remain local to the worker.
+              Connect an MCP client to inspect platform configuration, follow
+              StoreLens playbooks, register jobs, and verify observations.
+              Frames remain local to the worker.
             </p>
             <pre>
               {`Remote: ${endpoints?.mcp_url || "Loading…"}\n`}
