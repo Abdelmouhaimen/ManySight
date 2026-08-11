@@ -23,3 +23,5 @@ dashboard/dist/
 .DS_Store
 Thumbs.db
 codex-simulations/
+/output/
+/outputs/
