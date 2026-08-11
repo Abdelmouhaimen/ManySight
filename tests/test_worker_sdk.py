@@ -48,15 +48,23 @@ def test_open_capture_prefers_explicit_override(monkeypatch):
 
 def test_open_capture_resolves_managed_rtsp_without_logging_secret(monkeypatch, capsys):
     opened = []
-    monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=lambda target: opened.append(target) or target))
+    options_during_open = []
+    monkeypatch.delenv("OPENCV_FFMPEG_CAPTURE_OPTIONS", raising=False)
+    def open_capture(target):
+        opened.append(target)
+        options_during_open.append(__import__("os").environ.get("OPENCV_FFMPEG_CAPTURE_OPTIONS"))
+        return target
+    monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=open_capture))
     client = StoreLens(credential_access_key="resolve")
     monkeypatch.setattr(client, "get_source_connection", lambda _sid: {
         "kind": "rtsp", "connection_management": "storelens_managed",
-        "connection": {"host": "camera.local", "port": 8554, "path": "/live", "scheme": "rtsp",
+        "connection": {"host": "camera.local", "port": 8554, "path": "/live", "scheme": "rtsp", "transport": "tcp",
                        "username": "a@b", "password": "do not print"},
     })
     client.open_capture({"id": 5, "kind": "rtsp", "connection_management": "storelens_managed"})
     assert opened == ["rtsp://a%40b:do%20not%20print@camera.local:8554/live"]
+    assert options_during_open == ["rtsp_transport;tcp"]
+    assert __import__("os").environ.get("OPENCV_FFMPEG_CAPTURE_OPTIONS") is None
     assert "do not print" not in capsys.readouterr().out
 
 

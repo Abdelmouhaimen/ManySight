@@ -432,6 +432,21 @@ class StoreLens:
                 raise RuntimeError(
                     f"source {source.get('id')} ({kind}) managed connection is incomplete"
                 ) from exc
+            if kind == "rtsp" and connection.get("transport"):
+                option_name = "OPENCV_FFMPEG_CAPTURE_OPTIONS"
+                previous = os.environ.get(option_name)
+                existing = [item for item in (previous or "").split("|")
+                            if item and not item.startswith("rtsp_transport;")]
+                os.environ[option_name] = "|".join(
+                    [*existing, f"rtsp_transport;{connection['transport']}"]
+                )
+                try:
+                    return cv2.VideoCapture(target)
+                finally:
+                    if previous is None:
+                        os.environ.pop(option_name, None)
+                    else:
+                        os.environ[option_name] = previous
             return cv2.VideoCapture(target)
 
         locator = source.get("locator") or {}
