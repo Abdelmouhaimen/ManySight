@@ -211,6 +211,13 @@ CREATE TABLE IF NOT EXISTS analyses (
   updated_at REAL
 );
 CREATE INDEX IF NOT EXISTS idx_analyses_query_hash ON analyses(query_hash);
+-- Durable receipt for the one-time legacy insight migration.  This lives
+-- separately from `analyses` so deleting a migrated analysis does not make it
+-- appear to be "not migrated" and resurrect it on the next server startup.
+CREATE TABLE IF NOT EXISTS legacy_insight_migrations (
+  insight_id INTEGER PRIMARY KEY,
+  migrated_at REAL NOT NULL
+);
 """
 
 
@@ -466,9 +473,20 @@ def _migrate_insights_to_analyses(con: sqlite3.Connection):
     the unified analyses table. Never drops a legacy row; every insight gets a
     corresponding analyses row, even an approximate or unrepresentable one, with
     migration_note explaining the mapping so nothing is silently lost."""
-    already = {r[0] for r in con.execute(
-        "SELECT migrated_from_insight_id FROM analyses WHERE migrated_from_insight_id IS NOT NULL"
-    ).fetchall()}
+    # Backfill durable receipts for databases upgraded from the original
+    # migration implementation, where the analyses row itself was the marker.
+    con.execute(
+        "INSERT OR IGNORE INTO legacy_insight_migrations (insight_id, migrated_at) "
+        "SELECT migrated_from_insight_id, COALESCE(created_at, ?) FROM analyses "
+        "WHERE migrated_from_insight_id IS NOT NULL",
+        (time.time(),),
+    )
+    already = {
+        r[0]
+        for r in con.execute(
+            "SELECT insight_id FROM legacy_insight_migrations"
+        ).fetchall()
+    }
     rows = con.execute("SELECT * FROM insight_definitions").fetchall()
     now = time.time()
     for row in rows:
@@ -486,6 +504,10 @@ def _migrate_insights_to_analyses(con: sqlite3.Connection):
              json.dumps(mapped["filters"]), json.dumps(mapped["grouping"]), "{}", "{}",
              mapped["presentation"], row["pinned"], row["sort_order"], row["visibility"],
              row["created_by"], row["status"], query_hash, row["id"], mapped["note"], now, now),
+        )
+        con.execute(
+            "INSERT OR IGNORE INTO legacy_insight_migrations (insight_id, migrated_at) VALUES (?, ?)",
+            (row["id"], now),
         )
 
 

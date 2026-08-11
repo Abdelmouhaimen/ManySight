@@ -54,6 +54,32 @@ def test_migration_is_idempotent_on_rerun(isolated_db):
     assert count == 1  # not duplicated across repeated init_db() calls
 
 
+def test_deleting_migrated_analysis_does_not_resurrect_it(isolated_db):
+    now = isolated_db.now()
+    insight_id = isolated_db.ex(
+        "INSERT INTO insight_definitions (title, question, block, dataset, params_json, unit,"
+        " limitations, pinned, sort_order, visibility, created_by, status, created_at, updated_at)"
+        " VALUES ('Old chart','Legacy chart','line','occupancy','{}','',0,0,0,'visible','user','ready',?,?)",
+        (now, now),
+    )
+    isolated_db.init_db()
+    migrated = isolated_db.q1(
+        "SELECT id FROM analyses WHERE migrated_from_insight_id=?", (insight_id,)
+    )
+    assert migrated is not None
+
+    isolated_db.ex("DELETE FROM analyses WHERE id=?", (migrated["id"],))
+    isolated_db.init_db()
+    isolated_db.init_db()
+
+    assert isolated_db.q1(
+        "SELECT id FROM analyses WHERE migrated_from_insight_id=?", (insight_id,)
+    ) is None
+    assert isolated_db.q1(
+        "SELECT insight_id FROM legacy_insight_migrations WHERE insight_id=?", (insight_id,)
+    ) is not None
+
+
 def test_unrepresentable_legacy_dataset_is_marked_not_dropped(isolated_db):
     now = isolated_db.now()
     isolated_db.ex(
