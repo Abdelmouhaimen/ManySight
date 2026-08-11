@@ -27,16 +27,22 @@ import json
 import os
 import time
 import uuid
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import requests
 
 
 class StoreLens:
-    def __init__(self, base_url: str = "http://localhost:8000", api_key: str = "", batch_size: int = 200):
+    def __init__(self, base_url: str = "http://localhost:8000", api_key: str = "",
+                 batch_size: int = 200, credential_access_key: str | None = None):
         self.base = base_url.rstrip("/") + "/api/v1"
         self.session = requests.Session()
         if api_key:
             self.session.headers["X-API-Key"] = api_key
+        self.credential_access_key = (
+            credential_access_key if credential_access_key is not None
+            else os.environ.get("STORELENS_CREDENTIAL_ACCESS_KEY", api_key)
+        )
         self.batch_size = batch_size
         self.job_id = None
         self.worker_instance_id = None
@@ -58,16 +64,41 @@ class StoreLens:
     def source(self, source_id: int) -> dict:
         return self._req("GET", f"/sources/{source_id}")
 
+    def get_source_connection(self, source_id: int) -> dict:
+        """Resolve sensitive connection material for immediate worker use.
+
+        The returned dictionary must not be logged or persisted. This call uses the
+        dedicated credential access key rather than relying on public source reads.
+        """
+        if not self.credential_access_key:
+            raise RuntimeError(
+                "STORELENS_CREDENTIAL_ACCESS_KEY is required to resolve a managed source"
+            )
+        response = self.session.get(
+            self.base + f"/sources/{source_id}/connection",
+            headers={"X-StoreLens-Credential-Key": self.credential_access_key},
+            timeout=30,
+        )
+        if not response.ok:
+            raise RuntimeError(
+                f"source {source_id} credential resolution failed with HTTP {response.status_code}"
+            )
+        return response.json()
+
     def create_source(self, name: str, kind: str = "webcam",
                       connection_mode: str = "agent_local", locator=None,
-                      capabilities=None, metadata=None) -> dict:
-        """Register a logical source. `locator` must contain only non-secret local
-        hints such as {"device_index": 0} or {"local_secret_ref": "entrance"}."""
+                      capabilities=None, metadata=None,
+                      connection_management: str = "external_secret",
+                      connection=None, credentials=None) -> dict:
+        """Register either a StoreLens-managed or external-secret source."""
         return self._req("POST", "/sources", {
             "name": name,
             "kind": kind,
             "connection_mode": connection_mode,
             "locator": locator or {},
+            "connection_management": connection_management,
+            "connection": connection or {},
+            "credentials": credentials,
             "capabilities": capabilities or [],
             "metadata": metadata or {},
         })
@@ -353,24 +384,69 @@ class StoreLens:
 
     # ---------- video ----------
     def open_capture(self, source: dict, local_connection=None):
-        """Open a camera in the worker process, never through StoreLens.
+        """Open a camera in this worker process; StoreLens never proxies the feed.
 
-        Webcams can use the source's public `locator.device_index`. Network URLs,
-        file paths, and credentials must be supplied by the worker as
-        `local_connection`, normally from a local environment variable or keychain.
+        Resolution precedence is explicit local_connection, a StoreLens-managed
+        connection, then an external local_secret_ref environment variable.
         """
         import cv2
         if local_connection is not None:
             if source["kind"] == "webcam" and str(local_connection).isdigit():
                 local_connection = int(local_connection)
             return cv2.VideoCapture(local_connection)
+        management = source.get("connection_management", "external_secret")
+        if management == "storelens_managed":
+            public_connection = source.get("connection") or {}
+            if source.get("kind") == "webcam" and "device_index" in public_connection:
+                return cv2.VideoCapture(int(public_connection["device_index"]))
+            resolved = self.get_source_connection(int(source["id"]))
+            connection = resolved.get("connection") or {}
+            kind = resolved.get("kind", source.get("kind"))
+            try:
+                if kind == "webcam":
+                    target = int(connection["device_index"])
+                elif kind == "file":
+                    target = connection["path"]
+                elif kind == "rtsp":
+                    scheme = connection.get("scheme", "rtsp")
+                    auth = ""
+                    if connection.get("username"):
+                        auth = quote(connection["username"], safe="")
+                        if connection.get("password") is not None:
+                            auth += ":" + quote(connection["password"], safe="")
+                        auth += "@"
+                    path = quote(connection.get("path", "/"), safe="/?&=%")
+                    target = f"{scheme}://{auth}{connection['host']}:{int(connection.get('port', 554))}{path}"
+                elif kind == "http":
+                    target = connection["url"]
+                    if connection.get("auth_type") == "basic" and connection.get("username"):
+                        parsed = urlsplit(target)
+                        userinfo = quote(connection["username"], safe="")
+                        if connection.get("password") is not None:
+                            userinfo += ":" + quote(connection["password"], safe="")
+                        target = urlunsplit((parsed.scheme, f"{userinfo}@{parsed.netloc}", parsed.path,
+                                             parsed.query, parsed.fragment))
+                else:
+                    raise RuntimeError(f"managed capture is not supported for source kind {kind}")
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    f"source {source.get('id')} ({kind}) managed connection is incomplete"
+                ) from exc
+            return cv2.VideoCapture(target)
+
         locator = source.get("locator") or {}
-        if source["kind"] == "webcam" and "device_index" in locator:
+        ref = locator.get("local_secret_ref")
+        if ref:
+            target = os.environ.get(ref)
+            if target is None:
+                raise RuntimeError(f"external source reference {ref} is not configured on this worker")
+            if source.get("kind") == "webcam" and str(target).isdigit():
+                target = int(target)
+            return cv2.VideoCapture(target)
+        # Backward compatibility for old safe webcam locators.
+        if source.get("kind") == "webcam" and "device_index" in locator:
             return cv2.VideoCapture(int(locator["device_index"]))
-        raise RuntimeError(
-            "camera access is agent-local; pass local_connection from a local "
-            "environment variable/keychain (StoreLens does not store camera URLs or credentials)"
-        )
+        raise RuntimeError("source connection is not configured")
 
 
 class CentroidTracker:
@@ -423,6 +499,6 @@ def parse_args_base(description: str):
     ap.add_argument(
         "--connection",
         default=os.environ.get("STORELENS_SOURCE_CONNECTION"),
-        help="Agent-local camera URL/path/index; prefer STORELENS_SOURCE_CONNECTION for secrets",
+        help="Explicit worker-local URL/path/index override; external-secret deployments may use STORELENS_SOURCE_CONNECTION",
     )
     return ap

@@ -6,6 +6,7 @@ Register with Codex CLI:   see codex.config.example.toml at the repo root.
 Env:
   STORELENS_URL      base URL of the platform (default http://localhost:8000)
   STORELENS_API_KEY  only if the server enforces one
+  STORELENS_CREDENTIAL_ACCESS_KEY  privileged managed-connection resolution key
   STORELENS_SKILLS   path to the skills/ folder (default: sibling of this file's parent)
   STORELENS_MCP_TRANSPORT  stdio (default) | streamable-http
   STORELENS_MCP_HOST / STORELENS_MCP_PORT  remote transport bind settings
@@ -31,6 +32,7 @@ REST_BASE = os.environ.get(
     BASE + PLATFORM_ENDPOINTS["paths"].get("rest", "/api/v1"),
 ).rstrip("/")
 API_KEY = os.environ.get("STORELENS_API_KEY", "")
+CREDENTIAL_ACCESS_KEY = os.environ.get("STORELENS_CREDENTIAL_ACCESS_KEY", API_KEY)
 SKILLS_DIR = os.environ.get(
     "STORELENS_SKILLS",
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills"),
@@ -59,8 +61,9 @@ mcp = build_server(
         "follow that general operating guide before planning or changing the platform. "
         "Then call list_skills() and load the closest task-specific playbook when one applies. "
         "Discover the logical sources, map, zones, jobs, and data instead of assuming "
-        "prior conversation or demo state. Camera access is agent-local: StoreLens never opens "
-        "a feed and never returns camera credentials. Use MCP for agent operations; workers "
+        "prior conversation or demo state. Camera access is worker-local: StoreLens never opens "
+        "or proxies a feed. Managed credentials require explicit privileged resolution through "
+        "get_source_connection; ordinary source tools never return them. Use MCP for agent operations; workers "
         "use the REST endpoint returned by get_platform_config(). "
         "\n\nObserve locally, derive centrally: a worker submits ONLY three observation kinds — "
         "detection (an observed entity with spatial evidence), measurement (an observed numeric "
@@ -85,11 +88,16 @@ mcp = build_server(
 )
 
 
-def _req(method: str, path: str, body: dict | None = None, raw: bool = False):
+def _req(method: str, path: str, body: dict | None = None, raw: bool = False,
+         privileged: bool = False):
     url = REST_BASE + path
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json"}
-    if API_KEY:
+    if privileged:
+        if not CREDENTIAL_ACCESS_KEY:
+            raise RuntimeError("STORELENS_CREDENTIAL_ACCESS_KEY is required to resolve managed connections")
+        headers["X-StoreLens-Credential-Key"] = CREDENTIAL_ACCESS_KEY
+    elif API_KEY:
         headers["X-API-Key"] = API_KEY
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     with urllib.request.urlopen(req, timeout=30) as res:
@@ -99,7 +107,7 @@ def _req(method: str, path: str, body: dict | None = None, raw: bool = False):
 
 @mcp.tool()
 def list_sources() -> list[dict]:
-    """List logical observation sources, non-secret local locator hints, capabilities,
+    """List logical observation sources, safe connection metadata, capabilities,
     latest worker runtime, observation freshness, placement, and calibration."""
     return _req("GET", "/sources")
 
@@ -113,23 +121,34 @@ def get_platform_config() -> dict:
 
 @mcp.tool()
 def get_source(source_id: int) -> dict:
-    """Get one logical source. It contains no camera URL or credential. Resolve webcam
-    indices or local_secret_ref values on the machine where the worker will run."""
+    """Get one logical source. Normal metadata never contains credentials."""
     return _req("GET", f"/sources/{source_id}")
+
+
+@mcp.tool()
+def get_source_connection(source_id: int) -> dict:
+    """Explicitly resolve a source connection for a local worker. Requires
+    STORELENS_CREDENTIAL_ACCESS_KEY and may return sensitive credentials. Never log,
+    display, or persist the result; pass it directly to worker connection code."""
+    return _req("GET", f"/sources/{source_id}/connection", privileged=True)
 
 
 @mcp.tool()
 def create_source(name: str, kind: str = "webcam", connection_mode: str = "agent_local",
                   locator: dict | None = None, capabilities: list[str] | None = None,
-                  metadata: dict | None = None) -> dict:
-    """Register a logical source before creating a job. `locator` is a non-secret hint such
-    as {"device_index": 0} or {"local_secret_ref": "warehouse-entrance"}. Never send camera
-    URLs, usernames, passwords, API keys, or tokens to StoreLens."""
+                  metadata: dict | None = None,
+                  connection_management: str = "external_secret",
+                  connection: dict | None = None, credentials: dict | None = None) -> dict:
+    """Register a logical source. Use storelens_managed with a structured connection
+    and optional credentials, or external_secret with locator.local_secret_ref."""
     return _req("POST", "/sources", {
         "name": name,
         "kind": kind,
         "connection_mode": connection_mode,
         "locator": locator or {},
+        "connection_management": connection_management,
+        "connection": connection or {},
+        "credentials": credentials,
         "capabilities": capabilities or [],
         "metadata": metadata or {},
     })
@@ -137,8 +156,8 @@ def create_source(name: str, kind: str = "webcam", connection_mode: str = "agent
 
 @mcp.tool()
 def update_source(source_id: int, patch: dict) -> dict:
-    """Update a logical source's name, kind, connection mode, non-secret locator,
-    capabilities, or metadata. Camera credentials are rejected."""
+    """Update a source. Omitted credentials are preserved; provide credentials to
+    replace them or clear_credentials=true to explicitly remove them."""
     return _req("PUT", f"/sources/{source_id}", patch)
 
 

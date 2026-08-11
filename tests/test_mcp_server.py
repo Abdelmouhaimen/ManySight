@@ -20,7 +20,7 @@ def test_tool_contract_is_intact():
 
     tools = asyncio.run(m.mcp.list_tools())
     names = {t.name for t in tools}
-    assert len(tools) == 45
+    assert len(tools) == 46
     for expected in (
         "submit_observations", "get_observation_contract", "list_observations",
         "get_latest_observations", "query_analytics", "list_analysis_capabilities",
@@ -30,6 +30,7 @@ def test_tool_contract_is_intact():
         "register_worker", "heartbeat_worker", "request_worker_state",
         "create_zone", "create_projection_surface", "create_zone_view",
         "project_points", "unproject_points",
+        "get_source_connection",
     ):
         assert expected in names, f"{expected} missing from MCP tool contract"
 
@@ -120,3 +121,12 @@ def test_build_server_accepts_no_transport_config():
     server = build_server("test-server", instructions="hello")
     assert server.name == "test-server"
     assert server.instructions == "hello"
+
+
+def test_managed_connection_tool_uses_privileged_request(monkeypatch):
+    import mcp_server.server as m
+
+    calls = []
+    monkeypatch.setattr(m, "_req", lambda method, path, **kwargs: calls.append((method, path, kwargs)) or {})
+    m.get_source_connection(9)
+    assert calls == [("GET", "/sources/9/connection", {"privileged": True})]
