@@ -256,8 +256,8 @@ export function ObservationsPage({ liveTick = 0 }) {
               </tbody></table>
             </div>
             <p>
-              Observations in → analyses out: save what these rows should answer on the{" "}
-              <a href="#analytics">Analytics page</a>, or see the full API contract in the{" "}
+              Observations in → queries and dashboards out. Generated dashboards are shown on the{" "}
+              <a href="#dashboard">Dashboard page</a>; see the full contract in the{" "}
               <a href="/docs" target="_blank" rel="noreferrer">interactive API documentation</a>.
             </p>
           </div>

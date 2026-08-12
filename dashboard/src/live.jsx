@@ -139,6 +139,19 @@ function pointInPolygon(point, polygon = []) {
   return inside;
 }
 
+function zoneRings(zone) {
+  const geometry = zone?.geometry;
+  if (geometry?.type === "Polygon") {
+    return [(geometry.coordinates?.[0] || []).map(([x, y]) => ({ x, y }))];
+  }
+  if (geometry?.type === "MultiPolygon") {
+    return (geometry.coordinates || []).map((part) =>
+      (part?.[0] || []).map(([x, y]) => ({ x, y })),
+    );
+  }
+  return zone?.polygon?.length ? [zone.polygon] : [];
+}
+
 function disposeObject(object) {
   object.traverse((child) => {
     child.geometry?.dispose?.();
@@ -162,7 +175,7 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken }) {
     height,
     floorPolygons,
     walls: store?.map?.walls || [],
-    zones: zones.map((zone) => ({ id: zone.id, polygon: zone.polygon, color: zone.color })),
+    zones: zones.map((zone) => ({ id: zone.id, geometry: zone.geometry, polygon: zone.polygon, color: zone.color })),
     sources: sources.map((source) => ({ id: source.id, placement: source.placement })),
   });
   // Keep the StoreLens map axes intact in the 3D world: map X -> world X and
@@ -242,21 +255,25 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken }) {
 
     const zoneMaterials = new Map();
     for (const zone of zones) {
-      if (!zone.polygon?.length) continue;
-      const shape = new THREE.Shape();
-      zone.polygon.forEach((point, index) => {
-        const x = point.x - width / 2;
-        const y = point.y - height / 2;
-        if (index === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
-      });
-      const geometry = new THREE.ShapeGeometry(shape);
-      geometry.rotateX(Math.PI / 2);
-      const material = new THREE.MeshBasicMaterial({ color: zone.color || "#7059ff", transparent: true, opacity: .18, side: THREE.DoubleSide });
-      material.userData.baseColor = zone.color || "#7059ff";
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.y = .095;
-      scene.add(mesh);
-      zoneMaterials.set(String(zone.id), material);
+      const materials = [];
+      for (const ring of zoneRings(zone)) {
+        if (ring.length < 3) continue;
+        const shape = new THREE.Shape();
+        ring.forEach((point, index) => {
+          const x = point.x - width / 2;
+          const y = point.y - height / 2;
+          if (index === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+        });
+        const geometry = new THREE.ShapeGeometry(shape);
+        geometry.rotateX(Math.PI / 2);
+        const material = new THREE.MeshBasicMaterial({ color: zone.color || "#7059ff", transparent: true, opacity: .18, side: THREE.DoubleSide });
+        material.userData.baseColor = zone.color || "#7059ff";
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.y = .095;
+        scene.add(mesh);
+        materials.push(material);
+      }
+      if (materials.length) zoneMaterials.set(String(zone.id), materials);
     }
     zoneMaterialsRef.current = zoneMaterials;
 
@@ -422,15 +439,17 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken }) {
       for (const zone of zones) {
         if (
           Number(track.position.observation?.zone_id) === Number(zone.id)
-          || pointInPolygon(track.position, zone.polygon)
+          || zoneRings(zone).some((ring) => pointInPolygon(track.position, ring))
         ) occupiedZoneIds.add(String(zone.id));
       }
     }
-    for (const [zoneId, material] of zoneMaterialsRef.current.entries()) {
+    for (const [zoneId, materials] of zoneMaterialsRef.current.entries()) {
       const occupied = occupiedZoneIds.has(zoneId);
-      material.color.set(occupied ? "#ef2929" : material.userData.baseColor);
-      material.opacity = occupied ? .52 : .18;
-      material.needsUpdate = true;
+      for (const material of materials) {
+        material.color.set(occupied ? "#ef2929" : material.userData.baseColor);
+        material.opacity = occupied ? .52 : .18;
+        material.needsUpdate = true;
+      }
     }
   }, [renderedTracks, zones, width, height]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -453,6 +472,7 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken }) {
 export function LivePage({ liveTick = 0 }) {
   const [state, setState] = useState({ loading: true, error: null, data: null });
   const [sourceId, setSourceId] = useState("all");
+  const [identityMode, setIdentityMode] = useState("fused");
   const [playhead, setPlayhead] = useState(null);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
@@ -468,12 +488,13 @@ export function LivePage({ liveTick = 0 }) {
     const since = Date.now() / 1000 - HISTORY_SECONDS;
     const sourceQuery = sourceId === "all" ? "" : `&source_id=${sourceId}`;
     try {
-      const [store, zones, sources, result, latest] = await Promise.all([
+      const [store, zones, sources, result, latest, fused] = await Promise.all([
         api.get("/store"),
         api.get("/zones"),
         api.get("/sources"),
         api.get(`/observations?kind=detection&since=${since}&limit=5000${sourceQuery}`),
         api.get(`/observations/latest-frames?entity_type=person${sourceQuery}`),
+        api.get("/multiview/current?entity_type=person"),
       ]);
       const observations = result.observations
         .filter((row) => row.entity_type === "person" && row.geometry?.point_map)
@@ -495,6 +516,7 @@ export function LivePage({ liveTick = 0 }) {
             current.data?.sourceFilter === sourceId ? current.data.latestFrames : [],
             incomingFrames,
           ),
+          fused,
         },
       }));
       if (incomingFrames.length && modeRef.current === "live") {
@@ -578,7 +600,20 @@ export function LivePage({ liveTick = 0 }) {
     color: trackColor(track.colorKey),
     age: Math.max(0, liveNow - (track.frame.source_last_ingestion_at || track.frame.timestamp)),
   }));
-  const active = mode === "live" ? latestTracks : replayTracks;
+  const fusedTracks = (data.fused?.entities || []).map((entity) => {
+    const observation = {
+      entity_id: entity.fused_entity_id, entity_type: entity.entity_type,
+      zone_id: entity.zone_id, zone_name: data.zones.find((zone) => zone.id === entity.zone_id)?.name,
+      source_id: entity.members?.[0]?.source_id, geometry: { point_map: entity.point_map },
+    };
+    return {
+      key: entity.fused_entity_id, colorKey: entity.fused_entity_id,
+      color: trackColor(entity.fused_entity_id), age: entity.freshness_s,
+      opacity: entity.quality === "known" ? 1 : .45, trail: [], rows: [observation],
+      position: { ...entity.point_map, observation }, frame: { stale: entity.quality !== "known" },
+    };
+  });
+  const active = mode === "live" ? (identityMode === "fused" ? fusedTracks : latestTracks) : replayTracks;
   const staleFrames = data.latestFrames.filter((frame) => frameIsStale(frame, liveNow));
   const recentEvents = data.observations
     .filter((row) => row.ts <= currentPlayhead)
@@ -590,9 +625,18 @@ export function LivePage({ liveTick = 0 }) {
       <PageHeader
         eyebrow="Live spatial view"
         title="Latest processed scene"
-        description="Each camera shows its latest completed processed frame. Colors represent anonymous source-local tracks, not identities."
+        description={identityMode === "fused"
+          ? "Calibrated camera-local tracks are associated centrally in shared world coordinates. Fused IDs remain anonymous tracking estimates."
+          : "Each camera shows its latest completed processed frame. Colors represent anonymous source-local tracks."}
         actions={
           <>
+            <label className="select-control">
+              <span className="sr-only">Identity view</span>
+              <select value={identityMode} onChange={(event) => setIdentityMode(event.target.value)} disabled={mode === "replay"}>
+                <option value="fused">Fused view</option>
+                <option value="source">Source debug view</option>
+              </select>
+            </label>
             <label className="select-control">
               <span className="sr-only">Camera source</span>
               <select value={sourceId} onChange={(event) => setSourceId(event.target.value)}>
@@ -607,10 +651,13 @@ export function LivePage({ liveTick = 0 }) {
         }
       />
       {state.error && <div className="inline-warning">Live refresh failed: {state.error.message}</div>}
-      {mode === "live" && staleFrames.length > 0 && (
+      {mode === "live" && identityMode === "source" && staleFrames.length > 0 && (
         <div className="inline-warning">
-          Latest scene retained; {staleFrames.length} {staleFrames.length === 1 ? "source is" : "sources are"} stale because no newer processed frame has arrived.
+          Latest scene retained; {staleFrames.length} {staleFrames.length === 1 ? "source is" : "sources are"} stale because no newer processed sample has arrived.
         </div>
+      )}
+      {mode === "live" && identityMode === "fused" && data.fused?.groups?.some((group) => group.quality !== "known") && (
+        <div className="inline-warning">Fused coverage is partial or unknown. StoreLens keeps last source scenes for debugging but excludes stale members from current fusion.</div>
       )}
       <div className="live-toolbar" role="toolbar" aria-label="Live playback controls">
         <button className={mode === "live" ? "active" : ""} onClick={goLive}><Radio size={14} /> Live</button>
@@ -643,11 +690,11 @@ export function LivePage({ liveTick = 0 }) {
           />
           <aside className="live-rail">
             <div className="live-summary-grid">
-              <MetricCard label="Latest-frame people" value={active.length} note={mode === "live" ? "Persists until the next processed frame" : "Replay sample"} />
-              <MetricCard label={mode === "live" ? "Sources sampled" : "Tracks loaded"} value={mode === "live" ? data.latestFrames.length : tracks.size} note={mode === "live" ? `${staleFrames.length} stale` : "Last 10 minutes"} />
+              <MetricCard label={identityMode === "fused" && mode === "live" ? "Fused people" : "Latest-frame people"} value={active.length} note={mode === "live" ? "Updated by complete processed samples" : "Replay sample"} />
+              <MetricCard label={mode === "live" ? (identityMode === "fused" ? "Fusion groups" : "Sources sampled") : "Tracks loaded"} value={mode === "live" ? (identityMode === "fused" ? data.fused?.groups?.length || 0 : data.latestFrames.length) : tracks.size} note={mode === "live" ? (identityMode === "fused" ? "Geometry-first association" : `${staleFrames.length} stale`) : "Last 10 minutes"} />
             </div>
             <section className="live-rail-section">
-              <div className="live-rail-heading"><Users size={15} /><div><strong>{mode === "live" ? "Latest frame tracks" : "Replay tracks"}</strong><small>Stable color per source-local ID</small></div></div>
+              <div className="live-rail-heading"><Users size={15} /><div><strong>{mode === "live" ? (identityMode === "fused" ? "Fused current tracks" : "Latest source tracks") : "Replay tracks"}</strong><small>{identityMode === "fused" && mode === "live" ? "One color per anonymous fused ID" : "Stable color per source-local ID"}</small></div></div>
               <div className="live-track-list">
                 {active.slice(0, 12).map((track) => {
                   const latest = track.position.observation;

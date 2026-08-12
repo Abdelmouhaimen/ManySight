@@ -50,6 +50,19 @@ function polygon(points = []) {
   return points.map((point) => `${point.x},${point.y}`).join(" ");
 }
 
+function zoneRings(zone) {
+  const geometry = zone?.geometry;
+  if (geometry?.type === "Polygon") {
+    return [(geometry.coordinates?.[0] || []).map(([x, y]) => ({ x, y }))];
+  }
+  if (geometry?.type === "MultiPolygon") {
+    return (geometry.coordinates || []).map((part) =>
+      (part?.[0] || []).map(([x, y]) => ({ x, y })),
+    );
+  }
+  return zone?.polygon?.length ? [zone.polygon] : [];
+}
+
 function eventPoint(event, svg) {
   if (!svg) return null;
   const point = svg.createSVGPoint();
@@ -173,14 +186,20 @@ function MapSurface({
           className="workbench-grid"
         />
         {zones.map((zone) => {
-          const center = centroid(zone.polygon);
+          const rings = zoneRings(zone);
+          const labelRing = rings.reduce((largest, ring) =>
+            ring.length > largest.length ? ring : largest, []);
+          const center = centroid(labelRing);
           return (
             <g key={zone.id} className="workbench-zone">
-              <polygon
-                points={polygon(zone.polygon)}
-                fill={`${zone.color}24`}
-                stroke={zone.color}
-              />
+              {rings.map((ring, index) => (
+                <polygon
+                  key={`${zone.id}-${index}`}
+                  points={polygon(ring)}
+                  fill={`${zone.color}24`}
+                  stroke={zone.color}
+                />
+              ))}
               <text x={center.x} y={center.y}>
                 {zone.name}
               </text>

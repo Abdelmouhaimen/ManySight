@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  Activity,
   BellRing,
   Camera,
   Gauge,
@@ -14,8 +13,8 @@ import {
 import { api, apiKey } from "./api.js";
 import { BrandMark, EnvironmentBadge, Toast } from "./components.jsx";
 import { ObservationsPage } from "./observations.jsx";
-import { AnalyticsPage } from "./analytics.jsx";
-import { ConfigurePage, OverviewPage, ReviewPage, SourcesPage } from "./pages.jsx";
+import { ConfigurePage, ReviewPage, SourcesPage } from "./pages.jsx";
+import { GeneratedDashboardPage } from "./dashboard-page.jsx";
 import "./styles.css";
 
 const LivePage = lazy(() =>
@@ -24,7 +23,6 @@ const LivePage = lazy(() =>
 
 const NAV = [
   ["overview", "Dashboard", Gauge],
-  ["analytics", "Analytics", Activity],
   ["review", "Review", BellRing],
   ["observations", "Observations", ScanSearch],
   ["live", "Live", Radio],
@@ -45,7 +43,7 @@ function currentRoute() {
   const route = window.location.hash.replace("#", "");
   if (route === "events") return "review"; // legacy bookmarks
   if (route === "streams") return "sources"; // legacy bookmarks
-  if (route === "insights") return "analytics"; // legacy bookmarks — block+dataset model retired
+  if (route === "insights" || route === "analytics") return "overview";
   if (route === "detections") return "observations"; // legacy bookmarks — renamed area
   if (route === "configure") return "setup"; // legacy bookmarks — renamed area
   return NAV.some(([value]) => value === route) ? route : "overview";
@@ -131,10 +129,8 @@ function App() {
   ).length;
   const Page =
     route === "overview"
-      ? OverviewPage
-      : route === "analytics"
-        ? AnalyticsPage
-        : route === "review"
+      ? GeneratedDashboardPage
+      : route === "review"
           ? ReviewPage
           : route === "observations"
             ? ObservationsPage

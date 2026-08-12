@@ -477,6 +477,18 @@ export function ActivityMap({
   const maxWeight = Math.max(...topPoints.map((point) => point.w || 1), 1);
   const polygon = (items) =>
     items.map((point) => `${point.x},${point.y}`).join(" ");
+  const zoneRings = (zone) => {
+    const geometry = zone?.geometry;
+    if (geometry?.type === "Polygon") {
+      return [(geometry.coordinates?.[0] || []).map(([x, y]) => ({ x, y }))];
+    }
+    if (geometry?.type === "MultiPolygon") {
+      return (geometry.coordinates || []).map((part) =>
+        (part?.[0] || []).map(([x, y]) => ({ x, y })),
+      );
+    }
+    return zone?.polygon?.length ? [zone.polygon] : [];
+  };
   return (
     <div className={`activity-map ${compact ? "activity-map-compact" : ""}`}>
       <svg
@@ -490,29 +502,39 @@ export function ActivityMap({
           </filter>
         </defs>
         <rect x="0" y="0" width={width} height={height} className="map-floor" />
-        {zones.map((zone) => (
+        {zones.map((zone) => {
+          const rings = zoneRings(zone);
+          const labelRing = rings.reduce((largest, ring) =>
+            ring.length > largest.length ? ring : largest, []);
+          return (
           <g key={zone.id}>
-            <polygon
-              points={polygon(zone.polygon)}
-              fill={`${zone.color}20`}
-              stroke={`${zone.color}90`}
-              strokeWidth=".05"
-            />
+            {rings.map((ring, index) => (
+              <polygon
+                key={`${zone.id}-${index}`}
+                points={polygon(ring)}
+                fill={`${zone.color}20`}
+                stroke={`${zone.color}90`}
+                strokeWidth=".05"
+              />
+            ))}
+            {labelRing.length > 0 && (
             <text
               x={
-                zone.polygon.reduce((sum, p) => sum + p.x, 0) /
-                zone.polygon.length
+                labelRing.reduce((sum, p) => sum + p.x, 0) /
+                labelRing.length
               }
               y={
-                zone.polygon.reduce((sum, p) => sum + p.y, 0) /
-                zone.polygon.length
+                labelRing.reduce((sum, p) => sum + p.y, 0) /
+                labelRing.length
               }
               className="map-zone-label"
             >
               {zone.name}
             </text>
+            )}
           </g>
-        ))}
+          );
+        })}
         {(store?.map?.walls || []).map((wall, index) => (
           <polyline key={index} points={polygon(wall)} className="map-wall" />
         ))}
