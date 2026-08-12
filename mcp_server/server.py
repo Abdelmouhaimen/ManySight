@@ -74,19 +74,18 @@ mcp = build_server(
         "submit_observations() rejects any of those legacy derived kinds with a "
         "legacy_derived_observation error. "
         "For every processed person-detection frame, workers submit all detections and then one "
-        "detection_frame_count measurement, including zero, using exactly the same timestamp. "
+        "detection_frame_count measurement, including zero, using exactly the same timestamp and sample_id. "
         "Never create a fake detection for an empty frame or use wall-clock expiry as scene state. "
-        "\n\nAfter posting observations, verify with get_latest_observations()/query_analytics(), "
-        "then create_analysis(subject, measures, filters, grouping) so the result appears on the "
-        "dashboard as a saved question, not a chart — changing how it is displayed later never "
-        "requires a second analysis. list_analysis_capabilities() shows which subjects/measures/"
-        "groupings fit the data actually present. register_insight is deprecated (kept only as a "
-        "compatibility adapter to create_analysis) — do not use it for new work. "
-        "\n\nA zone polygon is its global map footprint. Use zone views for camera-specific visible "
+        "\n\nAfter posting observations, inspect source/fused current state and quality, then "
+        "preview a deterministic query with query_data. Save one canonical question with "
+        "create_saved_query and reference it from a generated dashboard only when requested. "
+        "Agents never receive raw SQL access or generate dashboard React code. "
+        "\n\nA zone Polygon/MultiPolygon is its global map footprint. Use zone views for camera-specific visible "
         "and inset decision polygons, and named projection surfaces for mattresses, tables, or "
         "other elevated planes; never compensate for height by subtracting map Y. Preserve bbox, "
         "keypoints, masks, point meaning, and geometry provenance in submitted observations — "
-        "StoreLens uses them for zone assignment and review evidence; it never invents identity."
+        "StoreLens uses them for zone assignment and review evidence. Multiview groups may "
+        "associate anonymous active tracks from compatible calibrated sources; this is not identity."
     ),
 )
 
@@ -190,6 +189,12 @@ def get_store_map() -> dict:
 def list_zones() -> list[dict]:
     """All named zones as polygons in map meters. Zone ids are what events reference."""
     return _req("GET", "/zones")
+
+
+@mcp.tool()
+def get_zone(zone_id: int) -> dict:
+    """Get canonical Polygon/MultiPolygon geometry and camera-extension provenance."""
+    return _req("GET", f"/zones/{zone_id}")
 
 
 @mcp.tool()
@@ -307,6 +312,74 @@ def update_zone_view(view_id: int, patch: dict) -> dict:
 def delete_zone_view(view_id: int) -> dict:
     """Delete one camera-specific view without deleting the global map zone."""
     return _req("DELETE", f"/zone-views/{view_id}")
+
+
+@mcp.tool()
+def extend_zone_from_view(view_id: int, polygon: str = "outer") -> dict:
+    """Explicitly project and union one zone-view polygon into the canonical zone.
+    Creating or editing a view never expands canonical geometry automatically."""
+    return _req("POST", f"/zone-views/{view_id}/extend-zone", {"polygon": polygon})
+
+
+@mcp.tool()
+def list_calibrations(source_id: int | None = None) -> list[dict]:
+    """List provider-neutral rich calibrations and their derived floor homographies."""
+    suffix = "" if source_id is None else "?" + urllib.parse.urlencode({"source_id": source_id})
+    return _req("GET", "/calibrations" + suffix)
+
+
+@mcp.tool()
+def import_calibration(source_id: int, projection_matrix: list, world_frame: dict,
+                       units: str = "m", provider: str = "generic",
+                       world_to_map_transform: list | None = None,
+                       ground_plane_z: float = 0.0, frame_w: int | None = None,
+                       frame_h: int | None = None, distortion: list | dict | None = None,
+                       intrinsics: dict | None = None, extrinsics: dict | None = None,
+                       verification_points: list[dict] | None = None) -> dict:
+    """Import a 3x4 world-to-pixel calibration (generic, NVIDIA MV3DT, or AMC).
+    World coordinates must be metres with explicit axis/frame metadata."""
+    return _req("POST", "/calibrations/import", {
+        "source_id": source_id, "provider": provider,
+        "projection_matrix": projection_matrix, "world_frame": world_frame,
+        "world_to_map_transform": world_to_map_transform or [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        "units": units, "ground_plane_z": ground_plane_z,
+        "frame_w": frame_w, "frame_h": frame_h,
+        "distortion": distortion or [], "intrinsics": intrinsics or {},
+        "extrinsics": extrinsics or {}, "verification_points": verification_points or [],
+    })
+
+
+@mcp.tool()
+def list_multiview_groups() -> list[dict]:
+    """List explicit groups of calibrated cameras eligible for fusion."""
+    return _req("GET", "/multiview/groups")
+
+
+@mcp.tool()
+def create_multiview_group(name: str, source_ids: list[int], enabled: bool = True,
+                           time_tolerance_s: float = 0.75, spatial_gate_m: float = 1.5,
+                           track_age_s: float = 2.0, topology: dict | None = None,
+                           configuration: dict | None = None) -> dict:
+    """Create an explicit same-world-frame camera fusion group."""
+    return _req("POST", "/multiview/groups", {
+        "name": name, "source_ids": source_ids, "enabled": enabled,
+        "time_tolerance_s": time_tolerance_s, "spatial_gate_m": spatial_gate_m,
+        "track_age_s": track_age_s, "topology": topology or {},
+        "configuration": configuration or {},
+    })
+
+
+@mcp.tool()
+def update_multiview_group(group_id: int, patch: dict) -> dict:
+    """Update fusion membership, topology, gates, age, or enabled state."""
+    return _req("PATCH", f"/multiview/groups/{group_id}", patch)
+
+
+@mcp.tool()
+def get_multiview_status(group_id: int | None = None) -> dict:
+    """Return fused current entities plus per-group source freshness and quality."""
+    suffix = "" if group_id is None else "?" + urllib.parse.urlencode({"group_id": group_id})
+    return _req("GET", "/multiview/current" + suffix)
 
 
 @mcp.tool()
@@ -451,6 +524,26 @@ def get_latest_detection_frames(entity_type: str = "person", source_id: int | No
 
 
 @mcp.tool()
+def list_current_entities(entity_type: str = "person", source_id: int | None = None) -> dict:
+    """Return source-local entities from each latest complete sample. This is the
+    debug/current-source view, not deduplicated cross-camera state."""
+    return get_latest_detection_frames(entity_type=entity_type, source_id=source_id)
+
+
+@mcp.tool()
+def list_current_fused_entities(group_id: int | None = None,
+                                entity_type: str = "person",
+                                zone_id: int | None = None) -> dict:
+    """Return anonymous fused entities and member evidence for the active multiview group."""
+    params = {"entity_type": entity_type}
+    if group_id is not None:
+        params["group_id"] = group_id
+    if zone_id is not None:
+        params["zone_id"] = zone_id
+    return _req("GET", "/multiview/current?" + urllib.parse.urlencode(params))
+
+
+@mcp.tool()
 def submit_events(events: list[dict], job_id: int | None = None) -> dict:
     """LEGACY. Prefer submit_observations for all new work. Post a batch of raw
     events (max 5000) using the older per-event-type contract (event_type:
@@ -493,7 +586,6 @@ def get_analytics(kind: str, params: dict | None = None) -> dict:
     return _req("GET", f"/analytics/{kind}" + (f"?{qs}" if qs else ""))
 
 
-@mcp.tool()
 def list_analysis_capabilities() -> dict:
     """What query_analytics()/create_analysis() can build a question from right
     now: subjects (detection|measurement|state), their valid measures, grouping
@@ -503,7 +595,6 @@ def list_analysis_capabilities() -> dict:
     return _req("GET", "/analytics/capabilities")
 
 
-@mcp.tool()
 def query_analytics(subject: str, measures: list[str], filters: dict | None = None,
                     grouping: dict | None = None, range: dict | None = None,
                     comparison: dict | None = None) -> dict:
@@ -526,7 +617,6 @@ def query_analytics(subject: str, measures: list[str], filters: dict | None = No
     return _req("POST", "/analytics/query", body)
 
 
-@mcp.tool()
 def create_analysis(name: str, subject: str, measures: list[str], filters: dict | None = None,
                     grouping: dict | None = None, question: str = "", default_range: dict | None = None,
                     comparison: dict | None = None, presentation: str = "", pinned: bool = False) -> dict:
@@ -547,7 +637,6 @@ def create_analysis(name: str, subject: str, measures: list[str], filters: dict 
     })
 
 
-@mcp.tool()
 def list_analyses() -> list[dict]:
     """List every saved analysis (including hidden ones) — check this before
     create_analysis to avoid a duplicate; identical (subject, measures, filters,
@@ -555,7 +644,6 @@ def list_analyses() -> list[dict]:
     return _req("GET", "/analyses?include_hidden=true")
 
 
-@mcp.tool()
 def update_analysis(analysis_id: int, patch: dict) -> dict:
     """Patch a saved analysis (name, question, measures, filters, grouping,
     presentation, pinned, sort_order, visibility, status...). Use
@@ -563,7 +651,6 @@ def update_analysis(analysis_id: int, patch: dict) -> dict:
     return _req("PATCH", f"/analyses/{analysis_id}", patch)
 
 
-@mcp.tool()
 def delete_analysis(analysis_id: int) -> dict:
     """Delete a saved analysis. Prefer update_analysis(status='retired') if it
     may still be useful as history."""
@@ -571,9 +658,104 @@ def delete_analysis(analysis_id: int) -> dict:
 
 
 @mcp.tool()
+def list_query_capabilities() -> dict:
+    """Return deterministic subjects, measures, filters, groupings, and available dimensions."""
+    return _req("GET", "/queries/capabilities")
+
+
+@mcp.tool()
+def query_data(subject: str, measures: list[str], filters: dict | None = None,
+               grouping: dict | None = None, range: dict | None = None,
+               comparison: dict | None = None) -> dict:
+    """Execute a deterministic query definition without saving it. Raw SQL is never exposed."""
+    return _req("POST", "/analytics/query", {
+        "subject": subject, "measures": measures, "filters": filters or {},
+        "grouping": grouping or {}, "range": range or {}, "comparison": comparison or {},
+    })
+
+
+@mcp.tool()
+def list_saved_queries() -> list[dict]:
+    """List canonical saved query definitions used by dashboards and alerts."""
+    return _req("GET", "/queries?include_hidden=true")
+
+
+@mcp.tool()
+def create_saved_query(name: str, subject: str, measures: list[str],
+                       filters: dict | None = None, grouping: dict | None = None,
+                       question: str = "", default_range: dict | None = None,
+                       comparison: dict | None = None) -> dict:
+    """Save one deterministic analytical question; presentation belongs to dashboard widgets."""
+    return _req("POST", "/queries", {
+        "name": name, "subject": subject, "measures": measures,
+        "filters": filters or {}, "grouping": grouping or {}, "question": question,
+        "default_range": default_range or {}, "comparison": comparison or {},
+        "created_by": "agent",
+    })
+
+
+@mcp.tool()
+def update_saved_query(query_id: int, patch: dict) -> dict:
+    """Update a saved query definition. Referenced widgets continue using the same query id."""
+    return _req("PATCH", f"/queries/{query_id}", patch)
+
+
+@mcp.tool()
+def delete_saved_query(query_id: int) -> dict:
+    """Delete an unreferenced saved query. Referenced queries are protected with HTTP 409."""
+    return _req("DELETE", f"/queries/{query_id}")
+
+
+@mcp.tool()
+def list_dashboards() -> list[dict]:
+    """List generated dashboards and their safe, query-backed widgets."""
+    return _req("GET", "/dashboards")
+
+
+@mcp.tool()
+def create_dashboard(name: str, description: str = "") -> dict:
+    """Create an empty agent-generated dashboard."""
+    return _req("POST", "/dashboards", {
+        "name": name, "description": description, "created_by": "agent",
+    })
+
+
+@mcp.tool()
+def update_dashboard(dashboard_id: int, patch: dict) -> dict:
+    """Update dashboard metadata without changing its saved queries."""
+    return _req("PATCH", f"/dashboards/{dashboard_id}", patch)
+
+
+@mcp.tool()
+def add_dashboard_widget(dashboard_id: int, query_id: int, title: str,
+                         presentation: str, configuration: dict | None = None,
+                         sort_order: int = 0) -> dict:
+    """Attach a saved query using a validated presentation: number, timeseries,
+    bar, table, or heatmap."""
+    return _req("POST", f"/dashboards/{dashboard_id}/widgets", {
+        "query_id": query_id, "title": title, "presentation": presentation,
+        "configuration": configuration or {}, "sort_order": sort_order,
+    })
+
+
+@mcp.tool()
+def update_dashboard_widget(widget_id: int, patch: dict) -> dict:
+    """Update a dashboard widget while preserving its referenced query by default."""
+    return _req("PATCH", f"/dashboard-widgets/{widget_id}", patch)
+
+
+@mcp.tool()
+def delete_dashboard(dashboard_id: int) -> dict:
+    """Delete a dashboard and its widgets; saved queries and observations are preserved."""
+    return _req("DELETE", f"/dashboards/{dashboard_id}")
+
+
+@mcp.tool()
 def create_alert_rule(name: str, kind: str, params: dict | None = None, analysis: dict | None = None,
                       condition: dict | None = None, webhook_url: str = "", cooldown_s: float = 60) -> dict:
-    """Create an alert rule. kinds:
+    """Create an alert rule. Prefer query_condition with params {query_id} and
+    condition {operator,value,for_seconds?,allow_partial?}; it evaluates the same saved
+    query used by a dashboard and is edge-triggered. Compatibility kinds:
       dwell_exceeds {zone_id?, seconds} (params) — a track's platform-derived dwell
         (tracked detections, or legacy enter/exit pairing) reaches `seconds` ·
       occupancy_exceeds {zone_id?, count, window_s} (params) ·
@@ -604,7 +786,6 @@ _INSIGHT_DATASET_TO_SUBJECT = {
 }
 
 
-@mcp.tool()
 def register_insight(title: str, block: str, dataset: str, params: dict | None = None,
                      question: str = "", unit: str = "", limitations: str = "",
                      pinned: bool = False) -> dict:
@@ -628,7 +809,6 @@ def register_insight(title: str, block: str, dataset: str, params: dict | None =
     })
 
 
-@mcp.tool()
 def list_insights() -> list[dict]:
     """LEGACY, READ-ONLY — historical insight_definitions rows only; there is no
     create/update path anymore (the block+dataset+params model is retired). Use
@@ -637,7 +817,6 @@ def list_insights() -> list[dict]:
     return _req("GET", "/insights?include_hidden=true")
 
 
-@mcp.tool()
 def delete_insight(insight_id: int) -> dict:
     """LEGACY. Delete a historical insight_definitions row (cleanup only). Prefer
     delete_analysis/update_analysis(status='retired') on its migrated analysis."""

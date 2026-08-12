@@ -37,11 +37,10 @@ time-aggregated total:
    that only increases is `cumulative`.
 4. Submit one `measurement` per interval — never average client-side and never post a
    running total when `value_kind="gauge"` is what's meant.
-5. Verify with `query_analytics("measurement", ["latest","average"],
+5. Verify with `query_data("measurement", ["latest","average"],
    filters={"measurement_names":["<name>"]}, grouping={"primary":"time","bucket":"5m"})`.
-6. Publish it: `create_analysis(name, subject="measurement", measures=["latest","average"],
-   filters={"measurement_names":["<name>"]}, grouping={"primary":"time","bucket":"..."},
-   presentation="line")`.
+6. If the result is useful, publish it with `create_saved_query(...)`. Presentation is
+   selected separately when the query is attached to a generated dashboard widget.
 
 ## Worker template
 
@@ -66,7 +65,7 @@ while True:
 
 ## Pitfalls
 
-- Don't conflate `name` and `label` — `name` is the metric identity (what Analytics
+- Don't conflate `name` and `label` — `name` is the metric identity (what a query
   groups/filters by as `measurement_names`); `label` is a secondary qualifier, often unset.
 - Never sum `gauge` samples to get a "total" — that's meaningless for an instantaneous
   reading. If the user wants a total, they mean `delta`/`cumulative` semantics; confirm
@@ -76,4 +75,4 @@ while True:
   side — the platform detects the reset and never reports a negative rate.
 - If the user wants this filtered by zone and the measurement has no natural position,
   give it a `point_map` (e.g. the zone's centroid) — otherwise it simply won't show up in
-  a zone-scoped analysis, by design, rather than being silently miszoned.
+  a zone-scoped query, by design, rather than being silently miszoned.

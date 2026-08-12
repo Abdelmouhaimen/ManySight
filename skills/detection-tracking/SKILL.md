@@ -1,140 +1,64 @@
 ---
 name: detection-tracking
-description: Use for spatial traffic heatmaps, popularity/activity maps, presence counts, and time-in-zone questions ("dwell at checkout", "queue time", "how long at the promo stand", optionally split by an attribute like gender or staff/customer). Covers people/object detection and tracking with pixel or map evidence. The single recipe behind heatmap, presence, visit, and dwell analyses — they are all the same worker contract (submit tracked detections), differing only in the question asked of the resulting data.
+description: Use for people/object presence, heatmaps, visits, dwell, flow, and any worker that submits tracked spatial detections, including complete zero-capable samples.
 ---
 
-# Detection & tracking — presence, heatmaps, visits, and dwell
+# Detection and tracking
 
-Use for any question answered by "where were people/objects, and for how long."
-StoreLens derives heatmaps, presence counts, zone visits, dwell duration, and
-zone-to-zone flow **all from the same stream of tracked `detection` observations** —
-there is no separate "dwell worker" or "heatmap worker" contract. What differs is only
-which saved analysis you create afterward.
+StoreLens derives presence, density, visits, dwell, and transitions from the same stream
+of tracked `detection` observations. Workers never submit canonical zones, enter/exit,
+dwell, occupancy, transitions, or dashboard aggregates.
 
-## What the platform needs from you
+## Complete samples
 
-A stream of `detection` observations with a stable `entity_id` and spatial evidence.
-For standing floor traffic, use the person's **feet** (`geometry.point_px`, or let
-StoreLens pick foot/ankle keypoints or the bbox bottom-center — see precedence below).
-Post 1–2 per second per entity for ordinary spatial analytics; don't post every
-camera frame at 30fps. For zero-capable presence series, call
-`submit_detection_frame` once per processed sample, including empty frames, with the
-same timestamp as that sample's detections. The submitted count is shown at that exact
-timestamp; neighboring samples and different cameras are not merged.
+For each processed frame:
 
-For person detection this is mandatory for every processed frame, not only frames
-that contain tracks. Create one `sample_ts`, use it for every detection from that
-frame, append `submit_detection_frame(..., count=len(tracks), ts=sample_ts)` after
-the detections, then flush. Do not skip the frame count when `tracks` is empty. Do
-not create a fake zero-confidence detection. Do not call `time.time()` separately
-for rows from one frame, and do not calculate Live occupancy in the worker.
+1. Choose one exact timestamp and one opaque source-local `sample_id`.
+2. Detect and track objects. `entity_id` is an anonymous tracker ID with an honest
+   `identity_scope`, not a verified person identity.
+3. Submit every detection with pixel evidence. For floor traffic, feet or bbox
+   bottom-center are normally correct; preserve bbox/keypoints/mask when available.
+4. Submit exactly one `detection_frame_count` measurement with the same timestamp and
+   `sample_id`, including a value of zero.
+5. Flush immediately. Never invent a zero-confidence detection for an empty frame.
 
-Never send `zone_id`/`zone`, and never emit an enter/exit pair or a computed dwell value
-yourself — StoreLens assigns the zone from geometry and derives visits/dwell/flow from
-the raw stream (a run of same-zone detections for one entity becomes a visit once it has
-enough confirmed samples; a gap or a zone change closes it).
-
-Representative-point precedence, most to least preferred: explicit `point_px`, then
-foot/ankle keypoints, then bbox bottom-center, then left empty if only a mask is given.
-
-## Steps
-
-1. `get_store_map()` — confirm which cameras are **placed + calibrated**. An uncalibrated
-   camera's detections still get stored, but without a map point they can't contribute to
-   a heatmap or be zone-assigned; ask the user to calibrate (Setup → Space & zones → ⌗) or
-   proceed pixel-only if the question doesn't need zones.
-2. Capture a frame from each candidate directly on the worker device — check the view
-   actually covers the area the user cares about. Inspect `list_projection_surfaces` and
-   `list_zone_views` when subjects are sitting, lying, occluded, or elevated (see the
-   `geometry-calibration` skill).
-3. `register_job("<question> – <scope>", event_types=["detection"], source_ids=[...])`.
-4. Detect entities per frame. Model choice, best first:
-   - `ultralytics` YOLO (`model.predict`, class 0 = person) if installed/installable;
-   - OpenCV HOG person detector;
-   - background subtraction blobs (always works, see template) — fine for both heatmaps and dwell.
-5. Track with `storelens.CentroidTracker` (or equivalent) so `entity_id` is stable — this
-   is what makes dwell/flow work, not a separate mechanism.
-6. For an attribute split (e.g. "dwell by gender"), run a lightweight classifier per
-   entity, majority-vote, cache per `entity_id`, and put the result in `attributes` —
-   appearance-based attributes are estimates; say so in the job description and in any
-   saved analysis's `question`.
-7. Verify: `query_analytics("detection", ["active_entities"])` for presence,
-   `query_analytics("detection", ["visits","average_dwell","total_dwell"], grouping={"primary":"zone"})`
-   for dwell, `query_analytics("detection", ["density"])` for the heatmap.
-8. Publish it: `create_analysis(name, subject="detection", measures=[...], filters, grouping,
-   presentation="heatmap_map"|"bar"|"table")` — one analysis per question; switching
-   `presentation` later never needs a second record.
-
-## Worker template
-
-`open_capture` resolves a managed source only when needed and keeps connection material
-in worker memory. Never paste a resolved URL, username, or password into generated source
-code, logs, observation attributes, job configuration, or heartbeat metrics. An explicit
-`local_connection` remains available for a deliberate worker-local override.
+Prefer the SDK builder:
 
 ```python
-import os, sys, time
-sys.path.insert(0, "sdk/python")
-from storelens import StoreLens, CentroidTracker
-import cv2
-
-sl = StoreLens(os.environ["STORELENS_URL"])
-src = sl.source(SOURCE_ID)
-job = sl.register_job("Presence – whole store", "tracked detections", source_ids=[src["id"]],
-                      event_types=["detection", "measurement"])
-sl.register_worker("detection-tracker", version="1")
-cap = sl.open_capture(src)
-bg = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=32, detectShadows=False)
-tracker = CentroidTracker(max_distance=90)
-
-while True:
-    ok, frame = cap.read()
-    if not ok:
-        break
-    mask = bg.apply(frame)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    feet = []
-    for c in contours:
-        if cv2.contourArea(c) < 800:            # ignore noise; tune per camera
-            continue
-        x, y, w, h = cv2.boundingRect(c)
-        feet.append((x + w / 2, y + h))          # bottom-center = feet
-    sample_ts = time.time()
-    tracks = tracker.update(feet)
-    for tid, cx, cy in tracks:
-        sl.submit_detection(source_id=src["id"], entity_id=tid, point_px=(cx, cy),
-                            entity_type="person", ts=sample_ts)
-    sl.submit_detection_frame(source_id=src["id"], entity_type="person",
-                              count=len(tracks), ts=sample_ts)
-    sl.flush()
-sl.flush()
+sample = client.begin_detection_sample(source_id, "person", ts=time.time())
+for track in tracks:
+    sample.add_detection(
+        entity_id=str(track.id),
+        bbox_px=(track.x0, track.y0, track.x1, track.y1),
+        confidence=track.confidence,
+    )
+sample.submit()
 ```
 
-Swap the detection block for YOLO when available:
-```python
-from ultralytics import YOLO
-model = YOLO("yolov8n.pt")
-boxes = model.predict(frame, classes=[0], verbose=False)[0].boxes.xyxy.tolist()
-for tid, (x0, y0, x1, y1) in zip(track_ids, boxes):
-    sl.submit_detection(source_id=src["id"], entity_id=tid, entity_type="person",
-                        bbox_px=(x0, y0, x1, y1), ts=sample_ts)
-sl.submit_detection_frame(source_id=src["id"], entity_type="person",
-                          count=len(boxes), ts=sample_ts)
-```
+The builder sends one atomic batch. StoreLens also supports split marker-first or
+detection-first delivery, but incomplete/count-mismatched samples do not advance Live.
+Do not call `time.time()` separately for rows from one sample.
+
+## Workflow
+
+1. Load `storelens-platform`; inspect the source, map, calibration, zone views, and
+   projection surfaces.
+2. Capture locally with `StoreLens.open_capture`. Never log resolved credentials.
+3. Register a job and concrete worker, heartbeat every 5-15 seconds, and obey stop/restart.
+4. Use an appropriate detector and tracker. Model choice remains worker-local.
+5. Verify source current samples, projection, assigned zone, and freshness.
+6. If cameras overlap, load `multiview` and validate fused member evidence. Workers still
+   submit independent source-local identities.
+7. Preview the analytical question with `query_data`; save it with
+   `create_saved_query`. Load `generated-dashboard` only when a persistent view is wanted.
 
 ## Pitfalls
 
-- `entity_id` must be stable across frames or every dwell/flow measure collapses toward
-  zero — this is the single most common cause of "dwell shows almost nothing."
-- Feet, not bbox center — projecting a torso point through a floor homography lands
-  meters off. For a lying person, use a named mattress/table plane, not a subtracted height.
-- Post the original `bbox_px`/`keypoints_px` when available; StoreLens preserves them for
-  review and can use them for camera zone-view membership rules.
-- Don't flood: 30 fps × N entities adds nothing useful; 1–2 Hz is visually identical and
-  is what StoreLens's visit-confirmation (min-samples, gap tolerance) assumes.
-- Multiple cameras: one job is fine; submit with each observation's own `source_id`.
-- Live keeps one latest completed frame per source. Missing newer data makes freshness
-  stale; it does not clear the last scene. Cross-camera identity fusion is not implemented.
-- Attribute keys become Analytics split-by options automatically; keep values short and
-  consistent (`female`/`male`, not free text).
+- Unstable tracker IDs destroy dwell and flow semantics.
+- A torso projected through a floor homography is usually wrong; use feet or a suitable
+  named plane.
+- Missing samples mean stale/unknown evidence, not observed zero.
+- 1-2 processed samples per second is often sufficient for spatial analytics; tune to
+  the use case rather than uploading every camera frame by default.
+- Geometry-only multiview association is not biometric ReID and can switch at close
+  crossings or under poor calibration/synchronization.

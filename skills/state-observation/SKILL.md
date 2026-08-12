@@ -38,10 +38,9 @@ Do not post a computed duration in `info`/`attributes`; it is ignored.
    on a periodic timer (every ~15s), so it fires both right after the state ends and
    while it's still ongoing past the threshold, without needing another observation to
    arrive.
-6. Verify with `query_analytics("state", ["current","duration"], filters={"source_ids":[...]})`.
-7. Publish it: `create_analysis(name="Fridge door states", subject="state",
-   measures=["duration","time_percentage"], filters={"source_ids":[...]},
-   presentation="state_timeline", question="How long does the fridge stay open?")`.
+6. Verify with `query_data("state", ["current","duration"], filters={"source_ids":[...]})`.
+7. If useful, publish it with `create_saved_query(...)`; add a dashboard widget only
+   when the user wants a persistent view.
 
 ## Worker template
 

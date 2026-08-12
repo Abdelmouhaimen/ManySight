@@ -98,7 +98,7 @@ API smoke check for a running development server.
 ## Demo data and local video
 
 `python scripts/seed_demo.py` replaces workspace, geometry, sources, alert rules,
-historical alerts, and non-migrated analyses with synthetic data, then adds synthetic
+historical alerts, and non-migrated saved queries with synthetic data, then adds synthetic
 observation history and jobs. It is destructive to the selected `STORELENS_DATA`
 database and must not be used against retained data.
 

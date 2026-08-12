@@ -3,8 +3,9 @@
 StoreLens is intended to be an open-source platform for turning observations from cameras and
 sensors into spatial and temporal analytics for physical spaces. It stores source
 configuration and mapped geometry, accepts raw observations from local workers,
-projects spatial evidence into a floor plan, and derives visits, dwell, occupancy,
-transitions, analyses, and alerts.
+projects spatial evidence into a floor plan, associates source-local tracks across
+explicit calibrated camera groups, and derives visits, dwell, occupancy,
+transitions, saved queries, dashboards, and alerts.
 
 **StoreLens** is the platform, REST API, SDK, and MCP integration. **ManySight** is
 the bundled web dashboard. The dashboard name is retained as a user-interface
@@ -22,14 +23,16 @@ brand; the repository and API use StoreLens terminology.
 - Stores a metric floor plan, zones, camera placement, floor calibrations,
   projection surfaces, and per-camera zone views.
 - Accepts schema-v2 `detection`, `measurement`, and `state` observations.
+- Materializes complete processed samples and maintains source-local current state.
+- Associates anonymous tracks across explicitly configured, shared-world camera groups.
 - Assigns zones and derives visits, dwell, occupancy, transitions, state intervals,
-  saved analyses, and alerts from those observations.
+  saved-query results, generated dashboards, and alerts from observations.
 - Exposes a web dashboard, REST/OpenAPI API, Python worker SDK, and MCP server.
 
 StoreLens does not prescribe a computer-vision model or camera vendor, treat
-anonymous tracker IDs as verified identities, infer cross-camera identity, proxy
-camera feeds through the platform server, or run arbitrary worker code inside the
-server process.
+anonymous tracker IDs or fused tracks as verified identities, proxy camera feeds
+through the platform server, run appearance/ReID models centrally, or execute
+arbitrary worker code inside the server process.
 
 ## Architecture
 
@@ -49,7 +52,7 @@ StoreLens
   geometry enrichment -> zone assignment -> temporal derivation
         |
         v
-analytics / alerts / ManySight dashboard
+source state / multiview fusion / queries / alerts / ManySight dashboard
 ```
 
 Workers open sources where the device or stream is reachable. They submit direct
@@ -134,23 +137,12 @@ client.register_worker("person-detector", version="1")
 
 ok, frame = capture.read()
 if ok:
-    sample_ts = time.time()
+    sample = client.begin_detection_sample(
+        source["id"], entity_type="person", ts=time.time()
+    )
     # Replace these coordinates with output from your detector/tracker.
-    client.submit_detection(
-        source_id=source["id"],
-        entity_id="track-1",
-        entity_type="person",
-        point_px=(320, 470),
-        ts=sample_ts,
-    )
-    # Submit once for every processed frame, including frames with no tracks.
-    client.submit_detection_frame(
-        source_id=source["id"],
-        entity_type="person",
-        count=1,
-        ts=sample_ts,
-    )
-    client.flush_observations()
+    sample.add_detection(entity_id="track-1", point_px=(320, 470))
+    sample.submit()  # atomic batch with one sample_id and one count marker
 ```
 
 Run a real worker as a long-lived process, heartbeat every 5–15 seconds, and obey
@@ -160,9 +152,14 @@ cooperative stop/restart requests. The SDK lives at
 writing a new integration.
 
 The Live view represents the latest completed processed frame for each source.
-It changes only when a newer `detection_frame_count` sample arrives. If processing
+It changes only when a complete newer `detection_frame_count` sample arrives. If processing
 stops, the last scene remains visible with stale-source status; StoreLens does not
 reinterpret missing observations as an empty scene.
+
+For overlapping cameras, import compatible world calibrations and create a
+multiview group. Live defaults to anonymous fused tracks and retains a source-local
+debug mode. Fusion is geometry-first and deterministic; it does not create a
+biometric identity or claim continuity outside its configured active-track lifetime.
 
 ## MCP
 
@@ -186,6 +183,10 @@ see [Development and deployment](docs/development.md).
 - [Architecture and current scope](docs/architecture.md)
 - [Source connections and credentials](docs/source-connections.md)
 - [Workers and observations](docs/workers.md)
+- [Geometry and calibration](docs/geometry.md)
+- [Multiview current state](docs/multiview.md)
+- [Saved queries and generated dashboards](docs/queries-and-dashboards.md)
+- [Alerts](docs/alerts.md)
 - [Development and deployment](docs/development.md)
 - [Agent playbooks](skills/README.md)
 - [Contributing](CONTRIBUTING.md)

@@ -8,118 +8,98 @@ produced an observation.
 
 1. **Sources** describe logical cameras, files, streams, or sensors. Connection
    configuration is either StoreLens-managed or resolved from an external secret.
-2. **Local workers** open sources, run inference, track entities when useful, and
-   submit direct observations through the REST API or Python SDK.
-3. **The StoreLens API** persists observations in SQLite, enriches spatial evidence
-   using the geometry active at ingestion, and exposes derived read models.
-4. **The ManySight dashboard** is the bundled human interface for setup,
-   observations, live views, saved analyses, workers, and alert review.
-5. **The MCP server** adapts the REST API and agent playbooks for authorized coding
-   agents. It is not a worker runtime or video-processing service.
+2. **Local workers** open sources, run inference and tracking, and submit direct
+   observations through the REST API or Python SDK.
+3. **The StoreLens API** persists observations in SQLite and enriches spatial evidence
+   using the geometry active at ingestion.
+4. **The current-state service** commits only complete processed samples and maintains
+   bounded source-local scene state.
+5. **The multiview service** associates source-local tracks inside explicit groups of
+   cameras that share compatible metric world geometry.
+6. **The ManySight dashboard** is the bundled interface for setup, observations,
+   fused/source-debug Live views, generated dashboards, workers, and alerts.
+7. **The MCP server** exposes safe platform operations and agent playbooks. It is not
+   a worker runtime and never receives camera credentials through ordinary discovery.
 
 ## Data flow
 
 Workers submit schema-v2 `detection`, `measurement`, or `state` observations. A
 detection may carry a pixel point, bounding box, keypoints, or mask. StoreLens chooses
-a representative point, applies the relevant floor or named-plane homography, and
-assigns a physical zone. It records the source, worker, job, geometry revisions,
-projection method, and assignment method with the stored row.
+a representative point, applies the relevant floor or named-plane homography, assigns
+a physical zone, and records the geometry revisions used at ingestion.
 
-At query time StoreLens derives:
+StoreLens derives current presence, density, visits, dwell, transitions, measurement
+series, state intervals, fused occupancy, saved-query results, generated dashboards,
+and alerts. Legacy `/api/v1/events` remains accepted for compatibility; new workers
+must use `/api/v1/observations/batch`.
 
-- current presence and spatial density from detections;
-- visits, dwell, and transitions from ordered zone-assigned detections with opaque
-  entity IDs;
-- measurement series from instantaneous gauge, delta, or cumulative readings;
-- state intervals, durations, and transitions from repeated state samples;
-- saved analyses from a subject, measures, filters, and grouping;
-- alerts from legacy rule kinds or a general condition on a saved analysis.
+## Complete source samples
 
-Legacy `/api/v1/events` data remains readable and accepted for compatibility. New
-workers must use `/api/v1/observations/batch`.
+Continuous detection workers send zero or more detections followed by one
+`detection_frame_count` measurement. All rows use one opaque source-local `sample_id`
+and one exact timestamp. The marker commits the sample only when its value matches the
+stored detection count. A zero marker commits an observed empty frame without a fake
+detection.
 
-## Mono-camera processed-frame state
+The SDK's `begin_detection_sample(...).submit()` sends the sample as one immediate
+batch. Marker-first and detection-first delivery across batches are also supported,
+but partial or count-mismatched samples never replace current state. Duplicate markers
+and timestamp disagreements within an explicit sample are rejected. Older observations
+without `sample_id` retain exact source/timestamp fallback semantics.
 
-Continuous person workers use an existing schema-v2 measurement as a frame completion
-marker; no fourth observation kind exists:
+Scene contents and freshness are independent. If a worker stops, StoreLens retains the
+last complete sample and marks it stale; elapsed wall time never fabricates an empty
+scene.
 
-```text
-Camera
-   |
-   v
-sample/process frame T -> tracker
-   |-- detection A @ T
-   |-- detection B @ T
-   `-- detection_frame_count(person)=2 @ T
-              |
-              v
-StoreLens geometry enrichment
-              |
-              v
-latest completed frame for this source -> Live 3D map
-```
+## Multiview association
 
-All rows from one processed frame share the exact `source_id + timestamp` key. The
-count measurement is buffered after the detections and commits the frame. A sampled
-frame with no people contains no detection rows and
-`detection_frame_count(person)=0`; that newer frame immediately replaces the previous
-source-local scene with an empty one.
+A multiview group explicitly lists calibrated sources in one world frame. Fusion is
+downstream of complete source samples. Candidate associations are gated by time,
+metric distance, short trajectory prediction, and optional camera topology, then
+resolved with global minimum-cost assignment. Source observations and tracker IDs are
+never rewritten. Fused records retain their contributing source event, local track,
+sample, algorithm version, and configuration revision.
 
-Batch ingestion inserts accepted rows in request order and publishes SSE notifications
-in that order after persistence. The SDK therefore appends the count marker last. Live
-uses SSE as invalidation and refetches the authoritative latest-frame read model; it
-does not assemble frames with a timing delay. Detections received after a frame's
-completion marker cannot retroactively mutate that committed frame.
-
-Live scene state and source freshness are independent. If processing stops after a
-frame containing two tracks, Live retains those two tracks as the latest available
-evidence and marks the source stale. Wall-clock time alone never invents a newer empty
-scene. Multiple sources have independent latest frames and may be projected into the
-same map, but StoreLens does not deduplicate or associate their identities.
+Fused identities mean anonymous active-track association, not verified people. The
+current implementation uses no appearance model, face embedding, or biometric identity.
+Quality is `known`, `partial`, or `unknown` according to source freshness. Stale sources
+do not manufacture a zero count.
 
 ## Geometry model
 
-The workspace floor plan and zones use map metres. A source can have a floor-plane
-homography based on four or more pixel-to-map correspondences. A named projection
-surface models another planar target, such as a shelf or tabletop. A zone view stores
-how one camera sees a physical zone and can use point, bounding-box-overlap, or
-keypoint membership.
+The map and zones use metres. A canonical zone is GeoJSON Polygon or MultiPolygon;
+disconnected components remain disconnected. A zone view stores how one camera sees a
+zone and never changes the canonical footprint implicitly. An explicit extension
+operation projects and unions a chosen view polygon while recording calibration,
+surface, view, source-pixel, projected-map, and resulting-zone revisions.
 
-A homography maps one two-dimensional plane to another. It does not reconstruct
-arbitrary three-dimensional geometry, infer height, or make non-planar objects metric.
-Geometry changes affect future ingestion; historical rows retain the revisions that
-were used when they were recorded.
+A source may use a four-point floor homography or a rich 3x4 world-to-pixel calibration.
+The importer validates metric units, explicit world axes, matrix rank, optional
+distortion/intrinsic/extrinsic metadata, and verification points, then derives the
+ground-plane homography used by normal enrichment. Named projection surfaces model
+other planes such as shelves or tables. A homography does not reconstruct arbitrary 3D.
 
-## Identity and privacy boundary
+## Queries, dashboards, and alerts
 
-`entity_id` is an opaque tracker identifier, not a verified person identity.
-`identity_scope` declares whether the identifier is valid for one worker run, one
-source, or the workspace. StoreLens does not join identities across cameras by
-similarity and does not require face embeddings or biometric templates.
+Agents compose validated query definitions, not SQL. Saved queries contain subject,
+measures, filters, grouping, range, and comparison. Dashboard widgets reference those
+queries and select one safe presentation: number, timeseries, bar, table, or heatmap.
+Deleting a dashboard preserves its queries and all observations.
 
-Current identity remains worker/source scoped. Cross-camera entity association is not
-implemented. Future multi-view work may associate source-local tracks using appearance
-and spatiotemporal evidence before presenting fused workspace-level entities; no such
-signatures or fusion are part of the current observation contract.
-
-Workers should submit only the evidence needed for the intended analysis. Camera
-frames remain on the worker device unless an operator explicitly chooses to retain
-them elsewhere.
+Query-backed alerts evaluate the same deterministic state. They are edge-triggered,
+respect cooldowns, do not repeatedly fire while a condition remains true, and do not
+false-clear on unknown evidence. Partial quality is usable only when a rule explicitly
+allows it.
 
 ## Current operational scope
 
-- The implementation uses one SQLite database and a single workspace/store record.
+- Persistence uses SQLite and one workspace/store record.
 - API-key authentication is optional and is not a user/account or role system.
-- Managed camera credentials are encrypted at rest, but operators must supply and
-  protect the encryption and resolution keys.
-- Worker stop and restart are cooperative. StoreLens returns desired state on a
-  heartbeat; an external supervisor is responsible for relaunching a process.
-- Source reachability is evaluated on the worker machine, not by the StoreLens server.
-- Live and analytical results depend on model quality, calibration quality, sampling
-  rate, and the identity guarantees of the worker.
-- The dashboard can create legacy alert-rule forms; the general
-  `analysis_condition` rule is currently available through REST and MCP.
+- Managed credentials require operator-provided encryption and resolution keys.
+- Worker stop/restart is cooperative; an external supervisor performs relaunch.
+- Source reachability is evaluated on the worker machine.
+- Accuracy depends on models, calibration, synchronization, sampling, and tracking.
+- Multiview fusion is geometry-first active-track association, not long-term ReID.
 
-These limits are part of the current design rather than guarantees of production
-readiness. See [Development and deployment](development.md) for configuration and
-[Workers and observations](workers.md) for the ingestion contract.
+These limits are not production-readiness claims. See [Development](development.md),
+[Workers](workers.md), [Geometry](geometry.md), and [Multiview](multiview.md).

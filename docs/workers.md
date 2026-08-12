@@ -13,8 +13,8 @@ preprocessing. StoreLens owns geometry enrichment and derived analytics.
 5. Submit observations in batches of at most 5,000 rows; batches of 100–500 every
    1–5 seconds are a practical default.
 6. Check each heartbeat response for a cooperative stop or restart request.
-7. Verify `/observations/latest` and `/analytics/query`, then save an analysis if the
-   result should appear in the dashboard.
+7. Verify source-local and, where configured, fused current state. Create a saved query
+   and dashboard widget only after the observations are correct.
 
 A job is metadata. A worker instance is heartbeat-backed runtime state. StoreLens does
 not start or relaunch arbitrary worker scripts.
@@ -51,7 +51,9 @@ timestamp, source ID, and one of these kinds:
 - `state`: the current categorical label for a state name. Send every sample,
   including repeated labels, so StoreLens can derive intervals and staleness.
 
-The runtime contract is available at `GET /api/v1/observations/contract`.
+`sample_id` is an optional opaque source-local sample key. Continuous detection workers
+should use it for every detection and completion marker produced by one inference
+sample. The runtime contract is available at `GET /api/v1/observations/contract`.
 
 Workers must not send `zone_id` or `zone`, or publish derived kinds such as
 `zone_enter`, `zone_exit`, `zone_dwell`, `state_change`, or `count`. StoreLens rejects
@@ -62,20 +64,26 @@ those values on the schema-v2 endpoint.
 Detections exist only when an entity is observed. For a zero-capable presence series,
 submit one `measurement` named `detection_frame_count` for every processed frame. Set
 its label to the entity type and its gauge value to the number of detections, including
-zero. Give it exactly the same timestamp as that frame's detections. StoreLens does not
+zero. Give it the same `sample_id` and exact timestamp as that frame's detections. StoreLens does not
 merge neighboring timestamps or synchronize cameras.
 
 Treat the measurement as the completion marker for that processed frame: buffer the
 frame's zero or more detections first, append `detection_frame_count` last, then flush.
-Use one `sample_ts` value; do not call `time.time()` separately for each detection.
+Prefer `begin_detection_sample(...).add_detection(...).submit()`, which sends one
+immediate atomic batch. When building payloads manually, use one `sample_id` and
+`sample_ts`; do not call `time.time()` separately for each detection.
 Do not skip the marker for an empty frame and do not create a fake zero-confidence
 detection. A processed frame is a frame on which the worker actually ran its detector,
 not every physical camera frame skipped by an intentional sampler.
 
 `GET /api/v1/observations/latest-frames?entity_type=person` reconstructs the latest
-completed frame per source from the marker and exact source/timestamp detections. The
+completed frame per source from the marker and matching sample detections. The
 scene persists until a newer marker arrives. Freshness is reported separately, so a
 stopped worker makes the last frame stale without changing its contents.
+
+Workers never fuse identities. StoreLens performs geometry-first association only after
+complete samples are materialized for sources in an explicit multiview group. A worker
+continues to use its own opaque, scope-limited tracker IDs.
 
 ## Spatial evidence
 

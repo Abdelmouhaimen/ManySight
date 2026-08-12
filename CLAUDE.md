@@ -15,5 +15,7 @@ changes.
 
 When authoring a person-detection worker, submit one `detection_frame_count`
 measurement for every processed frame, including zero, after that frame's detections.
-All rows from the frame must use one exact timestamp. Never represent an empty frame
-with a fake detection or infer cross-camera identity.
+All rows from the frame must use one exact timestamp and one opaque `sample_id`; prefer
+the SDK atomic sample builder. Never represent an empty frame with a fake detection.
+Cross-camera association belongs only to explicit calibrated multiview groups and remains
+anonymous active-track association, not verified identity.

@@ -20,19 +20,29 @@ def test_tool_contract_is_intact():
 
     tools = asyncio.run(m.mcp.list_tools())
     names = {t.name for t in tools}
-    assert len(tools) == 47
+    assert len(tools) == 60
     for expected in (
         "submit_observations", "get_observation_contract", "list_observations",
-        "get_latest_observations", "get_latest_detection_frames", "query_analytics", "list_analysis_capabilities",
-        "create_analysis", "list_analyses", "update_analysis", "delete_analysis",
-        "submit_events", "get_analytics", "register_insight", "list_insights",
-        "delete_insight", "list_skills", "get_skill", "register_job",
+        "get_latest_observations", "get_latest_detection_frames",
+        "submit_events", "get_analytics", "list_skills", "get_skill", "register_job",
         "register_worker", "heartbeat_worker", "request_worker_state",
-        "create_zone", "create_projection_surface", "create_zone_view",
+        "create_zone", "get_zone", "create_projection_surface", "create_zone_view",
+        "extend_zone_from_view", "list_calibrations", "import_calibration",
+        "list_multiview_groups", "create_multiview_group", "update_multiview_group",
+        "get_multiview_status", "list_current_entities", "list_current_fused_entities",
+        "list_query_capabilities", "query_data", "list_saved_queries",
+        "create_saved_query", "update_saved_query", "delete_saved_query",
+        "list_dashboards", "create_dashboard", "update_dashboard",
+        "add_dashboard_widget", "update_dashboard_widget", "delete_dashboard",
         "project_points", "unproject_points",
         "get_source_connection",
     ):
         assert expected in names, f"{expected} missing from MCP tool contract"
+    assert not {
+        "register_insight", "list_insights", "delete_insight", "query_analytics",
+        "list_analysis_capabilities", "create_analysis", "list_analyses",
+        "update_analysis", "delete_analysis",
+    } & names
 
 
 def test_read_only_tool_invocation():
