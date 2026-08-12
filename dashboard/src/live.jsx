@@ -13,6 +13,11 @@ import {
 } from "lucide-react";
 import { api, formatPreciseDateTime } from "./api.js";
 import {
+  frameIsStale,
+  latestFrameTracks,
+  reconcileCompletedFrames,
+} from "./live-state.js";
+import {
   Badge,
   EmptyState,
   ErrorState,
@@ -435,11 +440,11 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken }) {
         ref={mountRef}
         className="live-three-canvas"
         role="img"
-        aria-label={`Interactive 3D floor model with ${renderedTracks.length} active person tracks`}
+        aria-label={`Interactive 3D floor model with ${renderedTracks.length} person tracks in the latest processed frames`}
       />
       <div className="live-map-status">
         <span className="live-map-status-dot" />
-        {renderedTracks.length} active {renderedTracks.length === 1 ? "person" : "people"}
+        Latest frames: {renderedTracks.length} {renderedTracks.length === 1 ? "person" : "people"}
       </div>
     </div>
   );
@@ -463,18 +468,37 @@ export function LivePage({ liveTick = 0 }) {
     const since = Date.now() / 1000 - HISTORY_SECONDS;
     const sourceQuery = sourceId === "all" ? "" : `&source_id=${sourceId}`;
     try {
-      const [store, zones, sources, result] = await Promise.all([
+      const [store, zones, sources, result, latest] = await Promise.all([
         api.get("/store"),
         api.get("/zones"),
         api.get("/sources"),
         api.get(`/observations?kind=detection&since=${since}&limit=5000${sourceQuery}`),
+        api.get(`/observations/latest-frames?entity_type=person${sourceQuery}`),
       ]);
       const observations = result.observations
         .filter((row) => row.entity_type === "person" && row.geometry?.point_map)
         .sort((left, right) => left.ts - right.ts);
-      setState({ loading: false, error: null, data: { store, zones, sources, observations } });
-      if (observations.length && modeRef.current === "live") {
-        setPlayhead(observations.at(-1).ts);
+      const incomingFrames = latest.frames.map((frame) => ({
+        ...frame,
+        stale_after_s: latest.stale_after_s,
+      }));
+      setState((current) => ({
+        loading: false,
+        error: null,
+        data: {
+          store,
+          zones,
+          sources,
+          observations,
+          sourceFilter: sourceId,
+          latestFrames: reconcileCompletedFrames(
+            current.data?.sourceFilter === sourceId ? current.data.latestFrames : [],
+            incomingFrames,
+          ),
+        },
+      }));
+      if (incomingFrames.length && modeRef.current === "live") {
+        setPlayhead(Math.max(...incomingFrames.map((frame) => frame.timestamp)));
       }
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
@@ -489,7 +513,7 @@ export function LivePage({ liveTick = 0 }) {
   }, [liveTick]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (mode !== "live") return undefined;
-    const timer = window.setInterval(() => setLiveNow(Date.now() / 1000), 50);
+    const timer = window.setInterval(() => setLiveNow(Date.now() / 1000), 1000);
     return () => window.clearInterval(timer);
   }, [mode]);
 
@@ -497,20 +521,25 @@ export function LivePage({ liveTick = 0 }) {
     () => groupTracks(state.data?.observations || []),
     [state.data?.observations],
   );
-  const minTs = state.data?.observations.at(0)?.ts ?? null;
-  const maxTs = state.data?.observations.at(-1)?.ts ?? null;
+  const frameTimestamps = (state.data?.latestFrames || []).map((frame) => frame.timestamp);
+  const minTs = state.data?.observations.at(0)?.ts ?? (frameTimestamps.length ? Math.min(...frameTimestamps) : null);
+  const maxTs = Math.max(
+    state.data?.observations.at(-1)?.ts ?? Number.NEGATIVE_INFINITY,
+    frameTimestamps.length ? Math.max(...frameTimestamps) : Number.NEGATIVE_INFINITY,
+  );
+  const boundedMaxTs = Number.isFinite(maxTs) ? maxTs : null;
 
   useEffect(() => {
-    if (!playing || mode !== "replay" || playhead == null || maxTs == null) return undefined;
+    if (!playing || mode !== "replay" || playhead == null || boundedMaxTs == null) return undefined;
     const animate = (now) => {
       if (lastFrameRef.current == null) lastFrameRef.current = now;
       const delta = Math.min((now - lastFrameRef.current) / 1000, .25) * speed;
       lastFrameRef.current = now;
       setPlayhead((current) => {
         const next = current + delta;
-        if (next >= maxTs) {
+        if (next >= boundedMaxTs) {
           setPlaying(false);
-          return maxTs;
+          return boundedMaxTs;
         }
         return next;
       });
@@ -521,20 +550,20 @@ export function LivePage({ liveTick = 0 }) {
       window.cancelAnimationFrame(animationRef.current);
       lastFrameRef.current = null;
     };
-  }, [playing, mode, speed, maxTs, playhead == null]);
+  }, [playing, mode, speed, boundedMaxTs, playhead == null]);
 
   const goLive = () => {
     modeRef.current = "live";
     setMode("live");
     setPlaying(true);
     setLiveNow(Date.now() / 1000);
-    setPlayhead(maxTs);
+    setPlayhead(boundedMaxTs);
   };
   const replay = () => {
-    if (maxTs == null) return;
+    if (boundedMaxTs == null) return;
     modeRef.current = "replay";
     setMode("replay");
-    setPlayhead(Math.max(minTs || maxTs, maxTs - 60));
+    setPlayhead(Math.max(minTs || boundedMaxTs, boundedMaxTs - 60));
     setPlaying(true);
   };
 
@@ -542,8 +571,15 @@ export function LivePage({ liveTick = 0 }) {
   if (state.error && !state.data) return <ErrorState error={state.error} retry={refresh} />;
 
   const data = state.data;
-  const currentPlayhead = playhead ?? maxTs ?? Date.now() / 1000;
-  const active = visibleTrackRows(tracks, currentPlayhead, mode, liveNow);
+  const currentPlayhead = playhead ?? boundedMaxTs ?? Date.now() / 1000;
+  const replayTracks = visibleTrackRows(tracks, currentPlayhead, mode, liveNow);
+  const latestTracks = latestFrameTracks(data.latestFrames).map((track) => ({
+    ...track,
+    color: trackColor(track.colorKey),
+    age: Math.max(0, liveNow - (track.frame.source_last_ingestion_at || track.frame.timestamp)),
+  }));
+  const active = mode === "live" ? latestTracks : replayTracks;
+  const staleFrames = data.latestFrames.filter((frame) => frameIsStale(frame, liveNow));
   const recentEvents = data.observations
     .filter((row) => row.ts <= currentPlayhead)
     .slice(-12)
@@ -553,8 +589,8 @@ export function LivePage({ liveTick = 0 }) {
     <>
       <PageHeader
         eyebrow="Live spatial view"
-        title="The space, right now"
-        description="Timestamped person detections projected onto the floor. Colors represent anonymous scoped track IDs, not identities."
+        title="Latest processed scene"
+        description="Each camera shows its latest completed processed frame. Colors represent anonymous source-local tracks, not identities."
         actions={
           <>
             <label className="select-control">
@@ -571,6 +607,11 @@ export function LivePage({ liveTick = 0 }) {
         }
       />
       {state.error && <div className="inline-warning">Live refresh failed: {state.error.message}</div>}
+      {mode === "live" && staleFrames.length > 0 && (
+        <div className="inline-warning">
+          Latest scene retained; {staleFrames.length} {staleFrames.length === 1 ? "source is" : "sources are"} stale because no newer processed frame has arrived.
+        </div>
+      )}
       <div className="live-toolbar" role="toolbar" aria-label="Live playback controls">
         <button className={mode === "live" ? "active" : ""} onClick={goLive}><Radio size={14} /> Live</button>
         <button onClick={() => setPlaying((value) => !value)} disabled={mode === "live"}>
@@ -587,9 +628,9 @@ export function LivePage({ liveTick = 0 }) {
         <time>{formatPreciseDateTime(currentPlayhead)}</time>
       </div>
 
-      {!data.observations.length ? (
-        <EmptyState title="No projected person detections yet">
-          Start a person-detection worker that submits timestamped detections with pixel evidence. A calibrated source will project them onto this floor automatically.
+      {!data.observations.length && !data.latestFrames.length ? (
+        <EmptyState title="No completed person-detection frames yet">
+          Start a person-detection worker that submits detections and one detection_frame_count measurement for every processed frame, including zero, with one shared timestamp.
         </EmptyState>
       ) : (
         <div className="live-layout">
@@ -602,11 +643,11 @@ export function LivePage({ liveTick = 0 }) {
           />
           <aside className="live-rail">
             <div className="live-summary-grid">
-              <MetricCard label="Active people" value={active.length} note={`Fades by ${ACTIVE_SECONDS} sec`} />
-              <MetricCard label="Tracks loaded" value={tracks.size} note="Last 10 minutes" />
+              <MetricCard label="Latest-frame people" value={active.length} note={mode === "live" ? "Persists until the next processed frame" : "Replay sample"} />
+              <MetricCard label={mode === "live" ? "Sources sampled" : "Tracks loaded"} value={mode === "live" ? data.latestFrames.length : tracks.size} note={mode === "live" ? `${staleFrames.length} stale` : "Last 10 minutes"} />
             </div>
             <section className="live-rail-section">
-              <div className="live-rail-heading"><Users size={15} /><div><strong>Current tracks</strong><small>Stable color per scoped ID</small></div></div>
+              <div className="live-rail-heading"><Users size={15} /><div><strong>{mode === "live" ? "Latest frame tracks" : "Replay tracks"}</strong><small>Stable color per source-local ID</small></div></div>
               <div className="live-track-list">
                 {active.slice(0, 12).map((track) => {
                   const latest = track.position.observation;
@@ -619,7 +660,7 @@ export function LivePage({ liveTick = 0 }) {
                     </div>
                   );
                 })}
-                {!active.length && <p className="live-rail-empty">No person seen in the active window.</p>}
+                {!active.length && <p className="live-rail-empty">The latest completed frame is explicitly empty.</p>}
               </div>
             </section>
             <section className="live-rail-section">
