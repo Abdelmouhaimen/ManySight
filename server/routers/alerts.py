@@ -8,7 +8,8 @@ from .. import db
 
 router = APIRouter(tags=["alerts"])
 
-RULE_KINDS = {"dwell_exceeds", "occupancy_exceeds", "state_alert", "event_match", "analysis_condition"}
+RULE_KINDS = {"dwell_exceeds", "occupancy_exceeds", "state_alert", "event_match",
+              "analysis_condition", "query_condition"}
 REVIEW_STATUSES = {"new", "in_review", "resolved", "dismissed"}
 
 
@@ -71,9 +72,18 @@ def list_rules():
 def create_rule(body: RuleIn):
     if body.kind not in RULE_KINDS:
         raise HTTPException(422, f"kind must be one of {sorted(RULE_KINDS)}")
+    if body.kind == "query_condition":
+        query_id = body.params.get("query_id")
+        if not query_id or not db.q1("SELECT id FROM analyses WHERE id=?", (query_id,)):
+            raise HTTPException(422, "query_condition requires params.query_id for an existing saved query")
+        if body.condition is None:
+            raise HTTPException(422, "query_condition requires a condition")
     rid = db.ex(
-        "INSERT INTO alert_rules (name, kind, params_json, webhook_url, cooldown_s, enabled, created_at) VALUES (?,?,?,?,?,?,?)",
-        (body.name, body.kind, json.dumps(body.params), body.webhook_url, body.cooldown_s, int(body.enabled), db.now()),
+        "INSERT INTO alert_rules (name,kind,params_json,analysis_json,condition_json,webhook_url,"
+        "cooldown_s,enabled,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        (body.name, body.kind, json.dumps(body.params), json.dumps(body.analysis) if body.analysis else None,
+         json.dumps(body.condition) if body.condition else None, body.webhook_url,
+         body.cooldown_s, int(body.enabled), db.now()),
     )
     return serialize(db.q1("SELECT * FROM alert_rules WHERE id=?", (rid,)))
 
@@ -91,6 +101,10 @@ def update_rule(rule_id: int, body: RulePatch):
             sets.append(f"{field}=?"); args.append(val)
     if body.params is not None:
         sets.append("params_json=?"); args.append(json.dumps(body.params))
+    if body.analysis is not None:
+        sets.append("analysis_json=?"); args.append(json.dumps(body.analysis))
+    if body.condition is not None:
+        sets.append("condition_json=?"); args.append(json.dumps(body.condition))
     if body.enabled is not None:
         sets.append("enabled=?"); args.append(int(body.enabled))
     if sets:

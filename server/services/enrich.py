@@ -10,7 +10,7 @@ made here. Callers pass a plain dict of already-validated fields — this module
 no opinion on which pydantic model produced it.
 """
 from .. import db
-from . import homography
+from . import homography, zone_geometry
 
 # Kinds a *worker* may submit under the current (schema_version=2) contract.
 OBSERVATION_KINDS = {"detection", "measurement", "state"}
@@ -27,9 +27,14 @@ ALL_EVENT_TYPES = OBSERVATION_KINDS | LEGACY_DERIVED_KINDS | {"transition", "cus
 def load_geometry_context():
     """Zones, floor calibrations, projection surfaces, and zone views as of now.
     Load once per ingest batch, not once per event."""
-    zones = [{"id": z["id"], "name": z["name"], "revision": z["revision"],
-              "polygon": db.jload(z["polygon_json"], [])}
-             for z in db.q("SELECT id, name, polygon_json, revision FROM zones ORDER BY id")]
+    zones = []
+    for z in db.q("SELECT id, name, polygon_json, geometry_json, revision FROM zones ORDER BY id"):
+        geometry = db.jload(z.get("geometry_json"), None)
+        if not geometry:
+            geometry = zone_geometry.as_geojson(
+                zone_geometry.polygon_from_points(db.jload(z["polygon_json"], [])))
+        zones.append({"id": z["id"], "name": z["name"], "revision": z["revision"],
+                      "polygon": db.jload(z["polygon_json"], []), "geometry": geometry})
     cals = {}
     for s in db.q("SELECT id, calibration_json, calibration_revision FROM sources"):
         cal = db.jload(s["calibration_json"], None)
@@ -189,7 +194,7 @@ def enrich_one(ev: dict, context, zone_by_id: dict) -> dict:
         assignment_method = f"zone_view:{matched_view['membership_rule']}"
     if zone_id is None and x_map is not None:
         for z in zones:
-            if homography.point_in_polygon(x_map, y_map, z["polygon"]):
+            if zone_geometry.contains(z["geometry"], x_map, y_map):
                 zone_id = z["id"]
                 assignment_method = "map_point"
                 break
@@ -210,6 +215,7 @@ def enrich_one(ev: dict, context, zone_by_id: dict) -> dict:
         "calibration_revision": calibration_revision, "surface_revision": surface_revision,
         "zone_view_revision": view_revision, "attributes": ev.get("attributes") or {},
         "schema_version": ev.get("schema_version", 1), "observation_id": ev.get("observation_id"),
+        "sample_id": ev.get("sample_id"),
         "worker_id": ev.get("worker_id"), "name": ev.get("name"), "entity_type": ev.get("entity_type"),
         "value_kind": ev.get("value_kind"), "unit": ev.get("unit"), "confidence": ev.get("confidence"),
         "identity_scope": ev.get("identity_scope"), "identity_model_version": ev.get("identity_model_version"),
@@ -221,8 +227,8 @@ INSERT_SQL = (
     " value,label,bbox_json,keypoints_json,mask_json,point_kind,projection_surface_id,zone_view_id,"
     " zone_assignment_method,projection_method,zone_revision,calibration_revision,surface_revision,"
     " zone_view_revision,attributes,created_at,schema_version,observation_id,worker_id,name,"
-    " entity_type,value_kind,unit,confidence,identity_scope,identity_model_version)"
-    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+    " entity_type,value_kind,unit,confidence,identity_scope,identity_model_version,sample_id)"
+    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 )
 
 
@@ -255,7 +261,8 @@ _CURRENT_VALUE_EVENT = {
 }
 
 
-def publish_batch(enriched: list[dict], alerts: list[dict], zone_names: dict) -> None:
+def publish_batch(enriched: list[dict], alerts: list[dict], zone_names: dict,
+                  completed_samples: list[dict] | None = None) -> None:
     """Shared SSE fan-out for a just-inserted batch, capped so a bulk backfill or
     replay doesn't flood connected browsers. Publishes both the legacy event
     names (cv_event/batch_summary/alert) and the current normalized ones
@@ -273,6 +280,8 @@ def publish_batch(enriched: list[dict], alerts: list[dict], zone_names: dict) ->
         broker.publish("batch_summary", {"inserted": len(enriched)})
     if enriched:
         broker.publish("analysis.invalidated", {"reason": "observations_ingested", "count": len(enriched)})
+    for sample in completed_samples or []:
+        broker.publish("sample.completed", sample)
     for a in alerts:
         broker.publish("alert", a)
         broker.publish("alert.created", a)
@@ -292,4 +301,5 @@ def row_tuple(enriched: dict, ts: float, ingested_at: float) -> tuple:
         enriched["schema_version"], enriched["observation_id"], enriched["worker_id"], enriched["name"],
         enriched["entity_type"], enriched["value_kind"], enriched["unit"], enriched["confidence"],
         enriched["identity_scope"], enriched["identity_model_version"],
+        enriched.get("sample_id"),
     )

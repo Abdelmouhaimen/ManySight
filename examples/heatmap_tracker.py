@@ -11,6 +11,7 @@ Usage:
 """
 import sys
 import time
+import uuid
 
 sys.path.insert(0, "sdk/python")
 from storelens import StoreLens, CentroidTracker, parse_args_base  # noqa: E402
@@ -50,14 +51,15 @@ def motion_detector():
 
 def submit_tracked_frame(sl, source_id, tracks, sample_ts, detector):
     """Buffer one complete processed person frame, with the marker last."""
+    sample_id = str(uuid.uuid4())
     for tid, cx, cy in tracks:
         sl.submit_detection(
             source_id=source_id, entity_id=tid, point_px=(cx, cy),
-            entity_type="person", ts=sample_ts,
+            entity_type="person", ts=sample_ts, sample_id=sample_id,
         )
     sl.submit_detection_frame(
         source_id=source_id, entity_type="person", count=len(tracks), ts=sample_ts,
-        attributes={"detector": detector},
+        attributes={"detector": detector}, sample_id=sample_id,
     )
 
 

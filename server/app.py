@@ -18,8 +18,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .platform_config import resolve as resolve_platform_config
-from .routers import alerts, analytics, analytics_query, analyses, events, geometry, insights, jobs, observations, sources, store, zones
-from .services import alert_engine
+from .routers import alerts, analytics, analytics_query, analyses, calibrations, dashboards, events, geometry, jobs, multiview, observations, queries, sources, store, zones
+from .services import alert_engine, current_state, multiview as multiview_service
 from .services.sse import broker
 
 ALERT_POLL_INTERVAL_S = float(os.environ.get("STORELENS_ALERT_POLL_INTERVAL_S", "15"))
@@ -32,6 +32,7 @@ async def _alert_poll_loop():
     a failure in one tick is logged and never kills the loop."""
     while True:
         try:
+            multiview_service.refresh_freshness(db.now())
             zone_names = {z["id"]: z["name"] for z in db.q("SELECT id, name FROM zones")}
             alerts_fired = alert_engine.evaluate_ongoing(db.now(), zone_names)
             for a in alerts_fired:
@@ -59,12 +60,13 @@ app = FastAPI(
     description="Infrastructure for turning raw camera and sensor observations into spatial and "
                 "temporal analytics. StoreLens manages logical sources, protected connection configuration, mapped "
                 "geometry, heartbeat-backed workers, schema-v2 detection/measurement/state observations, derived "
-                "analytics, saved analyses, and alerts. Local workers open sources and run models; the platform "
+                "current/fused state, saved queries, generated dashboards, and alerts. Local workers open sources and run models; the platform "
                 "does not proxy feeds or execute worker code.",
     lifespan=lifespan,
 )
 
 db.init_db()
+current_state.rebuild_from_history()
 
 API_KEY = os.environ.get("STORELENS_API_KEY", "")
 PUBLIC_READS = os.environ.get("STORELENS_PUBLIC_READS", "false").lower() in {"1", "true", "yes"}
@@ -161,14 +163,15 @@ raw observations over HTTPS.
    every sample including repeats). Never resolve a zone or send zone_id/zone, and
    never compute zone entry/exit, dwell, occupancy, movement, or a state change —
    StoreLens derives all of those itself. See `GET {endpoints["rest_url"]}/observations/contract`.
-6. For every processed person-detection frame, buffer its zero or more detections,
+6. For every processed person-detection frame, send its zero or more detections,
    then one `detection_frame_count` measurement including zero, all with one exact
-   timestamp. Never use a fake detection for an empty frame. Live scene state changes
+   timestamp and one opaque `sample_id`. Prefer the SDK atomic sample builder. Never use a fake detection for an empty frame. Live scene state changes
    only when this newer completion marker arrives; freshness is reported separately.
 7. Verify with `GET {endpoints["rest_url"]}/observations/latest`,
    `GET {endpoints["rest_url"]}/observations/latest-frames`, and
-   `POST {endpoints["rest_url"]}/analytics/query`, then save a `POST {endpoints["rest_url"]}/analyses`
-   definition — a data question (subject/measures/filters/grouping), not a chart.
+   `GET {endpoints["rest_url"]}/multiview/current`. Preview a deterministic query, save it
+   with `POST {endpoints["rest_url"]}/queries`, and reference it from a generated dashboard
+   only when requested. Agents never receive SQL access.
 
 Managed credentials are encrypted at rest with `STORELENS_CREDENTIAL_KEY` and are returned
 only by the header-authenticated connection endpoint. External-secret mode remains available.
@@ -207,8 +210,8 @@ def storelens_discovery(request: Request):
     }
 
 
-for r in (sources, store, zones, geometry, jobs, events, observations, analytics,
-         analytics_query, analyses, alerts, insights):
+for r in (sources, store, zones, geometry, calibrations, multiview, jobs, events,
+         observations, analytics, analytics_query, queries, dashboards, analyses, alerts):
     app.include_router(r.router, prefix="/api/v1")
 
 _server_dir = os.path.dirname(__file__)

@@ -2,10 +2,6 @@
 `server/db.py`'s DATA_DIR/DB_PATH are module-level globals read at call time by
 `connect()`, so monkeypatching them before `init_db()` gives true per-test
 isolation without touching the real project data.
-
-NOTE: this suite has not been executed in this environment (no Python
-interpreter was available) — see the completion report. Read carefully before
-trusting it; it is provided as a solid starting point, not a verified pass.
 """
 import os
 import sys

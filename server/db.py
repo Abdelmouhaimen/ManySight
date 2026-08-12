@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS zones (
   name TEXT NOT NULL,
   ztype TEXT NOT NULL DEFAULT 'area',           -- checkout | entrance | fridge | aisle | area | custom
   color TEXT DEFAULT '',
-  polygon_json TEXT NOT NULL,                   -- [{x,y}, ...] in map meters
+  polygon_json TEXT NOT NULL,                   -- legacy first exterior ring in map meters
+  geometry_json TEXT,                           -- canonical GeoJSON Polygon | MultiPolygon
   revision INTEGER NOT NULL DEFAULT 1,
   created_at REAL,
   updated_at REAL
@@ -122,6 +123,7 @@ CREATE TABLE IF NOT EXISTS events (
   surface_revision INTEGER,
   zone_view_revision INTEGER,
   attributes TEXT DEFAULT '{}',
+  sample_id TEXT,
   created_at REAL
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
@@ -129,6 +131,174 @@ CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(event_type, ts);
 CREATE INDEX IF NOT EXISTS idx_events_zone ON events(zone_id, ts);
 CREATE INDEX IF NOT EXISTS idx_events_job ON events(job_id, ts);
 CREATE INDEX IF NOT EXISTS idx_events_track ON events(track_id, ts);
+CREATE INDEX IF NOT EXISTS idx_events_sample ON events(source_id, sample_id, ts);
+CREATE TABLE IF NOT EXISTS source_current_samples (
+  source_id INTEGER NOT NULL,
+  entity_type TEXT NOT NULL,
+  sample_id TEXT,
+  sample_key TEXT NOT NULL,
+  ts REAL NOT NULL,
+  expected_count INTEGER NOT NULL,
+  marker_event_id INTEGER NOT NULL,
+  marker_observation_id TEXT,
+  completed_at REAL NOT NULL,
+  PRIMARY KEY(source_id, entity_type)
+);
+CREATE TABLE IF NOT EXISTS source_current_entities (
+  source_id INTEGER NOT NULL,
+  entity_type TEXT NOT NULL,
+  sample_key TEXT NOT NULL,
+  event_id INTEGER NOT NULL,
+  local_entity_id TEXT,
+  worker_id INTEGER,
+  x_map REAL,
+  y_map REAL,
+  zone_id INTEGER,
+  confidence REAL,
+  ts REAL NOT NULL,
+  PRIMARY KEY(source_id, entity_type, sample_key, event_id)
+);
+CREATE INDEX IF NOT EXISTS idx_source_current_entities_sample
+  ON source_current_entities(source_id, entity_type, sample_key);
+CREATE TABLE IF NOT EXISTS zone_geometry_provenance (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  zone_id INTEGER NOT NULL,
+  source_id INTEGER,
+  source_calibration_revision INTEGER,
+  zone_view_id INTEGER,
+  zone_view_revision INTEGER,
+  projection_surface_id INTEGER,
+  projection_surface_revision INTEGER,
+  original_pixel_polygon_json TEXT,
+  projected_map_polygon_json TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  resulting_zone_revision INTEGER NOT NULL,
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_zone_geometry_provenance_zone
+  ON zone_geometry_provenance(zone_id, resulting_zone_revision);
+CREATE TABLE IF NOT EXISTS camera_calibrations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id INTEGER NOT NULL UNIQUE,
+  provider TEXT NOT NULL DEFAULT 'generic',
+  original_projection_matrix_json TEXT,
+  projection_matrix_json TEXT NOT NULL,
+  world_to_map_transform_json TEXT NOT NULL DEFAULT '[[1,0,0],[0,1,0],[0,0,1]]',
+  distortion_json TEXT NOT NULL DEFAULT '[]',
+  intrinsics_json TEXT NOT NULL DEFAULT '{}',
+  extrinsics_json TEXT NOT NULL DEFAULT '{}',
+  world_frame_json TEXT NOT NULL DEFAULT '{}',
+  ground_plane_z REAL NOT NULL DEFAULT 0,
+  units TEXT NOT NULL,
+  frame_w INTEGER,
+  frame_h INTEGER,
+  derived_homography_json TEXT NOT NULL,
+  verification_json TEXT NOT NULL DEFAULT '{}',
+  revision INTEGER NOT NULL DEFAULT 1,
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS multiview_groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  source_ids_json TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  algorithm TEXT NOT NULL DEFAULT 'geometry_tracklet',
+  algorithm_version TEXT NOT NULL DEFAULT '1',
+  configuration_revision INTEGER NOT NULL DEFAULT 1,
+  time_tolerance_s REAL NOT NULL DEFAULT 0.75,
+  spatial_gate_m REAL NOT NULL DEFAULT 1.5,
+  track_age_s REAL NOT NULL DEFAULT 2.0,
+  topology_json TEXT NOT NULL DEFAULT '{}',
+  configuration_json TEXT NOT NULL DEFAULT '{}',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fused_entities (
+  id TEXT PRIMARY KEY,
+  group_id INTEGER NOT NULL,
+  entity_type TEXT NOT NULL,
+  algorithm TEXT NOT NULL,
+  algorithm_version TEXT NOT NULL,
+  configuration_revision INTEGER NOT NULL,
+  created_at REAL NOT NULL,
+  last_seen_at REAL NOT NULL,
+  ended_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_fused_entities_group_active
+  ON fused_entities(group_id, entity_type, ended_at, last_seen_at);
+CREATE TABLE IF NOT EXISTS fused_entity_members (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fused_entity_id TEXT NOT NULL,
+  source_id INTEGER NOT NULL,
+  worker_id INTEGER,
+  local_entity_id TEXT NOT NULL,
+  sample_key TEXT NOT NULL,
+  source_event_id INTEGER,
+  joined_at REAL NOT NULL,
+  last_seen_at REAL NOT NULL,
+  association_cost REAL,
+  UNIQUE(fused_entity_id, source_id, worker_id, local_entity_id)
+);
+CREATE INDEX IF NOT EXISTS idx_fused_members_local
+  ON fused_entity_members(source_id, worker_id, local_entity_id, last_seen_at);
+CREATE TABLE IF NOT EXISTS fused_observations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fused_entity_id TEXT NOT NULL,
+  group_id INTEGER NOT NULL,
+  ts REAL NOT NULL,
+  x_map REAL NOT NULL,
+  y_map REAL NOT NULL,
+  zone_id INTEGER,
+  confidence REAL,
+  quality TEXT NOT NULL DEFAULT 'known',
+  member_evidence_json TEXT NOT NULL,
+  algorithm TEXT NOT NULL,
+  algorithm_version TEXT NOT NULL,
+  configuration_revision INTEGER NOT NULL,
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fused_observations_entity_ts
+  ON fused_observations(fused_entity_id, ts);
+CREATE TABLE IF NOT EXISTS fused_current_entities (
+  fused_entity_id TEXT PRIMARY KEY,
+  group_id INTEGER NOT NULL,
+  entity_type TEXT NOT NULL,
+  ts REAL NOT NULL,
+  x_map REAL NOT NULL,
+  y_map REAL NOT NULL,
+  zone_id INTEGER,
+  confidence REAL,
+  quality TEXT NOT NULL,
+  member_evidence_json TEXT NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fused_current_zone
+  ON fused_current_entities(group_id, entity_type, zone_id);
+CREATE TABLE IF NOT EXISTS zone_current_occupancy (
+  group_id INTEGER NOT NULL,
+  zone_id INTEGER NOT NULL,
+  entity_type TEXT NOT NULL,
+  value INTEGER NOT NULL,
+  quality TEXT NOT NULL,
+  as_of REAL NOT NULL,
+  provenance_json TEXT NOT NULL DEFAULT '{}',
+  PRIMARY KEY(group_id, zone_id, entity_type)
+);
+CREATE TABLE IF NOT EXISTS zone_occupancy_observations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id INTEGER NOT NULL,
+  zone_id INTEGER NOT NULL,
+  entity_type TEXT NOT NULL,
+  ts REAL NOT NULL,
+  value INTEGER NOT NULL,
+  quality TEXT NOT NULL,
+  provenance_json TEXT NOT NULL DEFAULT '{}',
+  created_at REAL NOT NULL,
+  UNIQUE(group_id, zone_id, entity_type, ts)
+);
+CREATE INDEX IF NOT EXISTS idx_zone_occupancy_history
+  ON zone_occupancy_observations(group_id, zone_id, entity_type, ts);
 CREATE TABLE IF NOT EXISTS worker_instances (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   worker_id TEXT NOT NULL UNIQUE,
@@ -228,6 +398,27 @@ CREATE TABLE IF NOT EXISTS legacy_insight_migrations (
   insight_id INTEGER PRIMARY KEY,
   migrated_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS dashboards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT 'agent',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dashboard_widgets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  dashboard_id INTEGER NOT NULL,
+  query_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  presentation TEXT NOT NULL,
+  configuration_json TEXT NOT NULL DEFAULT '{}',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dashboard_widgets_dashboard
+  ON dashboard_widgets(dashboard_id, sort_order, id);
 """
 
 
@@ -319,6 +510,19 @@ def init_db():
             con.execute("ALTER TABLE zones ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")
         if "updated_at" not in zone_columns:
             con.execute("ALTER TABLE zones ADD COLUMN updated_at REAL")
+        if "geometry_json" not in zone_columns:
+            con.execute("ALTER TABLE zones ADD COLUMN geometry_json TEXT")
+        for zone in con.execute(
+            "SELECT id, polygon_json FROM zones WHERE geometry_json IS NULL OR geometry_json=''"
+        ).fetchall():
+            polygon = jload(zone["polygon_json"], [])
+            ring = [[float(p["x"]), float(p["y"])] for p in polygon]
+            if ring and ring[0] != ring[-1]:
+                ring.append(ring[0])
+            con.execute(
+                "UPDATE zones SET geometry_json=? WHERE id=?",
+                (json.dumps({"type": "Polygon", "coordinates": [ring]}), zone["id"]),
+            )
         event_columns = {r[1] for r in con.execute("PRAGMA table_info(events)").fetchall()}
         event_migrations = {
             "bbox_json": "TEXT",
@@ -350,6 +554,7 @@ def init_db():
             "confidence": "REAL",
             "identity_scope": "TEXT",
             "identity_model_version": "TEXT",
+            "sample_id": "TEXT",
         }
         for column, sql_type in event_migrations.items():
             if column not in event_columns:
@@ -361,6 +566,7 @@ def init_db():
         con.execute("CREATE INDEX IF NOT EXISTS idx_events_entity ON events(track_id, name, ts)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_events_source_name ON events(source_id, name, ts)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_events_worker ON events(worker_id, ts)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_events_sample ON events(source_id, sample_id, ts)")
         alert_columns = {r[1] for r in con.execute("PRAGMA table_info(alerts)").fetchall()}
         if "status" not in alert_columns:
             con.execute("ALTER TABLE alerts ADD COLUMN status TEXT NOT NULL DEFAULT 'new'")
@@ -376,6 +582,20 @@ def init_db():
             con.execute("ALTER TABLE alert_rules ADD COLUMN condition_json TEXT")
         if "condition_state_json" not in rule_columns:
             con.execute("ALTER TABLE alert_rules ADD COLUMN condition_state_json TEXT DEFAULT '{}'")
+        calibration_columns = {
+            r[1] for r in con.execute("PRAGMA table_info(camera_calibrations)").fetchall()
+        }
+        if "original_projection_matrix_json" not in calibration_columns:
+            con.execute("ALTER TABLE camera_calibrations ADD COLUMN original_projection_matrix_json TEXT")
+            con.execute(
+                "UPDATE camera_calibrations SET original_projection_matrix_json=projection_matrix_json "
+                "WHERE original_projection_matrix_json IS NULL"
+            )
+        if "world_to_map_transform_json" not in calibration_columns:
+            con.execute(
+                "ALTER TABLE camera_calibrations ADD COLUMN world_to_map_transform_json TEXT "
+                "NOT NULL DEFAULT '[[1,0,0],[0,1,0],[0,0,1]]'"
+            )
         # _migrate_insights_to_analyses() below indexes every one of these
         # columns directly (row["visibility"], row["created_by"], row["status"],
         # row["pinned"], row["sort_order"]) on every insight_definitions row --

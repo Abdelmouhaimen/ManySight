@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import db
-from ..services import alert_engine, derive, enrich
+from ..services import alert_engine, current_state, derive, enrich
 
 router = APIRouter(tags=["observations"])
 LATEST_LOOKBACK_S = 24 * 3600.0
@@ -42,6 +42,7 @@ class GeometryIn(BaseModel):
 class ObservationIn(BaseModel):
     schema_version: int = 2
     observation_id: str
+    sample_id: str | None = None
     kind: str
     timestamp: float | str
     source_id: int
@@ -118,6 +119,7 @@ def _to_enrich_dict(ob: ObservationIn, ts: float, fallback_job_id: int | None) -
         "attributes": {**ob.attributes, **ob.info} if ob.info else ob.attributes,
         "schema_version": ob.schema_version,
         "observation_id": ob.observation_id,
+        "sample_id": ob.sample_id,
         "worker_id": ob.worker_id,
         "name": ob.name,
         "entity_type": ob.entity_type,
@@ -141,7 +143,7 @@ def observation_contract():
         "kinds": sorted(enrich.OBSERVATION_KINDS),
         "required_fields": {"common": ["schema_version", "observation_id", "kind", "timestamp", "source_id"],
                             **REQUIRED_BY_KIND},
-        "optional_common_fields": ["worker_id", "job_id", "confidence", "label", "attributes",
+        "optional_common_fields": ["sample_id", "worker_id", "job_id", "confidence", "label", "attributes",
                                    "geometry", "entity_id", "identity_scope", "identity_model_version"],
         "forbidden": {
             "top_level_fields": ["zone_id", "zone"],
@@ -155,6 +157,7 @@ def observation_contract():
             "label": "<entity_type>",
             "value": "number of matching detections in this processed frame, including 0",
             "timestamp": "same timestamp as every detection emitted from the frame",
+            "sample_id": "same opaque source-local sample id as every detection emitted from the frame",
             "ordering": "append after that frame's detections, then flush the batch",
             "required_when_zero": True,
             "purpose": "commits the latest completed processed frame and provides its instantaneous count",
@@ -196,6 +199,32 @@ async def submit_observations(batch: ObservationBatch):
         )
     } if batch.observations else set()
 
+    # Explicit sample IDs are source-local atomic commit keys.  They may arrive
+    # over several batches, but every member must retain one exact timestamp and
+    # a sample may have only one completion marker per entity type.
+    explicit_sample_times: dict[tuple[int, str], set[float]] = {}
+    parsed_timestamps: dict[int, float] = {}
+    for index, ob in enumerate(batch.observations):
+        try:
+            parsed = _parse_ts(ob.timestamp)
+        except (ValueError, TypeError):
+            continue
+        parsed_timestamps[index] = parsed
+        if ob.sample_id:
+            explicit_sample_times.setdefault((ob.source_id, ob.sample_id), set()).add(parsed)
+    invalid_sample_keys = {
+        key for key, timestamps in explicit_sample_times.items() if len(timestamps) != 1
+    }
+    for key, timestamps in explicit_sample_times.items():
+        if key in invalid_sample_keys:
+            continue
+        existing = db.q(
+            "SELECT DISTINCT ts FROM events WHERE source_id=? AND sample_id=? LIMIT 2", key,
+        )
+        if any(float(row["ts"]) != next(iter(timestamps)) for row in existing):
+            invalid_sample_keys.add(key)
+    marker_keys_seen: set[tuple[int, str, str]] = set()
+
     context = enrich.load_geometry_context()
     zone_by_id = {z["id"]: z for z in context[0]}
     rejected, enriched, rows = [], [], []
@@ -206,6 +235,29 @@ async def submit_observations(batch: ObservationBatch):
             duplicates += 1
             continue
         seen_in_batch.add(ob.observation_id)
+        explicit_key = (ob.source_id, ob.sample_id) if ob.sample_id else None
+        if explicit_key in invalid_sample_keys:
+            rejected.append({
+                "index": index, "observation_id": ob.observation_id,
+                "error": "sample_timestamp_mismatch",
+                "message": "All observations sharing a source_id and sample_id must use one exact timestamp.",
+            })
+            continue
+        if ob.kind == "measurement" and ob.name == current_state.FRAME_COUNT_NAME and ob.sample_id:
+            marker_key = (ob.source_id, ob.sample_id, ob.label or "")
+            duplicate_marker = marker_key in marker_keys_seen or db.q1(
+                "SELECT id FROM events WHERE source_id=? AND sample_id=? AND event_type='measurement' "
+                "AND name=? AND COALESCE(label,'')=? LIMIT 1",
+                (ob.source_id, ob.sample_id, current_state.FRAME_COUNT_NAME, ob.label or ""),
+            )
+            if duplicate_marker:
+                rejected.append({
+                    "index": index, "observation_id": ob.observation_id,
+                    "error": "duplicate_completion_marker",
+                    "message": "A detection sample accepts exactly one completion marker per entity type.",
+                })
+                continue
+            marker_keys_seen.add(marker_key)
         if ob.kind in enrich.LEGACY_DERIVED_KINDS:
             rejected.append({
                 "index": index, "observation_id": ob.observation_id,
@@ -236,7 +288,7 @@ async def submit_observations(batch: ObservationBatch):
                              "message": f"{ob.kind} observations require {missing}"})
             continue
         try:
-            ts = _parse_ts(ob.timestamp)
+            ts = parsed_timestamps.get(index, _parse_ts(ob.timestamp))
         except (ValueError, TypeError):
             rejected.append({"index": index, "observation_id": ob.observation_id,
                              "error": "invalid_timestamp", "message": "timestamp must be epoch seconds or ISO-8601"})
@@ -256,14 +308,23 @@ async def submit_observations(batch: ObservationBatch):
     if rows:
         db.exmany(enrich.INSERT_SQL, rows)
         enrich.update_counters(enriched, batch.job_id)
+    completed_samples = current_state.materialize_affected(enriched) if enriched else []
+
+    # Fusion is deliberately downstream of complete-source-sample materialization.
+    # Import lazily so deployments that never configure multiview retain the same
+    # ingestion dependency surface.
+    if completed_samples:
+        from ..services import multiview
+        for sample in completed_samples:
+            multiview.process_completed_sample(sample)
 
     zone_names = {z["id"]: z["name"] for z in context[0]}
     alerts = alert_engine.evaluate_batch(enriched, zone_names) if enriched else []
-    enrich.publish_batch(enriched, alerts, zone_names)
+    enrich.publish_batch(enriched, alerts, zone_names, completed_samples=completed_samples)
 
     return {
         "accepted": len(rows), "duplicates": duplicates, "rejected": rejected,
-        "alerts": len(alerts),
+        "alerts": len(alerts), "completed_samples": len(completed_samples),
     }
 
 
@@ -271,6 +332,7 @@ def _serialize_observation(r: dict, zone_names: dict) -> dict:
     return {
         "id": r["id"], "schema_version": r.get("schema_version", 1),
         "observation_id": r.get("observation_id"), "kind": r["event_type"],
+        "sample_id": r.get("sample_id"),
         "ts": r["ts"], "source_id": r["source_id"], "job_id": r["job_id"],
         "worker_id": r.get("worker_id"), "entity_id": r["track_id"], "entity_type": r.get("entity_type"),
         "identity_scope": r.get("identity_scope"), "identity_model_version": r.get("identity_model_version"),
@@ -452,17 +514,21 @@ def latest_detection_frames(entity_type: str = "person", source_id: int | None =
     returned with their stored StoreLens geometry enrichment. Scene contents do
     not expire; ``stale`` reports source freshness independently.
     """
-    where = ["event_type='measurement'", "name='detection_frame_count'", "label=?"]
+    where = ["entity_type=?"]
     args: list = [entity_type]
     if source_id is not None:
         where.append("source_id=?")
         args.append(source_id)
     markers = db.q(
-        "WITH ranked AS (SELECT *, ROW_NUMBER() OVER ("
-        "PARTITION BY source_id ORDER BY ts DESC, id DESC) rn FROM events WHERE "
-        f"{' AND '.join(where)}) SELECT * FROM ranked WHERE rn=1 ORDER BY source_id",
+        f"SELECT * FROM source_current_samples WHERE {' AND '.join(where)} ORDER BY source_id",
         args,
     )
+    if not markers:
+        current_state.rebuild_from_history()
+        markers = db.q(
+            f"SELECT * FROM source_current_samples WHERE {' AND '.join(where)} ORDER BY source_id",
+            args,
+        )
     now = db.now()
     zone_names = {z["id"]: z["name"] for z in db.q("SELECT id, name FROM zones")}
     source_rows = {
@@ -475,21 +541,23 @@ def latest_detection_frames(entity_type: str = "person", source_id: int | None =
     frames = []
     for marker in markers:
         detections = db.q(
-            "SELECT * FROM events WHERE event_type='detection' AND source_id=? AND ts=? "
-            "AND entity_type=? AND id<? ORDER BY id",
-            (marker["source_id"], marker["ts"], entity_type, marker["id"]),
+            "SELECT e.* FROM source_current_entities c JOIN events e ON e.id=c.event_id "
+            "WHERE c.source_id=? AND c.entity_type=? AND c.sample_key=? ORDER BY e.id",
+            (marker["source_id"], entity_type, marker["sample_key"]),
         )
         source = source_rows.get(marker["source_id"], {})
         last_ingestion_at = source.get("last_ingestion_at")
         source_age_s = max(0.0, now - last_ingestion_at) if last_ingestion_at is not None else None
-        frame_ingested_at = marker.get("created_at")
+        frame_ingested_at = marker.get("completed_at")
         frames.append({
             "source_id": marker["source_id"],
             "entity_type": entity_type,
             "timestamp": marker["ts"],
-            "expected_count": int(marker["value"]),
+            "sample_id": marker.get("sample_id"),
+            "sample_key": marker["sample_key"],
+            "expected_count": int(marker["expected_count"]),
             "observed_count": len(detections),
-            "frame_observation_id": marker.get("observation_id"),
+            "frame_observation_id": marker.get("marker_observation_id"),
             "frame_ingested_at": frame_ingested_at,
             "frame_age_s": round(max(0.0, now - frame_ingested_at), 1)
             if frame_ingested_at is not None else None,
@@ -500,7 +568,7 @@ def latest_detection_frames(entity_type: str = "person", source_id: int | None =
         })
     return {
         "entity_type": entity_type,
-        "frame_key": "source_id + exact timestamp",
+        "frame_key": "source_id + sample_id (exact timestamp fallback for legacy workers)",
         "as_of": now,
         "stale_after_s": SOURCE_FRESH_S,
         "frames": frames,

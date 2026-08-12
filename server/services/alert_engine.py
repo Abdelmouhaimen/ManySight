@@ -24,7 +24,7 @@ from .. import db
 from . import derive
 
 LEGACY_KINDS = {"dwell_exceeds", "occupancy_exceeds", "state_alert", "event_match"}
-ONGOING_KINDS = {"dwell_exceeds", "occupancy_exceeds", "state_alert", "analysis_condition"}
+ONGOING_KINDS = {"dwell_exceeds", "occupancy_exceeds", "state_alert", "analysis_condition", "query_condition"}
 
 
 def _fire(rule: dict, title: str, message: str, payload: dict, ts: float) -> dict:
@@ -126,7 +126,7 @@ def evaluate_ongoing(now: float, zone_names: dict[int, str]) -> list[dict]:
     rules = db.q("SELECT * FROM alert_rules WHERE enabled=1")
     fired: list[dict] = []
     for rule in rules:
-        if not _cooled_down(rule, now):
+        if rule["kind"] not in {"analysis_condition", "query_condition"} and not _cooled_down(rule, now):
             continue
         alert = None
         if rule["kind"] == "dwell_exceeds":
@@ -137,7 +137,7 @@ def evaluate_ongoing(now: float, zone_names: dict[int, str]) -> list[dict]:
             p = db.jload(rule["params_json"], {})
             if p.get("min_seconds") is not None and p.get("source_id") is not None:
                 alert = _check_state_ongoing(rule, p, now)
-        elif rule["kind"] == "analysis_condition":
+        elif rule["kind"] in {"analysis_condition", "query_condition"}:
             alert = _check_analysis_condition(rule, now)
         if alert:
             fired.append(alert)
@@ -207,30 +207,57 @@ def _check_analysis_condition(rule: dict, now: float) -> dict | None:
     over a short trailing window and compare it against `condition`. `for_seconds`
     is tracked in condition_state_json across polls — a threshold only fires once
     it has held continuously for that long, and resets the moment it stops."""
-    from ..routers.analytics_query import GroupingIn, QueryIn, _query_detection, _query_measurement, _query_state
-    analysis, condition = db.jload(rule["analysis_json"], {}), db.jload(rule["condition_json"], {})
+    from ..routers import analytics_query
+    from ..routers.analyses import serialize as serialize_query
+    condition = db.jload(rule["condition_json"], {})
+    if rule["kind"] == "query_condition":
+        query_id = db.jload(rule["params_json"], {}).get("query_id")
+        saved = db.q1("SELECT * FROM analyses WHERE id=?", (query_id,)) if query_id else None
+        if not saved:
+            return None
+        definition = serialize_query(saved)
+        analysis = {"name": definition["name"], "subject": definition["subject"],
+                    "measures": definition["measures"], "filters": definition["filters"]}
+    else:
+        analysis = db.jload(rule["analysis_json"], {})
     subject, measures = analysis.get("subject"), analysis.get("measures") or []
-    if subject not in {"detection", "measurement", "state"} or not measures:
+    if subject not in analytics_query.SUBJECTS or not measures:
         return None
     window_s = float(condition.get("window_s", 300))
-    q = QueryIn(subject=subject, measures=measures, filters=analysis.get("filters", {}), grouping=GroupingIn())
-    handler = {"detection": _query_detection, "measurement": _query_measurement, "state": _query_state}[subject]
-    result = handler(q, now - window_s, now)
+    q = analytics_query.QueryIn(
+        subject=subject, measures=measures, filters=analysis.get("filters", {}),
+        grouping=analytics_query.GroupingIn(),
+        range=analytics_query.RangeIn(since=now - window_s, until=now),
+    )
+    result = analytics_query.query_analytics(q)
     value = result["rows"][0].get(measures[0]) if result["rows"] else None
+    quality = result["rows"][0].get("quality", "known") if result["rows"] else "unknown"
     op, threshold, for_s = condition.get("operator", ">"), condition.get("value"), float(condition.get("for_seconds", 0))
     comparator = _COMPARATORS.get(op)
-    holds = comparator(value, threshold) if (comparator and value is not None and isinstance(value, (int, float))) else False
+    valid_quality = quality == "known" or bool(condition.get("allow_partial", False) and quality == "partial")
+    holds = (comparator(value, threshold) if
+             (valid_quality and comparator and value is not None and isinstance(value, (int, float))) else False)
     state = db.jload(rule.get("condition_state_json"), {})
+    if not valid_quality:
+        # Unknown/partial evidence cannot assert a false transition or clear an
+        # already-active edge. Preserve state until known evidence returns.
+        return None
     if not holds:
-        if state.get("true_since") is not None:
+        if state:
             db.ex("UPDATE alert_rules SET condition_state_json='{}' WHERE id=?", (rule["id"],))
         return None
     true_since = state.get("true_since") or now
     db.ex("UPDATE alert_rules SET condition_state_json=? WHERE id=?",
-          (json.dumps({"true_since": true_since}), rule["id"]))
-    if now - true_since < for_s:
+          (json.dumps({"true_since": true_since, "active": True,
+                       "fired": bool(state.get("fired"))}), rule["id"]))
+    if now - true_since < for_s or state.get("fired") or not _cooled_down(rule, now):
         return None
-    return _fire(rule, rule["name"],
-                f"{measures[0]} {op} {threshold} for {now - true_since:.0f}s (analysis: {analysis.get('name', subject)})",
+    alert = _fire(rule, rule["name"],
+                f"{measures[0]} {op} {threshold} for {now - true_since:.0f}s "
+                f"(query: {analysis.get('name', subject)})",
                 {"subject": subject, "measure": measures[0], "value": value,
-                 "condition": condition, "held_since": true_since}, now)
+                 "condition": condition, "held_since": true_since, "quality": quality,
+                 "query_id": db.jload(rule["params_json"], {}).get("query_id")}, now)
+    db.ex("UPDATE alert_rules SET condition_state_json=? WHERE id=?",
+          (json.dumps({"true_since": true_since, "active": True, "fired": True}), rule["id"]))
+    return alert

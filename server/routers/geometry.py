@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import db
-from ..services import homography
+from ..services import homography, zone_geometry
 
 router = APIRouter(tags=["geometry"])
 
@@ -58,6 +58,10 @@ class ZoneViewPatch(BaseModel):
     min_keypoints: int | None = None
 
 
+class ZoneExtensionIn(BaseModel):
+    polygon: str = "outer"  # outer | detection
+
+
 def _source(source_id: int) -> dict:
     row = db.q1("SELECT id, name FROM sources WHERE id=?", (source_id,))
     if not row:
@@ -92,6 +96,10 @@ def serialize_surface(row: dict) -> dict:
 
 
 def serialize_zone_view(row: dict) -> dict:
+    source = db.q1("SELECT calibration_revision FROM sources WHERE id=?", (row["source_id"],))
+    latest_provenance = db.q1(
+        "SELECT source_calibration_revision,zone_view_revision,resulting_zone_revision "
+        "FROM zone_geometry_provenance WHERE zone_view_id=? ORDER BY id DESC LIMIT 1", (row["id"],))
     return {
         "id": row["id"], "zone_id": row["zone_id"], "source_id": row["source_id"],
         "zone_name": row.get("zone_name"), "source_name": row.get("source_name"),
@@ -102,6 +110,11 @@ def serialize_zone_view(row: dict) -> dict:
         "membership_rule": row["membership_rule"], "threshold": row["threshold"],
         "min_keypoints": row["min_keypoints"], "revision": row["revision"],
         "created_at": row["created_at"], "updated_at": row["updated_at"],
+        "canonical_extension": latest_provenance,
+        "extension_provenance_stale": bool(
+            latest_provenance and source and
+            latest_provenance["source_calibration_revision"] != source["calibration_revision"]
+        ),
     }
 
 
@@ -268,6 +281,64 @@ def update_zone_view(view_id: int, body: ZoneViewPatch):
         (json.dumps(outer), json.dumps(detection), surface_id, rule, threshold,
          min_keypoints, db.now(), view_id))
     return get_zone_view(view_id)
+
+
+@router.post("/zone-views/{view_id}/extend-zone")
+def extend_zone_from_view(view_id: int, body: ZoneExtensionIn = ZoneExtensionIn()):
+    """Explicitly union a projected camera view into canonical physical geometry.
+
+    Creating or editing a Zone View never calls this operation implicitly.
+    Disconnected projected pieces remain separate MultiPolygon components.
+    """
+    if body.polygon not in {"outer", "detection"}:
+        raise HTTPException(422, "polygon must be outer or detection")
+    view = db.q1("SELECT * FROM zone_views WHERE id=?", (view_id,))
+    if not view:
+        raise HTTPException(404, "zone view not found")
+    zone = db.q1("SELECT * FROM zones WHERE id=?", (view["zone_id"],))
+    source = db.q1(
+        "SELECT calibration_json,calibration_revision FROM sources WHERE id=?", (view["source_id"],))
+    pixel_polygon = db.jload(
+        view["outer_polygon_json"] if body.polygon == "outer" else view["detection_polygon_json"], [])
+    surface = None
+    if view["projection_surface_id"] is not None:
+        surface = _surface(view["projection_surface_id"])
+        matrix = db.jload(surface["homography_json"], None)
+    else:
+        calibration = db.jload(source["calibration_json"], None)
+        matrix = calibration.get("H") if calibration else None
+    if not matrix:
+        raise HTTPException(409, "zone view has no usable projection surface or floor calibration")
+    try:
+        projected = homography.project(matrix, pixel_polygon)
+        contribution = [{"x": float(x), "y": float(y)} for x, y in projected]
+        existing = db.jload(zone.get("geometry_json"), None)
+        if not existing:
+            existing = zone_geometry.as_geojson(
+                zone_geometry.polygon_from_points(db.jload(zone["polygon_json"], [])))
+        result = zone_geometry.as_geojson(zone_geometry.union(existing, contribution))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    next_revision = zone["revision"] + 1
+    now = db.now()
+    db.ex(
+        "UPDATE zones SET geometry_json=?,polygon_json=?,revision=?,updated_at=? WHERE id=?",
+        (json.dumps(result), json.dumps(zone_geometry.legacy_exterior(result)), next_revision,
+         now, zone["id"]),
+    )
+    db.ex(
+        "INSERT INTO zone_geometry_provenance (zone_id,source_id,source_calibration_revision,"
+        "zone_view_id,zone_view_revision,projection_surface_id,projection_surface_revision,"
+        "original_pixel_polygon_json,projected_map_polygon_json,operation,resulting_zone_revision,created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (zone["id"], view["source_id"], source["calibration_revision"], view_id, view["revision"],
+         view["projection_surface_id"], surface["revision"] if surface else None,
+         json.dumps(pixel_polygon), json.dumps(contribution), "extend_from_zone_view",
+         next_revision, now),
+    )
+    from .zones import get_zone
+    return {"zone": get_zone(zone["id"]), "projected_contribution": contribution,
+            "operation": "explicit_union"}
 
 
 @router.delete("/zone-views/{view_id}")

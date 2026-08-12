@@ -19,14 +19,11 @@ Typical worker loop:
     command = sl.heartbeat(metrics={"fps": fps})
     if command["should_stop"]:
         break
-    sample_ts = time.time()
+    sample = sl.begin_detection_sample(src["id"], "person", ts=time.time())
     for track in tracks:
-        sl.submit_detection(source_id=src["id"], entity_id=str(track.id),
-                            entity_type="person", point_px=track.floor_point,
-                            ts=sample_ts)
-    # Required even when tracks is empty; this commits the processed frame.
-    sl.submit_detection_frame(source_id=src["id"], entity_type="person",
-                              count=len(tracks), ts=sample_ts)
+        sample.add_detection(entity_id=str(track.id), point_px=track.floor_point)
+    # Required even when tracks is empty; one batch carries detections and marker.
+    sample.submit()
     sl.flush()   # or use `with sl.batch():` — observations auto-flush every `batch_size`
 """
 import atexit
@@ -37,6 +34,35 @@ import uuid
 from urllib.parse import quote, urlsplit, urlunsplit
 
 import requests
+
+
+class DetectionSample:
+    """Builder for one complete processed detection sample."""
+
+    def __init__(self, client, source_id: int, entity_type: str, ts: float | None = None,
+                 sample_id: str | None = None):
+        self.client = client
+        self.source_id = source_id
+        self.entity_type = entity_type
+        self.timestamp = time.time() if ts is None else ts
+        self.sample_id = sample_id or str(uuid.uuid4())
+        self.tracks: list[dict] = []
+        self._submitted = False
+
+    def add_detection(self, **track):
+        if self._submitted:
+            raise RuntimeError("sample already submitted")
+        self.tracks.append(track)
+        return self
+
+    def submit(self) -> dict:
+        if self._submitted:
+            raise RuntimeError("sample already submitted")
+        self._submitted = True
+        return self.client.submit_detection_sample(
+            self.source_id, self.entity_type, self.tracks,
+            ts=self.timestamp, sample_id=self.sample_id,
+        )
 
 
 class StoreLens:
@@ -123,6 +149,9 @@ class StoreLens:
     def zones(self) -> list[dict]:
         return self._req("GET", "/zones")
 
+    def zone(self, zone_id: int) -> dict:
+        return self._req("GET", f"/zones/{zone_id}")
+
     def projection_surfaces(self, source_id: int | None = None) -> list[dict]:
         return self._req("GET", "/projection-surfaces", params={"source_id": source_id} if source_id else None)
 
@@ -135,6 +164,31 @@ class StoreLens:
 
     def create_zone_view(self, **definition) -> dict:
         return self._req("POST", "/zone-views", definition)
+
+    def extend_zone_from_view(self, view_id: int, polygon: str = "outer") -> dict:
+        return self._req("POST", f"/zone-views/{view_id}/extend-zone", {"polygon": polygon})
+
+    def calibrations(self, source_id: int | None = None) -> list[dict]:
+        return self._req("GET", "/calibrations", params={"source_id": source_id} if source_id else None)
+
+    def import_calibration(self, **definition) -> dict:
+        return self._req("POST", "/calibrations/import", definition)
+
+    def multiview_groups(self) -> list[dict]:
+        return self._req("GET", "/multiview/groups")
+
+    def create_multiview_group(self, **definition) -> dict:
+        return self._req("POST", "/multiview/groups", definition)
+
+    def update_multiview_group(self, group_id: int, **patch) -> dict:
+        return self._req("PATCH", f"/multiview/groups/{group_id}", patch)
+
+    def current_fused_entities(self, group_id: int | None = None,
+                               entity_type: str = "person") -> dict:
+        params = {"entity_type": entity_type}
+        if group_id is not None:
+            params["group_id"] = group_id
+        return self._req("GET", "/multiview/current", params=params)
 
     def zone_by_name(self, name: str) -> dict | None:
         return next((z for z in self.zones() if z["name"].lower() == name.lower()), None)
@@ -162,7 +216,7 @@ class StoreLens:
 
     def heartbeat(self, status: str = "running", metrics=None, last_error: str = "") -> dict:
         """Report liveness and receive cooperative stop/restart commands.
-        Call every 5â€“15 seconds and exit when `should_stop` is true."""
+        Call every 5-15 seconds and exit when `should_stop` is true."""
         if self.worker_instance_id is None:
             raise RuntimeError("register_worker before heartbeat")
         return self._req("POST", f"/workers/{self.worker_instance_id}/heartbeat",
@@ -204,7 +258,8 @@ class StoreLens:
                          label: str | None = None, entity_type: str | None = None,
                          confidence: float | None = None, attributes: dict | None = None,
                          identity_scope: str = "worker_run", identity_model_version: str | None = None,
-                         ts: float | None = None, observation_id: str | None = None) -> None:
+                         ts: float | None = None, observation_id: str | None = None,
+                         sample_id: str | None = None) -> None:
         """Buffer one observed entity with spatial evidence. `point_px` is [x,y];
         `bbox_px` is [x0,y0,x1,y1] (corner form, not [x,y,w,h]); `keypoints_px` is
         {name: [x,y]} (e.g. {"left_ankle": [190,455]}) — StoreLens picks the
@@ -230,13 +285,14 @@ class StoreLens:
             "detection", source_id, entity_id=entity_id, entity_type=entity_type, label=label,
             confidence=confidence, attributes=attributes, geometry=geometry or None,
             identity_scope=identity_scope, identity_model_version=identity_model_version,
-            ts=ts, observation_id=observation_id)
+            ts=ts, observation_id=observation_id, sample_id=sample_id)
 
     def submit_measurement(self, source_id: int, name: str, value: float, label: str | None = None,
                            value_kind: str = "gauge", unit: str | None = None,
                            entity_id: str | None = None, point_map: tuple | dict | None = None,
                            confidence: float | None = None, attributes: dict | None = None,
-                           ts: float | None = None, observation_id: str | None = None) -> None:
+                           ts: float | None = None, observation_id: str | None = None,
+                           sample_id: str | None = None) -> None:
         """Buffer one observed numeric sample. `value_kind`: gauge (instantaneous,
         default — e.g. people currently waiting), delta (an increment observed
         this sample), or cumulative (a monotonically increasing producer
@@ -252,11 +308,13 @@ class StoreLens:
                                       if not isinstance(point_map, dict) else point_map)}
         self.add_observation("measurement", source_id, name=name, value=value, value_kind=value_kind,
                              unit=unit, label=label, entity_id=entity_id, confidence=confidence,
-                             attributes=attributes, geometry=geometry, ts=ts, observation_id=observation_id)
+                             attributes=attributes, geometry=geometry, ts=ts,
+                             observation_id=observation_id, sample_id=sample_id)
 
     def submit_detection_frame(self, source_id: int, entity_type: str, count: int,
                                ts: float | None = None, attributes: dict | None = None,
-                               observation_id: str | None = None) -> None:
+                               observation_id: str | None = None,
+                               sample_id: str | None = None) -> None:
         """Submit the entity count observed in one processed frame.
 
         Submit this once per inference sample with the same timestamp used by
@@ -278,7 +336,52 @@ class StoreLens:
             attributes=attributes,
             ts=ts,
             observation_id=observation_id,
+            sample_id=sample_id,
         )
+
+    def begin_detection_sample(self, source_id: int, entity_type: str = "person",
+                               ts: float | None = None,
+                               sample_id: str | None = None) -> DetectionSample:
+        """Create a builder that guarantees one ID/timestamp and one count marker."""
+        return DetectionSample(self, source_id, entity_type, ts=ts, sample_id=sample_id)
+
+    def submit_detection_sample(self, source_id: int, entity_type: str,
+                                tracks: list[dict], ts: float | None = None,
+                                sample_id: str | None = None) -> dict:
+        """Atomically submit 0..N detections plus exactly one completion marker."""
+        timestamp = time.time() if ts is None else ts
+        sid = sample_id or str(uuid.uuid4())
+        observations = []
+        for track in tracks:
+            geometry = {}
+            for key in ("point_px", "bbox_px", "keypoints_px", "point_map"):
+                if track.get(key) is not None:
+                    value = track[key]
+                    if key == "point_map" and not isinstance(value, dict):
+                        value = {"x": value[0], "y": value[1]}
+                    elif key != "point_map":
+                        value = ({name: list(point) for name, point in value.items()}
+                                 if key == "keypoints_px" else list(value))
+                    geometry[key] = value
+            observations.append({
+                "schema_version": 2, "observation_id": track.get("observation_id") or str(uuid.uuid4()),
+                "sample_id": sid, "kind": "detection", "timestamp": timestamp,
+                "source_id": source_id, "worker_id": self.worker_instance_id,
+                "job_id": self.job_id, "entity_type": entity_type,
+                "entity_id": track.get("entity_id"), "label": track.get("label"),
+                "confidence": track.get("confidence"),
+                "identity_scope": track.get("identity_scope", "worker_run"),
+                "identity_model_version": track.get("identity_model_version"),
+                "attributes": track.get("attributes") or {}, "geometry": geometry or None,
+            })
+        observations.append({
+            "schema_version": 2, "observation_id": str(uuid.uuid4()), "sample_id": sid,
+            "kind": "measurement", "timestamp": timestamp, "source_id": source_id,
+            "worker_id": self.worker_instance_id, "job_id": self.job_id,
+            "name": "detection_frame_count", "label": entity_type, "value": len(tracks),
+            "value_kind": "gauge", "unit": "tracks",
+        })
+        return self.submit_observations(observations)
 
     def submit_state(self, source_id: int, name: str, label: str, entity_id: str | None = None,
                      info: dict | None = None, confidence: float | None = None,
@@ -315,14 +418,46 @@ class StoreLens:
             "subject": subject, "measures": measures, "filters": filters or {},
             "grouping": grouping or {}, "range": range or {}, "comparison": comparison or {}})
 
+    def query_capabilities(self) -> dict:
+        return self._req("GET", "/queries/capabilities")
+
+    def saved_queries(self) -> list[dict]:
+        return self._req("GET", "/queries", params={"include_hidden": True})
+
+    def create_saved_query(self, name: str, subject: str, measures: list[str],
+                           filters: dict | None = None, grouping: dict | None = None,
+                           **kwargs) -> dict:
+        return self._req("POST", "/queries", {
+            "name": name, "subject": subject, "measures": measures,
+            "filters": filters or {}, "grouping": grouping or {}, **kwargs})
+
+    def update_saved_query(self, query_id: int, **patch) -> dict:
+        return self._req("PATCH", f"/queries/{query_id}", patch)
+
+    def dashboards(self) -> list[dict]:
+        return self._req("GET", "/dashboards")
+
+    def create_dashboard(self, name: str, description: str = "",
+                         created_by: str = "agent") -> dict:
+        return self._req("POST", "/dashboards", {
+            "name": name, "description": description, "created_by": created_by})
+
+    def add_dashboard_widget(self, dashboard_id: int, query_id: int, title: str,
+                             presentation: str, configuration: dict | None = None,
+                             sort_order: int = 0) -> dict:
+        return self._req("POST", f"/dashboards/{dashboard_id}/widgets", {
+            "query_id": query_id, "title": title, "presentation": presentation,
+            "configuration": configuration or {}, "sort_order": sort_order})
+
     def save_analysis(self, name: str, subject: str, measures: list[str], filters: dict | None = None,
                       grouping: dict | None = None, **kwargs) -> dict:
         """Save a data question so it appears on the dashboard. This is a
         question, not a chart — switching how it renders later is a `patch` on
         the same record (`presentation`), never a second analysis."""
-        return self._req("POST", "/analyses", {
-            "name": name, "subject": subject, "measures": measures,
-            "filters": filters or {}, "grouping": grouping or {}, **kwargs})
+        import warnings
+        warnings.warn("save_analysis is deprecated; use create_saved_query", DeprecationWarning,
+                      stacklevel=2)
+        return self.create_saved_query(name, subject, measures, filters, grouping, **kwargs)
 
     # ---------- legacy events (event_type-based contract) ----------
     _LEGACY_DERIVED_TYPES = {"zone_enter", "zone_exit", "zone_dwell", "state_change", "count"}
@@ -386,13 +521,24 @@ class StoreLens:
 
     @staticmethod
     def point_in_zone(zone: dict, x: float, y: float) -> bool:
-        poly, inside, j = zone["polygon"], False, len(zone["polygon"]) - 1
-        for i in range(len(poly)):
-            xi, yi, xj, yj = poly[i]["x"], poly[i]["y"], poly[j]["x"], poly[j]["y"]
-            if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
-                inside = not inside
-            j = i
-        return inside
+        geometry = zone.get("geometry") or {}
+        if geometry.get("type") == "Polygon":
+            rings = [geometry.get("coordinates", [[]])[0]]
+        elif geometry.get("type") == "MultiPolygon":
+            rings = [part[0] for part in geometry.get("coordinates", []) if part]
+        else:
+            rings = [[[point["x"], point["y"]] for point in zone.get("polygon", [])]]
+        for poly in rings:
+            inside, j = False, len(poly) - 1
+            for i in range(len(poly)):
+                xi, yi = poly[i][:2]
+                xj, yj = poly[j][:2]
+                if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+                    inside = not inside
+                j = i
+            if inside:
+                return True
+        return False
 
     # ---------- video ----------
     def open_capture(self, source: dict, local_connection=None):

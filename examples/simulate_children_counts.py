@@ -91,7 +91,7 @@ def main():
     sl.stop_worker()
     print(f"Posted {result['accepted']} child-count samples to job {job['id']} "
          f"({result['duplicates']} duplicates, {len(result['rejected'])} rejected).")
-    print("Open Analytics and choose a range covering the last few hours.")
+    print("Create a saved query and dashboard widget covering the last few hours.")
 
 
 if __name__ == "__main__":

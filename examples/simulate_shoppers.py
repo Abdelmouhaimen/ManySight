@@ -1,8 +1,8 @@
 """Live shopper simulator — demo the whole platform with zero cameras.
 
 Registers a job and submits realistic raw `detection` and `state` observations
-in real time, so the dashboard's live cards, Analytics page, and alerts all
-light up. This worker never resolves a zone, pairs an enter/exit, or computes
+in real time, so Live, generated queries, and alerts can be exercised. This
+worker never resolves a zone, pairs an enter/exit, or computes
 a state change — it only reports what it "observed" (a simulated position, or
 a simulated fridge-door reading) every tick; StoreLens derives zones, visits,
 dwell, transitions, and state durations from those raw rows.

@@ -4,11 +4,9 @@ one hand-picked REST path per chart. Visualization is not part of the analytical
 identity — `dashboard/src/analytics.jsx` picks a renderer from the response
 `shape`; nothing here knows about charts.
 
-This intentionally reuses the existing per-kind analytics machinery rather than
-building a second computation path: `services/derive.py` for visit/state/
-measurement derivation, and the same live-from-`events`-table philosophy as
-`server/routers/analytics.py` (no precomputed/materialized layer, so results are
-always replayable from raw observations and geometry revisions).
+Detection, measurement, and state subjects reuse the existing deterministic
+derivation machinery. Fused current occupancy and history read the bounded,
+persisted materializations maintained when complete source samples arrive.
 """
 from collections import defaultdict
 
@@ -20,12 +18,13 @@ from ..services import derive
 
 router = APIRouter(tags=["analytics-query"])
 
-SUBJECTS = {"detection", "measurement", "state"}
+SUBJECTS = {"detection", "measurement", "state", "fused_entity"}
 MEASURES_BY_SUBJECT = {
     "detection": {"active_entities", "distinct_entities", "observations", "visits",
                   "average_dwell", "total_dwell", "transition_count", "density"},
     "measurement": {"latest", "minimum", "maximum", "average", "sum", "rate", "samples"},
     "state": {"current", "changes", "duration", "average_duration", "time_percentage"},
+    "fused_entity": {"current_occupancy", "current_entities"},
 }
 GROUPING_PRIMARIES = {None, "time", "zone"}
 SPLIT_DIMENSIONS = {"label", "entity_type", "entity_id", "source", "state_label", "measurement_name"}
@@ -143,6 +142,73 @@ def _validate(q: QueryIn):
         if split not in SPLIT_DIMENSIONS and not split.startswith("attribute:"):
             raise HTTPException(422, f"grouping.split_by '{split}' must be one of {sorted(SPLIT_DIMENSIONS)} "
                                      "or 'attribute:<key>'")
+
+
+def _query_fused_entity(q: QueryIn, _since: float, _until: float) -> dict:
+    """Query persisted fused current state, never a recent raw-detection window."""
+    from ..services import multiview
+    multiview.refresh_freshness()
+    group_ids = q.filters.get("group_ids") or [row["id"] for row in db.q(
+        "SELECT id FROM multiview_groups WHERE enabled=1 ORDER BY id")]
+    entity_types = q.filters.get("entity_types") or ["person"]
+    zone_ids = q.filters.get("zone_ids") or []
+    if len(group_ids) != 1:
+        raise HTTPException(422, "fused_entity queries require exactly one multiview group_id")
+    group_id = int(group_ids[0])
+    if q.grouping.primary == "time":
+        if len(zone_ids) != 1:
+            raise HTTPException(422, "fused occupancy time-series requires exactly one zone_id")
+        bucket_s = _bucket_seconds(q.grouping.bucket, _since, _until)
+        history = db.q(
+            "SELECT * FROM zone_occupancy_observations WHERE group_id=? AND zone_id=? "
+            "AND entity_type=? AND ts>=? AND ts<=? ORDER BY ts,id",
+            (group_id, int(zone_ids[0]), entity_types[0], _since, _until),
+        )
+        latest_by_bucket = {}
+        for row in history:
+            bucket = _since + int((row["ts"] - _since) // bucket_s) * bucket_s
+            latest_by_bucket[bucket] = row
+        rows = []
+        for bucket, row in sorted(latest_by_bucket.items()):
+            result = {"timestamp": bucket, "quality": row["quality"], "as_of": row["ts"]}
+            for measure in q.measures:
+                result[measure] = row["value"]
+            rows.append(result)
+        return {"shape": "timeseries", "dimensions": ["timestamp"], "measures": q.measures,
+                "rows": rows, "metadata": {"group_id": group_id, "zone_id": int(zone_ids[0]),
+                                             "identity": "anonymous fused track",
+                                             "bucket_seconds": bucket_s}}
+    if q.grouping.primary == "zone":
+        zones = zone_ids or [row["id"] for row in db.q("SELECT id FROM zones ORDER BY id")]
+        names = {row["id"]: row["name"] for row in db.q("SELECT id,name FROM zones")}
+        rows = []
+        for zone_id in zones:
+            state = db.q1(
+                "SELECT * FROM zone_current_occupancy WHERE group_id=? AND zone_id=? AND entity_type=?",
+                (group_id, zone_id, entity_types[0]),
+            )
+            rows.append({"zone_id": zone_id, "zone_name": names.get(zone_id),
+                         "current_occupancy": state["value"] if state else None,
+                         "quality": state["quality"] if state else "unknown",
+                         "as_of": state["as_of"] if state else db.now()})
+        return {"shape": "categorical", "dimensions": ["zone_id"], "measures": q.measures,
+                "rows": rows, "metadata": {"group_id": group_id, "identity": "anonymous fused track"}}
+    if len(zone_ids) != 1:
+        raise HTTPException(422, "scalar current fused occupancy requires exactly one zone_id")
+    state = db.q1(
+        "SELECT * FROM zone_current_occupancy WHERE group_id=? AND zone_id=? AND entity_type=?",
+        (group_id, int(zone_ids[0]), entity_types[0]),
+    )
+    row = {
+        "current_occupancy": state["value"] if state else None,
+        "current_entities": state["value"] if state else None,
+        "quality": state["quality"] if state else "unknown",
+        "as_of": state["as_of"] if state else db.now(),
+    }
+    return {"shape": "scalar", "dimensions": [], "measures": q.measures,
+            "rows": [{key: value for key, value in row.items() if key in set(q.measures) | {"quality", "as_of"}}],
+            "metadata": {"group_id": group_id, "zone_id": int(zone_ids[0]),
+                         "identity": "anonymous fused track", "current_state": True}}
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +609,8 @@ def _query_state(q: QueryIn, since: float, until: float) -> dict:
 def query_analytics(q: QueryIn):
     _validate(q)
     since, until = _resolve_range(q.range)
-    handler = {"detection": _query_detection, "measurement": _query_measurement, "state": _query_state}[q.subject]
+    handler = {"detection": _query_detection, "measurement": _query_measurement,
+               "state": _query_state, "fused_entity": _query_fused_entity}[q.subject]
     result = handler(q, since, until)
     result["metadata"] = {**result.get("metadata", {}), "since": since, "until": until,
                           "derived_from": q.subject, "timezone": "UTC"}
@@ -568,6 +635,7 @@ def capabilities():
         "split_dimensions": sorted(SPLIT_DIMENSIONS) + ["attribute:<key>"],
         "sources": db.q("SELECT id, name FROM sources ORDER BY id"),
         "zones": db.q("SELECT id, name FROM zones ORDER BY id"),
+        "multiview_groups": db.q("SELECT id, name FROM multiview_groups WHERE enabled=1 ORDER BY id"),
         "labels": [r["label"] for r in db.q(
             "SELECT DISTINCT label FROM events WHERE label IS NOT NULL AND label!='' ORDER BY label")],
         "entity_types": [r["entity_type"] for r in db.q(
