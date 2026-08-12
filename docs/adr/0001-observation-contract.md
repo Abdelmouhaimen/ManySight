@@ -103,6 +103,10 @@ the entire analytical surface is deterministically reproducible from the append-
 only `events` table. Current-value read models
 (`GET /observations/latest`) are the same: computed live from the same table,
 not a second write path that could drift from it.
+The Live-specific latest-frame read model (`GET /observations/latest-frames`) likewise
+selects each source's newest `detection_frame_count` marker and the detections sharing
+its exact timestamp. It persists scene contents while reporting ingestion freshness
+separately.
 
 ## Consequences
 

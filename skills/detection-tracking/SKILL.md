@@ -22,6 +22,13 @@ camera frame at 30fps. For zero-capable presence series, call
 same timestamp as that sample's detections. The submitted count is shown at that exact
 timestamp; neighboring samples and different cameras are not merged.
 
+For person detection this is mandatory for every processed frame, not only frames
+that contain tracks. Create one `sample_ts`, use it for every detection from that
+frame, append `submit_detection_frame(..., count=len(tracks), ts=sample_ts)` after
+the detections, then flush. Do not skip the frame count when `tracks` is empty. Do
+not create a fake zero-confidence detection. Do not call `time.time()` separately
+for rows from one frame, and do not calculate Live occupancy in the worker.
+
 Never send `zone_id`/`zone`, and never emit an enter/exit pair or a computed dwell value
 yourself — StoreLens assigns the zone from geometry and derives visits/dwell/flow from
 the raw stream (a run of same-zone detections for one entity becomes a visit once it has
@@ -110,7 +117,10 @@ from ultralytics import YOLO
 model = YOLO("yolov8n.pt")
 boxes = model.predict(frame, classes=[0], verbose=False)[0].boxes.xyxy.tolist()
 for tid, (x0, y0, x1, y1) in zip(track_ids, boxes):
-    sl.submit_detection(source_id=src["id"], entity_id=tid, bbox_px=(x0, y0, x1, y1))
+    sl.submit_detection(source_id=src["id"], entity_id=tid, entity_type="person",
+                        bbox_px=(x0, y0, x1, y1), ts=sample_ts)
+sl.submit_detection_frame(source_id=src["id"], entity_type="person",
+                          count=len(boxes), ts=sample_ts)
 ```
 
 ## Pitfalls
@@ -124,5 +134,7 @@ for tid, (x0, y0, x1, y1) in zip(track_ids, boxes):
 - Don't flood: 30 fps × N entities adds nothing useful; 1–2 Hz is visually identical and
   is what StoreLens's visit-confirmation (min-samples, gap tolerance) assumes.
 - Multiple cameras: one job is fine; submit with each observation's own `source_id`.
+- Live keeps one latest completed frame per source. Missing newer data makes freshness
+  stale; it does not clear the last scene. Cross-camera identity fusion is not implemented.
 - Attribute keys become Analytics split-by options automatically; keep values short and
   consistent (`female`/`male`, not free text).

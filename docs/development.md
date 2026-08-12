@@ -83,6 +83,7 @@ the loopback interface.
 
 ```powershell
 python -m pytest -q
+npm test --prefix dashboard
 npm run build --prefix dashboard
 ```
 

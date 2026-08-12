@@ -38,6 +38,45 @@ At query time StoreLens derives:
 Legacy `/api/v1/events` data remains readable and accepted for compatibility. New
 workers must use `/api/v1/observations/batch`.
 
+## Mono-camera processed-frame state
+
+Continuous person workers use an existing schema-v2 measurement as a frame completion
+marker; no fourth observation kind exists:
+
+```text
+Camera
+   |
+   v
+sample/process frame T -> tracker
+   |-- detection A @ T
+   |-- detection B @ T
+   `-- detection_frame_count(person)=2 @ T
+              |
+              v
+StoreLens geometry enrichment
+              |
+              v
+latest completed frame for this source -> Live 3D map
+```
+
+All rows from one processed frame share the exact `source_id + timestamp` key. The
+count measurement is buffered after the detections and commits the frame. A sampled
+frame with no people contains no detection rows and
+`detection_frame_count(person)=0`; that newer frame immediately replaces the previous
+source-local scene with an empty one.
+
+Batch ingestion inserts accepted rows in request order and publishes SSE notifications
+in that order after persistence. The SDK therefore appends the count marker last. Live
+uses SSE as invalidation and refetches the authoritative latest-frame read model; it
+does not assemble frames with a timing delay. Detections received after a frame's
+completion marker cannot retroactively mutate that committed frame.
+
+Live scene state and source freshness are independent. If processing stops after a
+frame containing two tracks, Live retains those two tracks as the latest available
+evidence and marks the source stale. Wall-clock time alone never invents a newer empty
+scene. Multiple sources have independent latest frames and may be projected into the
+same map, but StoreLens does not deduplicate or associate their identities.
+
 ## Geometry model
 
 The workspace floor plan and zones use map metres. A source can have a floor-plane
@@ -57,6 +96,11 @@ were used when they were recorded.
 `identity_scope` declares whether the identifier is valid for one worker run, one
 source, or the workspace. StoreLens does not join identities across cameras by
 similarity and does not require face embeddings or biometric templates.
+
+Current identity remains worker/source scoped. Cross-camera entity association is not
+implemented. Future multi-view work may associate source-local tracks using appearance
+and spatiotemporal evidence before presenting fused workspace-level entities; no such
+signatures or fusion are part of the current observation contract.
 
 Workers should submit only the evidence needed for the intended analysis. Camera
 frames remain on the worker device unless an operator explicitly chooses to retain

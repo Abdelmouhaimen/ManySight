@@ -106,6 +106,10 @@ Conventions that make analyses light up:
   frame (`label` = entity type, `value` = frame detection count including 0) using the
   exact same timestamp as that frame's detections. Each measurement is an instantaneous
   sample; StoreLens does not merge neighboring timestamps or synchronize cameras.
+  This marker is required for every processed person frame, including zero. Buffer
+  detections first, append the marker last, and use one shared timestamp value. Never
+  fake a zero detection or calculate the Live scene in the worker. Live retains each
+  source's latest completed frame until a newer marker arrives; freshness is separate.
 - **Visits / dwell** ← ordinary tracked `detection` rows in a zone. StoreLens groups
   consecutive same-zone detections per entity into a visit (bridging brief gaps, requiring
   a minimum number of confirmed samples so one noisy frame at a boundary is never a

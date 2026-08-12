@@ -161,7 +161,12 @@ raw observations over HTTPS.
    every sample including repeats). Never resolve a zone or send zone_id/zone, and
    never compute zone entry/exit, dwell, occupancy, movement, or a state change —
    StoreLens derives all of those itself. See `GET {endpoints["rest_url"]}/observations/contract`.
-6. Verify with `GET {endpoints["rest_url"]}/observations/latest` and
+6. For every processed person-detection frame, buffer its zero or more detections,
+   then one `detection_frame_count` measurement including zero, all with one exact
+   timestamp. Never use a fake detection for an empty frame. Live scene state changes
+   only when this newer completion marker arrives; freshness is reported separately.
+7. Verify with `GET {endpoints["rest_url"]}/observations/latest`,
+   `GET {endpoints["rest_url"]}/observations/latest-frames`, and
    `POST {endpoints["rest_url"]}/analytics/query`, then save a `POST {endpoints["rest_url"]}/analyses`
    definition — a data question (subject/measures/filters/grouping), not a chart.
 

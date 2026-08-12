@@ -65,6 +65,18 @@ its label to the entity type and its gauge value to the number of detections, in
 zero. Give it exactly the same timestamp as that frame's detections. StoreLens does not
 merge neighboring timestamps or synchronize cameras.
 
+Treat the measurement as the completion marker for that processed frame: buffer the
+frame's zero or more detections first, append `detection_frame_count` last, then flush.
+Use one `sample_ts` value; do not call `time.time()` separately for each detection.
+Do not skip the marker for an empty frame and do not create a fake zero-confidence
+detection. A processed frame is a frame on which the worker actually ran its detector,
+not every physical camera frame skipped by an intentional sampler.
+
+`GET /api/v1/observations/latest-frames?entity_type=person` reconstructs the latest
+completed frame per source from the marker and exact source/timestamp detections. The
+scene persists until a newer marker arrives. Freshness is reported separately, so a
+stopped worker makes the last frame stale without changing its contents.
+
 ## Spatial evidence
 
 For camera workers, submit pixel evidence and let StoreLens project it. The
@@ -80,8 +92,8 @@ perform their own camera calibration or zone assignment.
 
 - `examples/heatmap_tracker.py`: YOLO when installed, with a motion-subtraction
   fallback; submits detections and zero-capable frame counts.
-- `examples/dwell_zones.py`: tracked detections used for platform-derived visits and
-  dwell.
+- `examples/dwell_zones.py`: tracked detections and per-processed-frame counts used
+  for platform-derived visits and dwell.
 - `examples/fridge_state.py`: repeated open/closed state samples.
 - `examples/simulate_children_counts.py`: synthetic measurement series for UI and
   contract testing.

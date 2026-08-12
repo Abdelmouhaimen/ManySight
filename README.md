@@ -128,19 +128,27 @@ client.register_job(
     "Person detections",
     "Tracked person observations from source 1",
     source_ids=[source["id"]],
-    event_types=["detection"],
+    event_types=["detection", "measurement"],
 )
 client.register_worker("person-detector", version="1")
 
 ok, frame = capture.read()
 if ok:
+    sample_ts = time.time()
     # Replace these coordinates with output from your detector/tracker.
     client.submit_detection(
         source_id=source["id"],
         entity_id="track-1",
         entity_type="person",
         point_px=(320, 470),
-        ts=time.time(),
+        ts=sample_ts,
+    )
+    # Submit once for every processed frame, including frames with no tracks.
+    client.submit_detection_frame(
+        source_id=source["id"],
+        entity_type="person",
+        count=1,
+        ts=sample_ts,
     )
     client.flush_observations()
 ```
@@ -150,6 +158,11 @@ cooperative stop/restart requests. The SDK lives at
 [`sdk/python/storelens.py`](sdk/python/storelens.py); examples are in
 [`examples/`](examples/). See [Workers and observations](docs/workers.md) before
 writing a new integration.
+
+The Live view represents the latest completed processed frame for each source.
+It changes only when a newer `detection_frame_count` sample arrives. If processing
+stops, the last scene remains visible with stale-source status; StoreLens does not
+reinterpret missing observations as an empty scene.
 
 ## MCP
 
@@ -185,6 +198,7 @@ The interactive API and `/openapi.json` are the authoritative REST contract.
 
 ```powershell
 python -m pytest -q
+npm test --prefix dashboard
 npm run build --prefix dashboard
 ```
 

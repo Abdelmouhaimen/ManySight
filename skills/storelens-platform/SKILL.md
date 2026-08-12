@@ -136,6 +136,9 @@ evidence silently.
   then managed resolution, then an external reference.
 - Use anonymous tracking and stable per-run `entity_id`s when tracking is required.
 - Sample detections around 1-2 Hz per entity unless the measurement needs another rate.
+- For every processed person-detection frame, submit zero or more detections and then
+  one `detection_frame_count` measurement, including zero, all with the exact same
+  timestamp. Never fake an empty detection or let wall-clock expiry define the scene.
 - Batch submissions, handle disconnects, retry with bounds, and flush on shutdown.
 - Call `register_worker` after the process actually starts. Heartbeat every 5–15 seconds,
   include useful metrics such as FPS/queue depth, and exit cleanly when instructed.

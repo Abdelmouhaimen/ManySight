@@ -12,3 +12,8 @@ Human-facing project documentation begins in [`README.md`](README.md). Do not co
 agent instructions into public user documentation, expose source credentials, or
 reintroduce legacy worker-derived zones, dwell, occupancy, transitions, or state
 changes.
+
+When authoring a person-detection worker, submit one `detection_frame_count`
+measurement for every processed frame, including zero, after that frame's detections.
+All rows from the frame must use one exact timestamp. Never represent an empty frame
+with a fake detection or infer cross-camera identity.
