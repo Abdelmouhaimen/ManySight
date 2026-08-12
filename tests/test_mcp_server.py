@@ -20,10 +20,10 @@ def test_tool_contract_is_intact():
 
     tools = asyncio.run(m.mcp.list_tools())
     names = {t.name for t in tools}
-    assert len(tools) == 46
+    assert len(tools) == 47
     for expected in (
         "submit_observations", "get_observation_contract", "list_observations",
-        "get_latest_observations", "query_analytics", "list_analysis_capabilities",
+        "get_latest_observations", "get_latest_detection_frames", "query_analytics", "list_analysis_capabilities",
         "create_analysis", "list_analyses", "update_analysis", "delete_analysis",
         "submit_events", "get_analytics", "register_insight", "list_insights",
         "delete_insight", "list_skills", "get_skill", "register_job",

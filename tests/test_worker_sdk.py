@@ -37,6 +37,75 @@ def test_detection_frame_count_rejects_negative_values():
         raise AssertionError("negative frame counts must be rejected")
 
 
+def test_three_track_frame_uses_one_exact_timestamp_and_marker_last():
+    client = StoreLens(batch_size=100)
+    sample_ts = 1786480000.125
+    for entity_id in ("A", "B", "C"):
+        client.submit_detection(
+            source_id=7,
+            entity_id=entity_id,
+            entity_type="person",
+            point_px=(100, 200),
+            ts=sample_ts,
+            observation_id=f"detection-{entity_id}",
+        )
+    client.submit_detection_frame(
+        source_id=7,
+        entity_type="person",
+        count=3,
+        ts=sample_ts,
+        observation_id="frame-count-3",
+    )
+
+    assert [row["timestamp"] for row in client._obs_buffer] == [sample_ts] * 4
+    assert [row["observation_id"] for row in client._obs_buffer] == [
+        "detection-A", "detection-B", "detection-C", "frame-count-3",
+    ]
+    marker = client._obs_buffer[-1]
+    assert {key: marker[key] for key in (
+        "schema_version", "observation_id", "kind", "timestamp", "source_id",
+        "name", "value", "value_kind", "unit", "label",
+    )} == {
+        "schema_version": 2,
+        "observation_id": "frame-count-3",
+        "kind": "measurement",
+        "timestamp": sample_ts,
+        "source_id": 7,
+        "name": "detection_frame_count",
+        "value": 3,
+        "value_kind": "gauge",
+        "unit": "tracks",
+        "label": "person",
+    }
+    client._obs_buffer.clear()
+
+
+def test_explicit_zero_timestamp_is_preserved_for_empty_frame():
+    client = StoreLens(batch_size=100)
+    client.submit_detection_frame(
+        source_id=7,
+        entity_type="person",
+        count=0,
+        ts=0.0,
+        observation_id="empty-at-epoch",
+    )
+
+    assert client._obs_buffer[0]["timestamp"] == 0.0
+    assert client._obs_buffer[0]["value"] == 0
+    client._obs_buffer.clear()
+
+
+def test_frame_count_rejects_fractional_or_boolean_values():
+    client = StoreLens(batch_size=100)
+    for invalid in (1.5, True):
+        try:
+            client.submit_detection_frame(source_id=7, entity_type="person", count=invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"invalid frame count {invalid!r} must be rejected")
+
+
 def test_open_capture_prefers_explicit_override(monkeypatch):
     opened = []
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=lambda target: opened.append(target) or target))

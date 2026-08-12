@@ -73,6 +73,9 @@ mcp = build_server(
         "state durations — StoreLens derives every one of those from raw detection/state rows. "
         "submit_observations() rejects any of those legacy derived kinds with a "
         "legacy_derived_observation error. "
+        "For every processed person-detection frame, workers submit all detections and then one "
+        "detection_frame_count measurement, including zero, using exactly the same timestamp. "
+        "Never create a fake detection for an empty frame or use wall-clock expiry as scene state. "
         "\n\nAfter posting observations, verify with get_latest_observations()/query_analytics(), "
         "then create_analysis(subject, measures, filters, grouping) so the result appears on the "
         "dashboard as a saved question, not a chart — changing how it is displayed later never "
@@ -394,6 +397,9 @@ def submit_observations(observations: list[dict], job_id: int | None = None) -> 
     rejected per-item with error 'legacy_derived_observation'. A worker sends
     what a model directly observed; StoreLens derives visits, dwell, occupancy,
     movement, state transitions/durations, and every analysis from these rows.
+    For every processed person-detection frame, order its detections first and its
+    detection_frame_count marker last; all rows use the exact same timestamp and the
+    marker is required even when its value is zero. Never submit a fake empty detection.
     Returns {accepted, duplicates, rejected: [{index, observation_id, error,
     message}], alerts} — duplicates (same observation_id already stored) are
     not errors, they're a safe no-op retry."""
@@ -427,6 +433,21 @@ def get_latest_observations(kind: str | None = None, source_id: int | None = Non
     params = {k: v for k, v in {"kind": kind, "source_id": source_id, "zone_id": zone_id,
                                 "name": name}.items() if v is not None}
     return _req("GET", "/observations/latest" + ("?" + urllib.parse.urlencode(params) if params else ""))
+
+
+@mcp.tool()
+def get_latest_detection_frames(entity_type: str = "person", source_id: int | None = None) -> dict:
+    """Get each source's latest completed processed frame for an entity type.
+
+    A detection_frame_count measurement is the frame completion marker. The
+    returned detections share its exact source/timestamp and retain StoreLens's
+    geometry enrichment. Scene contents persist until a newer marker arrives;
+    `stale` describes source freshness without changing those contents.
+    """
+    params = {"entity_type": entity_type}
+    if source_id is not None:
+        params["source_id"] = source_id
+    return _req("GET", "/observations/latest-frames?" + urllib.parse.urlencode(params))
 
 
 @mcp.tool()

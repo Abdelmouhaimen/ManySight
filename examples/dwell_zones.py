@@ -1,7 +1,8 @@
 """Dwell worker — tracked detections from a real video source.
 
 Tracks people and submits `detection` observations with feet pixel points and a
-stable per-track `entity_id`. That's the entire contract: this worker never
+stable per-track `entity_id`, plus one processed-frame count (including zero).
+This worker never
 resolves a zone, debounces a boundary crossing, or pairs an enter/exit — the
 platform projects each point through the source calibration, matches it against
 zone geometry with its own hysteresis rules, and derives visits and dwell
@@ -16,7 +17,7 @@ import time
 
 sys.path.insert(0, "sdk/python")
 from storelens import StoreLens, CentroidTracker, parse_args_base  # noqa: E402
-from heatmap_tracker import motion_detector  # reuse the fallback detector  # noqa: E402
+from heatmap_tracker import motion_detector, submit_tracked_frame  # noqa: E402
 
 
 def main():
@@ -39,10 +40,10 @@ def main():
               "(StoreLens assigns them from geometry — this worker never resolves one itself)")
 
     sl.register_job(f"Dwell – {src['name']}", "tracked detections for dwell/visit derivation",
-                    source_ids=[src["id"]], event_types=["detection"])
+                    source_ids=[src["id"]], event_types=["detection", "measurement"])
     sl.register_worker("dwell-zones", version="1")
-    print("Contract: this worker sends only 'detection' observations — "
-          "StoreLens derives zone visits and dwell duration from them.")
+    print("Contract: every processed frame sends detections followed by one exact-timestamp "
+          "frame count, including zero; StoreLens derives zone visits and dwell duration.")
     detect = motion_detector()
     cap = sl.open_capture(src, args.connection)
     tracker = CentroidTracker(max_distance=90)
@@ -58,9 +59,10 @@ def main():
             last_heartbeat = now
             if command["should_stop"]:
                 break
-        for tid, cx, cy in tracker.update(detect(frame)):
-            sl.submit_detection(source_id=src["id"], entity_id=tid, point_px=(cx, cy), entity_type="person")
-        sl.flush()
+        sample_ts = time.time()
+        tracks = tracker.update(detect(frame))
+        submit_tracked_frame(sl, src["id"], tracks, sample_ts, "dwell_zones")
+        sl.flush_observations()
         time.sleep(0.05)
     sl.flush()
     sl.stop_worker()

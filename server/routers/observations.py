@@ -22,6 +22,7 @@ from ..services import alert_engine, derive, enrich
 
 router = APIRouter(tags=["observations"])
 LATEST_LOOKBACK_S = 24 * 3600.0
+SOURCE_FRESH_S = 30.0
 
 REQUIRED_BY_KIND = {
     "detection": [],
@@ -154,7 +155,9 @@ def observation_contract():
             "label": "<entity_type>",
             "value": "number of matching detections in this processed frame, including 0",
             "timestamp": "same timestamp as every detection emitted from the frame",
-            "purpose": "provides the instantaneous camera/entity-type count at the exact submitted timestamp",
+            "ordering": "append after that frame's detections, then flush the batch",
+            "required_when_zero": True,
+            "purpose": "commits the latest completed processed frame and provides its instantaneous count",
         },
         "representative_point_precedence": [
             "explicit geometry.point_px",
@@ -437,6 +440,70 @@ def latest_observations(kind: str | None = None, source_id: int | None = None,
         "detection": _current_detections(since, now, source_id, zone_id),
         "measurement": _current_measurements(since, now, source_id, name),
         "state": _current_states(since, now, source_id),
+    }
+
+
+@router.get("/observations/latest-frames", summary="Get each source's latest completed detection frame")
+def latest_detection_frames(entity_type: str = "person", source_id: int | None = None):
+    """Return the latest explicitly completed processed frame per source.
+
+    A ``detection_frame_count`` measurement is the completion marker. Detections
+    for the frame are selected by the exact ``source_id + timestamp`` key and are
+    returned with their stored StoreLens geometry enrichment. Scene contents do
+    not expire; ``stale`` reports source freshness independently.
+    """
+    where = ["event_type='measurement'", "name='detection_frame_count'", "label=?"]
+    args: list = [entity_type]
+    if source_id is not None:
+        where.append("source_id=?")
+        args.append(source_id)
+    markers = db.q(
+        "WITH ranked AS (SELECT *, ROW_NUMBER() OVER ("
+        "PARTITION BY source_id ORDER BY ts DESC, id DESC) rn FROM events WHERE "
+        f"{' AND '.join(where)}) SELECT * FROM ranked WHERE rn=1 ORDER BY source_id",
+        args,
+    )
+    now = db.now()
+    zone_names = {z["id"]: z["name"] for z in db.q("SELECT id, name FROM zones")}
+    source_rows = {
+        row["id"]: row for row in db.q(
+            "SELECT id, last_ingestion_at, last_observation_at FROM sources"
+            + (" WHERE id=?" if source_id is not None else ""),
+            (source_id,) if source_id is not None else (),
+        )
+    }
+    frames = []
+    for marker in markers:
+        detections = db.q(
+            "SELECT * FROM events WHERE event_type='detection' AND source_id=? AND ts=? "
+            "AND entity_type=? AND id<? ORDER BY id",
+            (marker["source_id"], marker["ts"], entity_type, marker["id"]),
+        )
+        source = source_rows.get(marker["source_id"], {})
+        last_ingestion_at = source.get("last_ingestion_at")
+        source_age_s = max(0.0, now - last_ingestion_at) if last_ingestion_at is not None else None
+        frame_ingested_at = marker.get("created_at")
+        frames.append({
+            "source_id": marker["source_id"],
+            "entity_type": entity_type,
+            "timestamp": marker["ts"],
+            "expected_count": int(marker["value"]),
+            "observed_count": len(detections),
+            "frame_observation_id": marker.get("observation_id"),
+            "frame_ingested_at": frame_ingested_at,
+            "frame_age_s": round(max(0.0, now - frame_ingested_at), 1)
+            if frame_ingested_at is not None else None,
+            "source_last_ingestion_at": last_ingestion_at,
+            "source_age_s": round(source_age_s, 1) if source_age_s is not None else None,
+            "stale": source_age_s is None or source_age_s > SOURCE_FRESH_S,
+            "detections": [_serialize_observation(row, zone_names) for row in detections],
+        })
+    return {
+        "entity_type": entity_type,
+        "frame_key": "source_id + exact timestamp",
+        "as_of": now,
+        "stale_after_s": SOURCE_FRESH_S,
+        "frames": frames,
     }
 
 

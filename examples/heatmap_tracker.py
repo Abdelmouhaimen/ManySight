@@ -48,6 +48,19 @@ def motion_detector():
     return detect
 
 
+def submit_tracked_frame(sl, source_id, tracks, sample_ts, detector):
+    """Buffer one complete processed person frame, with the marker last."""
+    for tid, cx, cy in tracks:
+        sl.submit_detection(
+            source_id=source_id, entity_id=tid, point_px=(cx, cy),
+            entity_type="person", ts=sample_ts,
+        )
+    sl.submit_detection_frame(
+        source_id=source_id, entity_type="person", count=len(tracks), ts=sample_ts,
+        attributes={"detector": detector},
+    )
+
+
 def main():
     ap = parse_args_base(__doc__)
     ap.add_argument("--fps", type=float, default=2.0,
@@ -79,7 +92,6 @@ def main():
         if not ok:
             print("stream ended / unreadable")
             break
-        feet = detect(frame)
         now = time.time()
         if now - last_heartbeat >= 10:
             command = sl.heartbeat(metrics={"detections": n})
@@ -87,16 +99,13 @@ def main():
             if command["should_stop"]:
                 break
         if now - last >= interval:
+            # This is the processed/sample frame. Physical frames skipped by the
+            # rate limiter do not produce frame-count measurements.
+            feet = detect(frame)
             tracks = tracker.update(feet)
-            sample_ts = time.time()
-            for tid, cx, cy in tracks:
-                sl.submit_detection(source_id=src["id"], entity_id=tid, point_px=(cx, cy),
-                                   entity_type="person", ts=sample_ts)
-                n += 1
-            sl.submit_detection_frame(
-                source_id=src["id"], entity_type="person", count=len(tracks), ts=sample_ts,
-                attributes={"detector": "heatmap_tracker"},
-            )
+            sample_ts = time.time()  # one exact timestamp for the whole frame
+            submit_tracked_frame(sl, src["id"], tracks, sample_ts, "heatmap_tracker")
+            n += len(tracks)
             sl.flush_observations()
             last = now
             if n and n % 200 == 0:

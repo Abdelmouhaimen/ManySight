@@ -19,7 +19,14 @@ Typical worker loop:
     command = sl.heartbeat(metrics={"fps": fps})
     if command["should_stop"]:
         break
-    sl.submit_detection(source_id=src["id"], entity_id=tid, point_px=(u, v))
+    sample_ts = time.time()
+    for track in tracks:
+        sl.submit_detection(source_id=src["id"], entity_id=str(track.id),
+                            entity_type="person", point_px=track.floor_point,
+                            ts=sample_ts)
+    # Required even when tracks is empty; this commits the processed frame.
+    sl.submit_detection_frame(source_id=src["id"], entity_type="person",
+                              count=len(tracks), ts=sample_ts)
     sl.flush()   # or use `with sl.batch():` — observations auto-flush every `batch_size`
 """
 import atexit
@@ -177,10 +184,12 @@ class StoreLens:
         if kind not in {"detection", "measurement", "state"}:
             raise ValueError("kind must be detection, measurement, or state — "
                              "StoreLens derives zone/dwell/occupancy/state-change events itself")
+        supplied_ts = fields.pop("ts", None)
         observation = {
             "schema_version": 2,
             "observation_id": fields.pop("observation_id", None) or str(uuid.uuid4()),
-            "kind": kind, "timestamp": fields.pop("ts", None) or time.time(), "source_id": source_id,
+            "kind": kind, "timestamp": supplied_ts if supplied_ts is not None else time.time(),
+            "source_id": source_id,
             "worker_id": fields.pop("worker_id", None) or self.worker_instance_id,
             "job_id": fields.pop("job_id", None) or self.job_id,
         }
@@ -252,9 +261,12 @@ class StoreLens:
 
         Submit this once per inference sample with the same timestamp used by
         every detection from that frame. The value, including zero, is the
-        instantaneous camera/entity-type count at that exact timestamp.
+        instantaneous camera/entity-type count at that exact timestamp. Buffer
+        it after the frame's detections so one flushed batch preserves the
+        logical detection(s)-then-completion-marker order. Never use a fake
+        zero-confidence detection for an empty frame.
         """
-        if count < 0:
+        if isinstance(count, bool) or int(count) != count or count < 0:
             raise ValueError("detection frame count must be non-negative")
         self.submit_measurement(
             source_id=source_id,
