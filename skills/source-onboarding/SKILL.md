@@ -12,6 +12,6 @@ description: Use when adding cameras, files, streams, or sensors and configuring
    generated code. Normal discovery must remain redacted.
 4. Resolve managed access only in the authorized local worker and pass it directly to
    capture code in memory.
-5. Confirm reachability from the worker machine. StoreLens does not proxy or test the feed.
+5. Confirm reachability from the worker machine. StoreLens does not proxy or test operational feeds; its guided demo serves only bundled local sample media.
 6. Place/calibrate the source and create a multiview group only if shared world geometry is
    actually available.

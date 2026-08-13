@@ -23,6 +23,11 @@ only in an explicitly authorized local worker, use them in memory, and never pla
 in observations, fused state, queries, dashboards, logs, code, or job metadata. StoreLens
 does not proxy feeds or execute arbitrary worker scripts.
 
+The guided demo is a narrow exception for bundled local sample media: it serves an
+allowlisted NVIDIA asset set to the browser, replays a versioned numerical fixture with
+`producer_kind=replay`, and creates no worker heartbeat. Never describe replay as live
+inference. Demo workspaces are isolated; promote only the explicit setup allowlist.
+
 ## Observation envelope
 
 Common fields are `schema_version: 2`, idempotent `observation_id`, `kind`, `timestamp`,
@@ -87,3 +92,8 @@ it is not biometric ReID.
 
 REST/OpenAPI is authoritative. New workers use `POST /api/v1/observations/batch`; legacy
 `/events` remains compatibility-only. The Python SDK is `sdk/python/storelens.py`.
+
+Space and observation reinitialization are destructive, exact-confirmation operations.
+Never invoke them without an explicit user request. A retained historical observation
+belongs to its recorded `space_revision_id`; deleted-zone query references stay
+unresolved and must not be matched by name.

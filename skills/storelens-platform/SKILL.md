@@ -35,6 +35,11 @@ authorized local worker, keep it in memory, and never place credentials in obser
 fusion records, queries, dashboards, logs, code, or job metadata. StoreLens does not
 proxy a feed or execute worker scripts.
 
+The optional guided demo is explicitly different from a worker: it serves only a known
+local sample-media allowlist and progressively replays a committed raw detection fixture.
+It creates no worker row, uses `producer_kind=replay`, and must never be presented as
+runtime inference. Its SQLite workspace is isolated until explicit setup promotion.
+
 ## Complete detection samples
 
 For every processed detection frame, send zero or more detections plus exactly one
@@ -80,3 +85,7 @@ and query output before publishing a dashboard or alert.
 Load `source-onboarding`, `detection-tracking`, `measurement`, `state-observation`,
 `geometry-calibration`, `multiview`, `analytics`, `generated-dashboard`, or
 `alerts-workflows` as appropriate.
+
+Do not reinitialize a space or its observations unless the user explicitly requests the
+destructive action and chooses the history policy. Current queries default to the active
+`space_revision_id`; never resolve a deleted zone reference by matching its old name.

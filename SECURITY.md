@@ -38,5 +38,11 @@ not attest to worker code or model output, and cooperative worker controls requi
 external process supervisor. Deployers are responsible for camera authorization,
 network access, retention, privacy, and compliance obligations.
 
+Guided-demo media remains local and is served only from an allowlisted NVIDIA sample
+directory. Demo session responses do not expose temporary database paths. Setup
+promotion launches one fixed synchronized-stream module with validated paths; it is not
+an arbitrary command runner. Do not expose the loopback-only demo stream service as a
+production source gateway.
+
 Security support applies to the current default branch. Historical releases do not have
 a published support window yet.

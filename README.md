@@ -95,6 +95,25 @@ The default SQLite database is `data/storelens.db`. Use the dashboard's
 **Setup** section to define the workspace, trace a floor plan, create zones, add
 sources, and calibrate cameras.
 
+## Try the guided four-camera demo
+
+The dashboard's **Try Demo** entry replays precomputed YOLO11n + ByteTrack observations
+from NVIDIA's synthetic four-camera warehouse sample through the real StoreLens
+ingestion, calibration, multiview, saved-query, dashboard, and alert paths. Runtime
+replay does not require a GPU or model weights and runs in an isolated temporary
+workspace.
+
+StoreLens does not redistribute the NVIDIA media. Install it locally on demand, start
+StoreLens, then select **Try Demo**:
+
+```powershell
+python demo/fetch_nvidia_mv3dt.py
+```
+
+The fixed walkthrough alerts when at least two anonymous fused tracks are in Aisle 04.
+It supports discard or explicit setup-only promotion. See the
+[guided-demo architecture, provenance, and asset terms](docs/guided-demo.md).
+
 ## Source connections
 
 A source combines a logical device with non-secret connection configuration.
@@ -186,6 +205,8 @@ see [Development and deployment](docs/development.md).
 - [Geometry and calibration](docs/geometry.md)
 - [Multiview current state](docs/multiview.md)
 - [Saved queries and generated dashboards](docs/queries-and-dashboards.md)
+- [Guided four-camera demo](docs/guided-demo.md)
+- [Workspace reinitialization and revisions](docs/workspace-reinitialization.md)
 - [Alerts](docs/alerts.md)
 - [Development and deployment](docs/development.md)
 - [Agent playbooks](skills/README.md)

@@ -50,3 +50,8 @@ or bbox bottom-center for standing people and named planes for elevated surfaces
 - `GET /api/v1/calibrations`: rich calibration records.
 - `POST /api/v1/calibrations/import`: world calibration import.
 - `POST /api/v1/sources/{id}/project` and `/unproject`: plane projection checks.
+
+The guided demo exercises this same path: it imports the NVIDIA 3x4 matrices with an
+explicit provider-world-to-map transform, projects a predetermined camera polygon to
+create Aisle 04, and stores clipped per-camera decision views. Those pixels are evidence
+for a plane projection; they are not a 3D reconstruction.

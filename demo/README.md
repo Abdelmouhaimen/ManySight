@@ -1,5 +1,9 @@
 # Local looped-video demo
 
+For the isolated four-camera product walkthrough, use **Try Demo** in ManySight and read
+[`docs/guided-demo.md`](../docs/guided-demo.md). The utility below is a separate
+single-video development helper.
+
 `loop_video_stream.py` is a development utility that exposes a local video as an MJPEG
 stream. It is not a StoreLens service, camera gateway, or production streaming server.
 

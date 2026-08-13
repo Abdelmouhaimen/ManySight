@@ -8,6 +8,11 @@ Supported subjects include raw `detection`, `measurement`, `state`, and current/
 `fused_entity` state. Inspect `GET /api/v1/queries/capabilities` before composing a query,
 then preview it through `POST /api/v1/analytics/query`.
 
+Fused results include an `evidence_window` in response metadata. It states whether the
+value comes from current complete samples or persisted occupancy history, alongside the
+requested `since`/`until` range. Query references are ID-based: a deleted zone or group
+is reported as unresolved rather than matching a later object with the same name.
+
 A generated dashboard contains metadata plus widgets. Every widget references one saved
 query and one validated presentation:
 

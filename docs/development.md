@@ -46,6 +46,8 @@ registry file path.
 | `STORELENS_CREDENTIAL_KEY` | URL-safe base64 encoding of exactly 32 random bytes for managed credential encryption. |
 | `STORELENS_CREDENTIAL_ACCESS_KEY` | Header-only key for privileged source-connection resolution; falls back to the API key if omitted. |
 | `STORELENS_ALERT_POLL_INTERVAL_S` | Periodic alert evaluation interval; defaults to 15 seconds. |
+| `STORELENS_DEMO_ASSET_DIR` | Optional local path to extracted NVIDIA `datasets/mtmc_4cam` assets. |
+| `STORELENS_DEMO_STREAM_PORT` | Loopback port for the post-promotion synchronized demo stream supervisor; defaults to 8765. |
 | `STORELENS_ENDPOINT_CONFIG` | Optional path to an endpoint registry JSON file. |
 | `STORELENS_ENDPOINT_PROFILE` | Endpoint profile name; defaults to the registry's active profile. |
 | `STORELENS_PUBLIC_URL` | Public platform URL advertised by discovery endpoints. |
@@ -104,3 +106,7 @@ database and must not be used against retained data.
 
 `demo/loop_video_stream.py` loops a local video as an MJPEG endpoint for development.
 It is not a camera gateway or a required StoreLens service. See `demo/README.md`.
+
+The separate [guided demo](guided-demo.md) uses an isolated database and a committed
+numerical replay fixture. Its NVIDIA media is downloaded on demand and remains ignored.
+The four-camera synchronized MJPEG supervisor starts only after setup promotion.

@@ -23,3 +23,7 @@ Multiview associates active source-local tracks; it does not identify people.
 StoreLens uses time/distance/trajectory/topology gating and global assignment. No
 appearance/ReID signal exists in the current baseline. `known`, `partial`, and `unknown`
 quality describe source coverage; missing data must never be interpreted as observed zero.
+
+For looped replay, end current source and fused identity state at every rewind, prefix
+source-local IDs with the playback epoch, and retain only bounded raw and derived epochs.
+Never join identities across a media loop boundary.

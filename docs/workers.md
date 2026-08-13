@@ -19,6 +19,11 @@ preprocessing. StoreLens owns geometry enrichment and derived analytics.
 A job is metadata. A worker instance is heartbeat-backed runtime state. StoreLens does
 not start or relaunch arbitrary worker scripts.
 
+The guided demo is not a worker. It honestly labels its producer as `replay`, creates no
+worker heartbeat rows, and submits a versioned precomputed detection fixture through the
+same observation boundary. Offline fixture generation uses a real detector/tracker;
+ordinary demo playback performs no inference.
+
 ## Opening a source
 
 ```python

@@ -44,3 +44,8 @@ for inspection, but the UI must not describe fused IDs as recognized or identifi
 Geometry-only association depends on calibration and synchronization. Close crossings,
 occlusion, large timing skew, and weak topology can cause ID switches. This implementation
 does not claim durable identity across long gaps or outside a group's active lifetime.
+
+Looped replay establishes a new epoch at every rewind. Source and fused current identity
+state is ended before the next epoch and local IDs are epoch-prefixed, so a track cannot
+claim continuity from the end of a clip to its beginning. Historical fused and occupancy
+rows are retained only for the configured bounded epoch count.

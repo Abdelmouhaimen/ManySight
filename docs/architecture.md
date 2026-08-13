@@ -20,6 +20,9 @@ produced an observation.
    fused/source-debug Live views, generated dashboards, workers, and alerts.
 7. **The MCP server** exposes safe platform operations and agent playbooks. It is not
    a worker runtime and never receives camera credentials through ordinary discovery.
+8. **The optional guided-demo controller** routes an explicit browser session to a
+   temporary SQLite workspace and progressively replays a versioned raw-observation
+   fixture. It does not impersonate workers or alter the normal workspace.
 
 ## Data flow
 
@@ -103,3 +106,16 @@ allows it.
 
 These limits are not production-readiness claims. See [Development](development.md),
 [Workers](workers.md), [Geometry](geometry.md), and [Multiview](multiview.md).
+
+## Workspace isolation and revisions
+
+Normal requests use the configured workspace database. A guided-demo request carries an
+opaque session identifier and is routed through an async-task-local database context;
+session lifecycle endpoints remain in the normal registry. Temporary paths are never
+returned publicly. Discard removes the isolated database, while promotion copies a
+strict setup allowlist in one normal-workspace transaction.
+
+Every raw observation records the current `space_revision_id`. Starting a new mapped
+space archives a geometry snapshot and advances that ID. Unified queries default to the
+current revision, so old geometry evidence cannot contaminate current state. See
+[Workspace reinitialization](workspace-reinitialization.md).

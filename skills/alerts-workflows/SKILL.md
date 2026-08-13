@@ -20,6 +20,10 @@ metric:
 For the multiview acceptance example, save a scalar `fused_entity` query filtered to one
 group, one zone, and `person`, then create `operator: ">=", value: 2`.
 
+The guided demo creates exactly this query-backed rule inside its isolated workspace.
+Its Review row is produced by normal evaluation of prerecorded raw perception, not by a
+demo-only alert tool. Do not copy that demo rule when promoting camera and space setup.
+
 The evaluator runs periodically and independently of ingestion. It fires only on the
 false-to-true edge, applies cooldown after firing, and resets when known evidence makes
 the condition false. Unknown evidence does not false-clear an active condition. Partial
