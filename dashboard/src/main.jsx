@@ -5,16 +5,18 @@ import {
   Camera,
   Gauge,
   Menu,
+  PlayCircle,
   Radio,
   ScanSearch,
   Settings2,
   X,
 } from "lucide-react";
-import { api, apiKey } from "./api.js";
+import { api, apiKey, demoSessionId } from "./api.js";
 import { BrandMark, EnvironmentBadge, Toast } from "./components.jsx";
 import { ObservationsPage } from "./observations.jsx";
 import { ConfigurePage, ReviewPage, SourcesPage } from "./pages.jsx";
 import { GeneratedDashboardPage } from "./dashboard-page.jsx";
+import { DemoPage } from "./demo.jsx";
 import "./styles.css";
 
 const LivePage = lazy(() =>
@@ -22,6 +24,7 @@ const LivePage = lazy(() =>
 );
 
 const NAV = [
+  ["demo", "Guided demo", PlayCircle],
   ["overview", "Dashboard", Gauge],
   ["review", "Review", BellRing],
   ["observations", "Observations", ScanSearch],
@@ -57,6 +60,7 @@ function App() {
   const [liveTick, setLiveTick] = useState(0);
   const [initialSignal, setInitialSignal] = useState(null);
   const [toast, setToast] = useState(null);
+  const [demoId, setDemoId] = useState(demoSessionId());
 
   const notify = (title, message = "", tone = "success") => {
     setToast({ title, message, tone });
@@ -83,11 +87,19 @@ function App() {
       setMobileOpen(false);
     };
     window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    const onDemo = () => { setDemoId(demoSessionId()); refreshShell(); };
+    window.addEventListener("storelens-demo-session", onDemo);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("storelens-demo-session", onDemo);
+    };
   }, []);
 
   useEffect(() => {
-    const suffix = apiKey() ? `?api_key=${encodeURIComponent(apiKey())}` : "";
+    const parameters = [];
+    if (apiKey()) parameters.push(`api_key=${encodeURIComponent(apiKey())}`);
+    if (demoId) parameters.push(`demo_session=${encodeURIComponent(demoId)}`);
+    const suffix = parameters.length ? `?${parameters.join("&")}` : "";
     const stream = new EventSource(`/api/v1/stream${suffix}`);
     stream.onopen = () => setLiveStatus("live");
     stream.onerror = () => setLiveStatus("offline");
@@ -109,7 +121,7 @@ function App() {
       }
     });
     return () => stream.close();
-  }, []);
+  }, [demoId]);
 
   useEffect(() => {
     if (liveTick && liveTick % 5 === 0) refreshShell();
@@ -128,7 +140,9 @@ function App() {
     (source) => source.observation_status === "active",
   ).length;
   const Page =
-    route === "overview"
+    route === "demo"
+      ? DemoPage
+      : route === "overview"
       ? GeneratedDashboardPage
       : route === "review"
           ? ReviewPage
@@ -163,6 +177,9 @@ function App() {
           </small>
         </div>
         <div className="topbar-status">
+          <a className={`button ${demoId ? "button-demo-active" : "button-dark"}`} href="#demo">
+            <PlayCircle size={14} /> {demoId ? "Demo workspace" : "Try Demo"}
+          </a>
           <EnvironmentBadge value={shell.store?.environment || "setup"} />
           <span className={`live-indicator live-${liveStatus}`}>
             <i />
@@ -192,10 +209,10 @@ function App() {
           ))}
         </nav>
         <div className="sidebar-note">
-          <span>Validation</span>
+          <span>{demoId ? "Isolated demo" : "Validation"}</span>
           <p>
-            Validate model output, calibration, and alert thresholds before
-            operational use.
+            {demoId ? "Normal workspace data is untouched until you explicitly keep setup."
+              : "Validate model output, calibration, and alert thresholds before operational use."}
           </p>
         </div>
       </aside>

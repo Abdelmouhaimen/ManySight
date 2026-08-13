@@ -1,11 +1,18 @@
 const BASE = "/api/v1";
 
 export const apiKey = () => localStorage.getItem("storelens_api_key") || "";
+export const demoSessionId = () => localStorage.getItem("storelens_demo_session") || "";
+export const setDemoSessionId = (value) => {
+  if (value) localStorage.setItem("storelens_demo_session", value);
+  else localStorage.removeItem("storelens_demo_session");
+  window.dispatchEvent(new Event("storelens-demo-session"));
+};
 
 async function request(method, path, body) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (apiKey()) headers["X-API-Key"] = apiKey();
+  if (demoSessionId()) headers["X-StoreLens-Demo-Session"] = demoSessionId();
   const response = await fetch(BASE + path, {
     method,
     headers,
@@ -36,8 +43,11 @@ export const api = {
 };
 
 export function assetUrl(path) {
-  const separator = path.includes("?") ? "&" : "?";
-  return `${BASE}${path}${apiKey() ? `${separator}api_key=${encodeURIComponent(apiKey())}` : ""}`;
+  const parameters = [];
+  if (apiKey()) parameters.push(`api_key=${encodeURIComponent(apiKey())}`);
+  if (demoSessionId()) parameters.push(`demo_session=${encodeURIComponent(demoSessionId())}`);
+  if (!parameters.length) return `${BASE}${path}`;
+  return `${BASE}${path}${path.includes("?") ? "&" : "?"}${parameters.join("&")}`;
 }
 
 export const formatTime = (ts) =>

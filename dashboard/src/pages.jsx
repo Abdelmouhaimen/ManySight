@@ -647,6 +647,7 @@ export function SourcesPage({ liveTick = 0, notify }) {
         <div className="source-status-grid">
           {visible.map((source) => {
             const worker = source.latest_runtime?.worker;
+            const replay = source.metadata?.producer_kind === "replay";
             return (
               <article className="source-status-card" key={source.id}>
                 <header>
@@ -695,13 +696,13 @@ export function SourcesPage({ liveTick = 0, notify }) {
                 <div className="source-runtime-row">
                   <div>
                     <span className="tiny-label">Latest runtime</span>
-                    <strong>{source.latest_runtime?.job_name || "No job registered"}</strong>
+                    <strong>{replay ? "Recorded demo replay" : (source.latest_runtime?.job_name || "No job registered")}</strong>
                   </div>
-                  <Badge
+                  {replay ? <Badge tone="violet">replay evidence</Badge> : <Badge
                     tone={worker?.effective_status === "running" ? "positive" : "neutral"}
                   >
                     {worker?.effective_status || "not running"}
-                  </Badge>
+                  </Badge>}
                 </div>
                 <div className="source-capabilities">
                   {(source.capabilities.length ? source.capabilities : ["unspecified"]).map(
@@ -751,7 +752,7 @@ export function SourcesPage({ liveTick = 0, notify }) {
 }
 
 export function ConfigurePage({ notify, refreshShell }) {
-  const [tab, setTab] = useState("workspace"),
+  const [tab, setTabState] = useState(() => localStorage.getItem("storelens.setup.tab") || "workspace"),
     [store, setStore] = useState(null),
     [zones, setZones] = useState([]),
     [sources, setSources] = useState([]),
@@ -760,6 +761,10 @@ export function ConfigurePage({ notify, refreshShell }) {
     [loading, setLoading] = useState(true),
     [error, setError] = useState(null),
     [showRule, setShowRule] = useState(false);
+  const setTab = (value) => {
+    localStorage.setItem("storelens.setup.tab", value);
+    setTabState(value);
+  };
   const load = async () => {
     setLoading(true);
     try {
@@ -820,6 +825,7 @@ export function ConfigurePage({ notify, refreshShell }) {
             ["space", "Space & zones", Map],
             ["analyses", "Jobs & workers", Activity],
             ["rules", "Thresholds", BellRing],
+            ["maintenance", "Reinitialize", RefreshCw],
             ["technical", "Technical details", Code2],
           ].map(([value, label, Icon]) => (
             <button
@@ -868,6 +874,9 @@ export function ConfigurePage({ notify, refreshShell }) {
               notify={notify}
             />
           )}
+          {tab === "maintenance" && <MaintenancePanel onReset={async () => {
+            await load(); await refreshShell?.();
+          }} notify={notify} />}
           {tab === "technical" && <TechnicalConfig notify={notify} />}
         </div>
       </div>
@@ -888,6 +897,48 @@ export function ConfigurePage({ notify, refreshShell }) {
       )}
     </>
   );
+}
+
+function MaintenancePanel({ onReset, notify }) {
+  const [spaceConfirmation, setSpaceConfirmation] = useState("");
+  const [observationConfirmation, setObservationConfirmation] = useState("");
+  const [history, setHistory] = useState("keep");
+  const [busy, setBusy] = useState(false);
+  const run = async (kind) => {
+    setBusy(true);
+    try {
+      if (kind === "space") {
+        await api.post("/workspace/reinitialize-space", {
+          confirmation: spaceConfirmation, history,
+        });
+        setSpaceConfirmation("");
+        notify?.("Space reinitialized", history === "keep"
+          ? "Previous observations remain attached to their prior space revision."
+          : "Geometry and observation history were removed.");
+      } else {
+        await api.post("/workspace/reinitialize-observations", {
+          confirmation: observationConfirmation,
+        });
+        setObservationConfirmation("");
+        notify?.("Observations reinitialized", "Sources, geometry, queries, dashboards, and rules were preserved.");
+      }
+      await onReset?.();
+    } catch (error) { notify?.("Reinitialization failed", error.message, "error"); }
+    finally { setBusy(false); }
+  };
+  return <div className="maintenance-grid">
+    <Panel title="Reinitialize space" subtitle="Start a new mapped-space revision while retaining source connections">
+      <div className="experimental-note"><AlertTriangle size={16} /><div><strong>Geometry is removed from the active revision.</strong><p>Placements, calibrations, zones, zone views, and multiview groups are cleared. Existing camera credentials remain protected and attached to their sources.</p></div></div>
+      <label className="field"><span>Observation history</span><select value={history} onChange={(event) => setHistory(event.target.value)}><option value="keep">Keep as previous revision</option><option value="delete">Delete observation history</option></select></label>
+      <label className="field field-full"><span>Type REINITIALIZE SPACE</span><input value={spaceConfirmation} onChange={(event) => setSpaceConfirmation(event.target.value)} /></label>
+      <div className="panel-footer"><button className="button danger" disabled={busy || spaceConfirmation !== "REINITIALIZE SPACE"} onClick={() => run("space")}><Trash2 size={14} /> Reinitialize space</button></div>
+    </Panel>
+    <Panel title="Reinitialize observations" subtitle="Clear raw and derived evidence without changing setup">
+      <p className="maintenance-copy">Removes observations, fused/current materializations, occupancy history, and fired alerts. Sources, credentials, geometry, calibrations, groups, saved queries, dashboards, and alert rules remain.</p>
+      <label className="field field-full"><span>Type REINITIALIZE OBSERVATIONS</span><input value={observationConfirmation} onChange={(event) => setObservationConfirmation(event.target.value)} /></label>
+      <div className="panel-footer"><button className="button danger" disabled={busy || observationConfirmation !== "REINITIALIZE OBSERVATIONS"} onClick={() => run("observations")}><Trash2 size={14} /> Reinitialize observations</button></div>
+    </Panel>
+  </div>;
 }
 
 function WorkspaceForm({ store, onSaved, notify }) {

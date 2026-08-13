@@ -17,7 +17,7 @@ import {
   Type,
   X,
 } from "lucide-react";
-import { api } from "./api.js";
+import { api, assetUrl, demoSessionId } from "./api.js";
 import { Badge, EmptyState, Modal, Panel } from "./components.jsx";
 import { PlanDigitizer } from "./plan-digitizer.jsx";
 
@@ -1017,7 +1017,7 @@ export function SourceEditorModal({ source = null, onClose, onSaved }) {
         </>}
       </div>
       <p className="form-note">
-        StoreLens never opens or proxies this feed. Managed credentials are encrypted and
+        StoreLens never opens or proxies an operational feed. Managed credentials are encrypted and
         available only to explicitly authorized workers; normal source views stay secret-free.
       </p>
       {error && <div className="form-error" role="alert">{error}</div>}
@@ -1202,9 +1202,11 @@ function CalibrationMap({ store, zones, sources, svgRef, onClick, points, pendin
 function CalibrationModal({ source, store, zones, sources, onClose, onSaved }) {
   const imageRef = useRef(null);
   const mapRef = useRef(null);
+  const replayKey = source.metadata?.demo_fixture_source_key || "";
   const [pairs, setPairs] = useState(source.calibration?.points || []);
   const [pending, setPending] = useState(null);
-  const [frameUrl, setFrameUrl] = useState("");
+  const [frameUrl, setFrameUrl] = useState(replayKey ? assetUrl(`/demo/media/${replayKey}.mp4`) : "");
+  const [frameKind, setFrameKind] = useState(replayKey ? "video" : "image");
   const [frame, setFrame] = useState({
     width: source.calibration?.frame_w || 0,
     height: source.calibration?.frame_h || 0,
@@ -1213,25 +1215,29 @@ function CalibrationModal({ source, store, zones, sources, onClose, onSaved }) {
   const [testPoint, setTestPoint] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [practiceResult, setPracticeResult] = useState(null);
 
   useEffect(() => () => {
-    if (frameUrl) URL.revokeObjectURL(frameUrl);
+    if (frameUrl?.startsWith("blob:")) URL.revokeObjectURL(frameUrl);
   }, [frameUrl]);
 
   const chooseFrame = (file) => {
     const nextUrl = URL.createObjectURL(file);
     setFrameUrl(nextUrl);
+    setFrameKind("image");
     setPending(null);
     setTestPoint(null);
   };
 
   const frameClick = async (event) => {
     const image = imageRef.current;
-    if (!image || !image.naturalWidth) return;
+    const naturalWidth = image?.naturalWidth || image?.videoWidth;
+    const naturalHeight = image?.naturalHeight || image?.videoHeight;
+    if (!image || !naturalWidth || !naturalHeight) return;
     const rect = image.getBoundingClientRect();
     const point = {
-      x: ((event.clientX - rect.left) / rect.width) * image.naturalWidth,
-      y: ((event.clientY - rect.top) / rect.height) * image.naturalHeight,
+      x: ((event.clientX - rect.left) / rect.width) * naturalWidth,
+      y: ((event.clientY - rect.top) / rect.height) * naturalHeight,
     };
     if (mode === "test") {
       setError("");
@@ -1265,6 +1271,12 @@ function CalibrationModal({ source, store, zones, sources, onClose, onSaved }) {
         frame_w: frame.width,
         frame_h: frame.height,
       });
+      if (replayKey && demoSessionId()) {
+        const result = await api.post(`/demo/sessions/${demoSessionId()}/restore-practice-calibration`, {
+          source_id: source.id,
+        });
+        setPracticeResult(result);
+      }
       await onSaved();
       setMode("test");
     } catch (err) {
@@ -1308,15 +1320,14 @@ function CalibrationModal({ source, store, zones, sources, onClose, onSaved }) {
           <span className="tiny-label">Guided floor homography</span>
           <h3>Match the same floor points in both views</h3>
           <p>
-            Upload a still from this camera, then choose fixed floor points spread
-            across the visible area. Four pairs is the minimum; six or more is safer.
+            {replayKey ? "Pause the recorded camera at a useful frame, then choose fixed floor points spread across the visible area." : "Upload a still from this camera, then choose fixed floor points spread across the visible area."} Four pairs is the minimum; six or more is safer.
           </p>
         </div>
         <Badge tone={pairs.length >= 4 ? "positive" : "warning"}>{pairs.length}/4 minimum pairs</Badge>
       </div>
       <div className="card-actions">
         <label className="button button-secondary">
-          <FileUp size={14} /> {frameUrl ? "Replace still frame" : "Choose still frame"}
+          <FileUp size={14} /> {replayKey ? "Use another still frame" : (frameUrl ? "Replace still frame" : "Choose still frame")}
           <input type="file" accept="image/*" hidden onChange={(event) => event.target.files?.[0] && chooseFrame(event.target.files[0])} />
         </label>
         <span className="definition-note">The image stays in this browser and is not uploaded to StoreLens.</span>
@@ -1339,12 +1350,18 @@ function CalibrationModal({ source, store, zones, sources, onClose, onSaved }) {
           <h4>Camera frame</h4>
           {frameUrl ? (
             <div className={`calibration-frame ${pending ? "has-pending" : ""}`} onClick={frameClick} style={frame.width && frame.height ? { aspectRatio: `${frame.width} / ${frame.height}` } : undefined}>
-              <img
+              {frameKind === "video" ? <video
+                ref={imageRef}
+                src={frameUrl}
+                aria-label={`Recorded calibration video for ${source.name}`}
+                muted playsInline controls preload="metadata"
+                onLoadedMetadata={(event) => setFrame({ width: event.currentTarget.videoWidth, height: event.currentTarget.videoHeight })}
+              /> : <img
                 ref={imageRef}
                 src={frameUrl}
                 alt={`Local calibration frame for ${source.name}`}
                 onLoad={(event) => setFrame({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
-              />
+              />}
               {pairs.map((pair, index) => (
                 <span key={index} className="calibration-frame-point" style={{ left: `${(pair.px.x / (frame.width || 1)) * 100}%`, top: `${(pair.px.y / (frame.height || 1)) * 100}%` }}>{index + 1}</span>
               ))}
@@ -1383,6 +1400,10 @@ function CalibrationModal({ source, store, zones, sources, onClose, onSaved }) {
           </div>
         </div>
       )}
+      {practiceResult && <div className="quality-note">
+        <CheckCircle2 size={15} />
+        <div><strong>Practice calibration compared</strong><p>Mean difference {practiceResult.comparison.mean_difference_m.toFixed(2)}m; maximum {practiceResult.comparison.max_difference_m.toFixed(2)}m across {practiceResult.comparison.sample_points} reference points. StoreLens restored the validated NVIDIA matrix so guided fusion remains reliable.</p></div>
+      </div>}
       {error && <div className="form-error" role="alert">{error}</div>}
     </Modal>
   );
