@@ -8,6 +8,7 @@ preferred for other clients.
 """
 import asyncio
 import contextlib
+import logging
 import os
 import sys
 
@@ -18,8 +19,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .platform_config import resolve as resolve_platform_config
-from .routers import alerts, analytics, analytics_query, analyses, calibrations, dashboards, events, geometry, jobs, multiview, observations, queries, sources, store, zones
-from .services import alert_engine, current_state, multiview as multiview_service
+from .routers import alerts, analytics, analytics_query, analyses, calibrations, dashboards, demo, events, geometry, jobs, multiview, observations, queries, sources, store, workspace, zones
+from .services import alert_engine, current_state, demo_media, demo_runtime, multiview as multiview_service
 from .services.sse import broker
 
 ALERT_POLL_INTERVAL_S = float(os.environ.get("STORELENS_ALERT_POLL_INTERVAL_S", "15"))
@@ -32,6 +33,7 @@ async def _alert_poll_loop():
     a failure in one tick is logged and never kills the loop."""
     while True:
         try:
+            demo_runtime.cleanup_expired()
             multiview_service.refresh_freshness(db.now())
             zone_names = {z["id"]: z["name"] for z in db.q("SELECT id, name FROM zones")}
             alerts_fired = alert_engine.evaluate_ongoing(db.now(), zone_names)
@@ -45,10 +47,17 @@ async def _alert_poll_loop():
 
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI):
+    try:
+        demo_runtime.resume_active_sessions()
+        demo_runtime.resume_promoted_media()
+    except Exception:
+        logging.getLogger("storelens.demo").exception("demo runtime recovery failed")
     task = asyncio.create_task(_alert_poll_loop())
     try:
         yield
     finally:
+        await demo_runtime.shutdown()
+        demo_media.stop()
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
@@ -61,7 +70,8 @@ app = FastAPI(
                 "temporal analytics. StoreLens manages logical sources, protected connection configuration, mapped "
                 "geometry, heartbeat-backed workers, schema-v2 detection/measurement/state observations, derived "
                 "current/fused state, saved queries, generated dashboards, and alerts. Local workers open sources and run models; the platform "
-                "does not proxy feeds or execute worker code.",
+                "does not proxy operational feeds or execute worker code. An optional isolated guided demo replays a versioned raw-observation "
+                "fixture and serves only allowlisted local sample media.",
     lifespan=lifespan,
 )
 
@@ -89,6 +99,20 @@ async def api_key_guard(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def demo_workspace_guard(request: Request, call_next):
+    """Route explicit demo-session API requests to their isolated workspace."""
+    session_id = request.headers.get("x-storelens-demo-session") or request.query_params.get("demo_session")
+    if session_id and request.url.path.startswith("/api/v1/") \
+            and not request.url.path.startswith("/api/v1/demo/"):
+        workspace_path = demo_runtime.session_database(session_id)
+        if workspace_path is None:
+            return JSONResponse({"detail": "demo session is not active"}, status_code=409)
+        with db.using_database(workspace_path):
+            return await call_next(request)
+    return await call_next(request)
+
+
 # Added after api_key_guard so it becomes the outermost middleware (Starlette
 # runs the last-registered middleware first) — otherwise a cross-origin CORS
 # preflight (OPTIONS, no X-API-Key) gets 401'd by the guard before CORS
@@ -98,7 +122,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-StoreLens-Credential-Key", "MCP-Protocol-Version"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-StoreLens-Credential-Key",
+                   "X-StoreLens-Demo-Session", "MCP-Protocol-Version"],
 )
 
 
@@ -113,6 +138,8 @@ def health():
         "managed_credentials_configured": bool(os.environ.get("STORELENS_CREDENTIAL_KEY")),
         "credential_access_configured": bool(os.environ.get("STORELENS_CREDENTIAL_ACCESS_KEY") or API_KEY),
         "endpoint_profile": resolve_platform_config()["profile"],
+        "guided_demo_assets_available": demo_runtime.asset_status()["available"],
+        "demo_stream_supervisor": demo_media.status(),
     }
 
 
@@ -133,8 +160,10 @@ def agent_guide(request: Request):
     mcp_url = endpoints["mcp_url"]
     return f"""# Use StoreLens from an agent
 
-StoreLens is an observation and analytics platform. It never opens or proxies a camera
-feed and never runs computer-vision models. It can keep source credentials encrypted for
+StoreLens is an observation and analytics platform. It never opens or proxies an
+operational camera feed and never runs computer-vision models. Its optional guided demo
+serves only allowlisted local sample media and replays precomputed raw detections; it is
+not a worker or live inference. StoreLens can keep source credentials encrypted for
 explicitly privileged worker resolution; the worker still opens the feed locally and posts
 raw observations over HTTPS.
 
@@ -211,7 +240,8 @@ def storelens_discovery(request: Request):
 
 
 for r in (sources, store, zones, geometry, calibrations, multiview, jobs, events,
-         observations, analytics, analytics_query, queries, dashboards, analyses, alerts):
+         observations, analytics, analytics_query, queries, dashboards, analyses, alerts,
+         workspace, demo):
     app.include_router(r.router, prefix="/api/v1")
 
 _server_dir = os.path.dirname(__file__)

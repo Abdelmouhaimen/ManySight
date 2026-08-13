@@ -8,6 +8,10 @@ the logic exists exactly once.
 """
 from .. import db
 
+
+def _active_revision(where: list[str], args: list) -> tuple[list[str], list]:
+    return [*where, "space_revision_id=?"], [*args, db.current_space_revision_id()]
+
 # Visits longer than this are capped: an enter without a matching exit (dead track,
 # missed detection) would otherwise dwell forever.
 MAX_DWELL_S = 3600.0
@@ -28,6 +32,7 @@ def derive_dwells(since: float, until: float, zone_id: int | None = None,
     if zone_id is not None:
         where.append("zone_id=?")
         args.append(zone_id)
+    where, args = _active_revision(where, args)
     rows = db.q(
         f"SELECT ts, event_type, track_id, zone_id, attributes FROM events"
         f" WHERE {' AND '.join(where)} ORDER BY ts, id", args)
@@ -62,8 +67,8 @@ def dwell_on_exit(track_id: str, zone_id: int, exit_ts: float,
     zone_enter of the same (track, zone) within lookback_s, or None if unmatched."""
     row = db.q1(
         "SELECT MAX(ts) t0 FROM events WHERE event_type='zone_enter'"
-        " AND track_id=? AND zone_id=? AND ts<? AND ts>=?",
-        (track_id, zone_id, exit_ts, exit_ts - lookback_s))
+        " AND track_id=? AND zone_id=? AND ts<? AND ts>=? AND space_revision_id=?",
+        (track_id, zone_id, exit_ts, exit_ts - lookback_s, db.current_space_revision_id()))
     if not row or row["t0"] is None:
         return None
     return exit_ts - row["t0"]
@@ -80,14 +85,16 @@ def state_before(source_id: int, ts: float) -> dict | None:
     """Latest state_change for a source strictly before ts: {ts, label} or None."""
     return db.q1(
         "SELECT ts, label FROM events WHERE event_type='state_change' AND source_id=?"
-        " AND ts<? ORDER BY ts DESC, id DESC LIMIT 1", (source_id, ts))
+        " AND ts<? AND space_revision_id=? ORDER BY ts DESC, id DESC LIMIT 1",
+        (source_id, ts, db.current_space_revision_id()))
 
 
 def current_state(source_id: int, now: float) -> dict | None:
     """Latest state_change for a source at or before now: {ts, label} or None."""
     return db.q1(
         "SELECT ts, label FROM events WHERE event_type='state_change' AND source_id=?"
-        " AND ts<=? ORDER BY ts DESC, id DESC LIMIT 1", (source_id, now))
+        " AND ts<=? AND space_revision_id=? ORDER BY ts DESC, id DESC LIMIT 1",
+        (source_id, now, db.current_space_revision_id()))
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +133,7 @@ def derive_visits_from_detections(since: float, until: float, zone_id: int | Non
     if zone_id is not None:
         where.append("zone_id=?")
         args.append(zone_id)
+    where, args = _active_revision(where, args)
     rows = db.q(
         f"SELECT ts, track_id, zone_id, attributes FROM events WHERE {' AND '.join(where)}"
         f" ORDER BY track_id, zone_id, ts, id", args)
@@ -215,6 +223,7 @@ def state_keys(since: float, until: float, source_id: int | None = None) -> list
     if source_id is not None:
         where.append("source_id=?")
         args.append(source_id)
+    where, args = _active_revision(where, args)
     rows = db.q(f"SELECT DISTINCT source_id, name, track_id FROM events WHERE {' AND '.join(where)}", args)
     return [(r["source_id"], r["name"], r["track_id"]) for r in rows]
 
@@ -227,6 +236,7 @@ def state_samples(source_id: int, name: str, entity_id: str | None, since: float
     else:
         where.append("track_id=?")
         args.append(entity_id)
+    where, args = _active_revision(where, args)
     return db.q(f"SELECT ts, label FROM events WHERE {' AND '.join(where)} ORDER BY ts, id", args)
 
 
@@ -257,6 +267,7 @@ def measurement_series(since: float, until: float, name: str, source_id: int | N
     if label is not None:
         where.append("label=?")
         args.append(label)
+    where, args = _active_revision(where, args)
     return db.q(
         f"SELECT ts, value, value_kind, source_id, track_id, label, attributes FROM events"
         f" WHERE {' AND '.join(where)} ORDER BY ts, id", args)

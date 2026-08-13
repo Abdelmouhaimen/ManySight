@@ -3,22 +3,27 @@
 import asyncio
 import json
 
+from .. import db
+
 
 class Broker:
     def __init__(self):
-        self._clients: set[asyncio.Queue] = set()
+        self._clients: dict[asyncio.Queue, str] = {}
 
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=1000)
-        self._clients.add(q)
+        self._clients[q] = db.current_db_path()
         return q
 
     def unsubscribe(self, q: asyncio.Queue):
-        self._clients.discard(q)
+        self._clients.pop(q, None)
 
     def publish(self, event: str, data: dict):
         msg = f"event: {event}\ndata: {json.dumps(data)}\n\n"
-        for q in list(self._clients):
+        channel = db.current_db_path()
+        for q, subscribed_channel in list(self._clients.items()):
+            if subscribed_channel != channel:
+                continue
             try:
                 q.put_nowait(msg)
             except asyncio.QueueFull:

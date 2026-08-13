@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "recipe_version": "nvidia-mv3dt-aisle04-v1",
+  "name": "NVIDIA synthetic warehouse: Aisle 04",
+  "dataset": "NVIDIA DeepStream MV3DT mtmc_4cam synthetic warehouse sample",
+  "frame": {"width": 1920, "height": 1080, "fps": 30.0, "duration_s": 60.066667},
+  "world_to_map_transform": [[1, 0, 80], [0, 1, 100], [0, 0, 1]],
+  "world_frame": {"name": "nvidia_mtmc_4cam_world", "axes": {"x": "right", "y": "forward", "z": "up"}},
+  "store": {
+    "name": "StoreLens guided warehouse demo",
+    "space_type": "warehouse",
+    "width_m": 192,
+    "height_m": 110,
+    "map": {
+      "floor_polygons": [[{"x": 0, "y": 0}, {"x": 192, "y": 0}, {"x": 192, "y": 110}, {"x": 0, "y": 110}]],
+      "walls": [[{"x": 0, "y": 0}, {"x": 192, "y": 0}, {"x": 192, "y": 110}, {"x": 0, "y": 110}, {"x": 0, "y": 0}]],
+      "labels": [{"x": 59, "y": 59.5, "text": "Aisle 04"}]
+    }
+  },
+  "zone": {
+    "name": "Aisle 04", "ztype": "aisle", "color": "#ef4444",
+    "polygon": [{"x": 54, "y": 48}, {"x": 64, "y": 48}, {"x": 64, "y": 71}, {"x": 54, "y": 71}]
+  },
+  "cameras": [
+    {
+      "key": "Warehouse_Synthetic_Cam001", "name": "Warehouse camera 1",
+      "projection_matrix": [[24.299825409521425,36.02205402112838,-12.114767515284589,2498.5031157805533],[5.145843154396475,-8.901630718558632,-39.76642074370861,-131.8205299390187],[-0.009918105242078522,0.017157014258762076,-0.012619549232871473,1.0]],
+      "placement": {"x": 68.49556, "y": 41.210667, "rotation_deg": 108, "fov_deg": 70},
+      "zone_projection_px": [[-17.6074607924,539.4287985322],[887.5683378213,933.2363969371],[1610.9634130658,66.5419103452],[1081.2170969665,-9.8184809044]],
+      "zone_view_px": [[887.5683,933.2364],[1610.9634,66.5419],[1149.3323,0],[1061.5742,0],[0,530.6277],[0,547.0891]]
+    },
+    {
+      "key": "Warehouse_Synthetic_Cam002", "name": "Warehouse camera 2",
+      "projection_matrix": [[31.45197223459933,27.335646604939413,-10.177850894387074,2170.8254032157056],[1.7021368037898088,-6.799178439863416,-38.424790844020364,-54.38748546224546],[-0.004775850998246628,0.019077122513675996,-0.010601928444164828,1.0]],
+      "placement": {"x": 59.7938, "y": 46.499694, "rotation_deg": 100, "fov_deg": 70},
+      "zone_view_px": [[1672.2065,220.8707],[981.4424,172.5819],[207.0134,1080],[1920,1080],[1920,818.6242]]
+    },
+    {
+      "key": "Warehouse_Synthetic_Cam003", "name": "Warehouse camera 3",
+      "projection_matrix": [[101.98876376279073,-45.82814280622853,25.045847085514303,-1062.868256853636],[-11.288570645796828,-8.935195057924936,103.33531945785313,-1193.6823372546082],[0.0420855612914152,0.03331180698006773,0.026089424271266037,1.0]],
+      "placement": {"x": 74.846371, "y": 69.922391, "rotation_deg": 245, "fov_deg": 70},
+      "zone_view_px": [[221.7052,390.1834],[1895.3359,1080],[1920,1080],[1920,525.1853],[729.0213,238.4692]]
+    },
+    {
+      "key": "Warehouse_Synthetic_Cam004", "name": "Warehouse camera 4",
+      "projection_matrix": [[94.03134788908822,48.877144688832864,26.887500870415053,3494.677222198313],[0.26848152574212497,-19.795150065511876,97.56536471914119,-1231.6417403220416],[-0.0006724023517694054,0.04957608253240024,0.028007812616868622,1.0]],
+      "placement": {"x": 53.565212, "y": 75.146392, "rotation_deg": 335, "fov_deg": 70},
+      "zone_view_px": [[351.861,131.821],[0,426.5603],[0,1080],[902.8613,1080],[955.9592,134.1096]]
+    }
+  ],
+  "multiview": {"name": "Guided demo four-camera group", "time_tolerance_s": 0.8, "spatial_gate_m": 1.2, "track_age_s": 15.0},
+  "query": {"name": "People in Aisle 04", "question": "How many anonymous fused person tracks are currently in Aisle 04?"},
+  "dashboard": {"name": "Aisle 04 live occupancy"},
+  "alert": {"name": "At least two fused people in Aisle 04", "operator": ">=", "value": 2, "cooldown_s": 30}
+}

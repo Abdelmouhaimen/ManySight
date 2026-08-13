@@ -39,6 +39,7 @@ def serialize(row: dict) -> dict:
         "id": row["id"], "name": row["name"],
         "space_type": row.get("space_type") or "store",
         "environment": row.get("environment") or "setup",
+        "space_revision_id": int(row.get("current_space_revision_id") or 1),
         "width_m": row["width_m"], "height_m": row["height_m"],
         "map": db.jload(row["map_json"], {}),
     }

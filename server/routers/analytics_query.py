@@ -91,6 +91,7 @@ def _common_where(subject: str, filters: dict) -> tuple[list[str], list]:
     mapping = {
         "source_ids": "source_id", "zone_ids": "zone_id", "labels": "label",
         "entity_types": "entity_type", "entity_ids": "track_id", "job_ids": "job_id",
+        "space_revision_ids": "space_revision_id",
     }
     if subject == "measurement":
         mapping["measurement_names"] = "name"
@@ -102,7 +103,32 @@ def _common_where(subject: str, filters: dict) -> tuple[list[str], list]:
         if values:
             where.append(f"{column} IN ({','.join('?' for _ in values)})")
             args.extend(values)
+    if not filters.get("space_revision_ids"):
+        where.append("space_revision_id=?")
+        args.append(db.current_space_revision_id())
     return where, args
+
+
+def _validate_references(q: QueryIn) -> None:
+    """Never let a deleted zone/group silently match a later object or become zero."""
+    for filter_key, table, label in (
+        ("zone_ids", "zones", "zone"),
+        ("group_ids", "multiview_groups", "multiview group"),
+    ):
+        values = q.filters.get(filter_key) or []
+        if not values:
+            continue
+        placeholders = ",".join("?" for _ in values)
+        existing = {row["id"] for row in db.q(
+            f"SELECT id FROM {table} WHERE id IN ({placeholders})", tuple(values)
+        )}
+        missing = sorted(set(int(value) for value in values) - existing)
+        if missing:
+            raise HTTPException(
+                409,
+                {"code": "unresolved_query_reference", "resource": label, "ids": missing,
+                 "message": f"Saved query references {label} IDs that are not in the current space revision."},
+            )
 
 
 def _attribute_predicate(filters: dict):
@@ -155,14 +181,31 @@ def _query_fused_entity(q: QueryIn, _since: float, _until: float) -> dict:
     if len(group_ids) != 1:
         raise HTTPException(422, "fused_entity queries require exactly one multiview group_id")
     group_id = int(group_ids[0])
+    group = db.q1("SELECT source_ids_json FROM multiview_groups WHERE id=?", (group_id,))
+    group_source_ids = db.jload(group["source_ids_json"], []) if group else []
+    evidence_rows = []
+    if group_source_ids:
+        evidence_rows = db.q(
+            f"SELECT source_id,ts FROM source_current_samples WHERE entity_type=? "
+            f"AND source_id IN ({','.join('?' for _ in group_source_ids)}) ORDER BY ts",
+            (entity_types[0], *group_source_ids),
+        )
+    current_evidence = {
+        "from": min((item["ts"] for item in evidence_rows), default=None),
+        "to": max((item["ts"] for item in evidence_rows), default=None),
+        "basis": "current complete samples",
+        "source_count": len(evidence_rows),
+    }
     if q.grouping.primary == "time":
         if len(zone_ids) != 1:
             raise HTTPException(422, "fused occupancy time-series requires exactly one zone_id")
         bucket_s = _bucket_seconds(q.grouping.bucket, _since, _until)
+        revision_ids = q.filters.get("space_revision_ids") or [db.current_space_revision_id()]
         history = db.q(
             "SELECT * FROM zone_occupancy_observations WHERE group_id=? AND zone_id=? "
-            "AND entity_type=? AND ts>=? AND ts<=? ORDER BY ts,id",
-            (group_id, int(zone_ids[0]), entity_types[0], _since, _until),
+            f"AND entity_type=? AND ts>=? AND ts<=? AND space_revision_id IN "
+            f"({','.join('?' for _ in revision_ids)}) ORDER BY ts,id",
+            (group_id, int(zone_ids[0]), entity_types[0], _since, _until, *revision_ids),
         )
         latest_by_bucket = {}
         for row in history:
@@ -177,7 +220,10 @@ def _query_fused_entity(q: QueryIn, _since: float, _until: float) -> dict:
         return {"shape": "timeseries", "dimensions": ["timestamp"], "measures": q.measures,
                 "rows": rows, "metadata": {"group_id": group_id, "zone_id": int(zone_ids[0]),
                                              "identity": "anonymous fused track",
-                                             "bucket_seconds": bucket_s}}
+                                             "bucket_seconds": bucket_s,
+                                             "space_revision_ids": revision_ids,
+                                             "evidence_window": {"since": _since, "until": _until,
+                                                                 "basis": "persisted fused occupancy"}}}
     if q.grouping.primary == "zone":
         zones = zone_ids or [row["id"] for row in db.q("SELECT id FROM zones ORDER BY id")]
         names = {row["id"]: row["name"] for row in db.q("SELECT id,name FROM zones")}
@@ -192,7 +238,8 @@ def _query_fused_entity(q: QueryIn, _since: float, _until: float) -> dict:
                          "quality": state["quality"] if state else "unknown",
                          "as_of": state["as_of"] if state else db.now()})
         return {"shape": "categorical", "dimensions": ["zone_id"], "measures": q.measures,
-                "rows": rows, "metadata": {"group_id": group_id, "identity": "anonymous fused track"}}
+                "rows": rows, "metadata": {"group_id": group_id, "identity": "anonymous fused track",
+                                             "evidence_window": current_evidence}}
     if len(zone_ids) != 1:
         raise HTTPException(422, "scalar current fused occupancy requires exactly one zone_id")
     state = db.q1(
@@ -208,7 +255,8 @@ def _query_fused_entity(q: QueryIn, _since: float, _until: float) -> dict:
     return {"shape": "scalar", "dimensions": [], "measures": q.measures,
             "rows": [{key: value for key, value in row.items() if key in set(q.measures) | {"quality", "as_of"}}],
             "metadata": {"group_id": group_id, "zone_id": int(zone_ids[0]),
-                         "identity": "anonymous fused track", "current_state": True}}
+                         "identity": "anonymous fused track", "current_state": True,
+                         "evidence_window": current_evidence}}
 
 
 # ---------------------------------------------------------------------------
@@ -608,6 +656,7 @@ def _query_state(q: QueryIn, since: float, until: float) -> dict:
 @router.post("/analytics/query")
 def query_analytics(q: QueryIn):
     _validate(q)
+    _validate_references(q)
     since, until = _resolve_range(q.range)
     handler = {"detection": _query_detection, "measurement": _query_measurement,
                "state": _query_state, "fused_entity": _query_fused_entity}[q.subject]

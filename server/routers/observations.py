@@ -219,7 +219,8 @@ async def submit_observations(batch: ObservationBatch):
         if key in invalid_sample_keys:
             continue
         existing = db.q(
-            "SELECT DISTINCT ts FROM events WHERE source_id=? AND sample_id=? LIMIT 2", key,
+            "SELECT DISTINCT ts FROM events WHERE source_id=? AND sample_id=? "
+            "AND space_revision_id=? LIMIT 2", (*key, db.current_space_revision_id()),
         )
         if any(float(row["ts"]) != next(iter(timestamps)) for row in existing):
             invalid_sample_keys.add(key)
@@ -247,8 +248,9 @@ async def submit_observations(batch: ObservationBatch):
             marker_key = (ob.source_id, ob.sample_id, ob.label or "")
             duplicate_marker = marker_key in marker_keys_seen or db.q1(
                 "SELECT id FROM events WHERE source_id=? AND sample_id=? AND event_type='measurement' "
-                "AND name=? AND COALESCE(label,'')=? LIMIT 1",
-                (ob.source_id, ob.sample_id, current_state.FRAME_COUNT_NAME, ob.label or ""),
+                "AND name=? AND COALESCE(label,'')=? AND space_revision_id=? LIMIT 1",
+                (ob.source_id, ob.sample_id, current_state.FRAME_COUNT_NAME, ob.label or "",
+                 db.current_space_revision_id()),
             )
             if duplicate_marker:
                 rejected.append({
@@ -333,6 +335,8 @@ def _serialize_observation(r: dict, zone_names: dict) -> dict:
         "id": r["id"], "schema_version": r.get("schema_version", 1),
         "observation_id": r.get("observation_id"), "kind": r["event_type"],
         "sample_id": r.get("sample_id"),
+        "space_revision_id": r.get("space_revision_id", 1),
+        "current_space_revision": int(r.get("space_revision_id", 1)) == db.current_space_revision_id(),
         "ts": r["ts"], "source_id": r["source_id"], "job_id": r["job_id"],
         "worker_id": r.get("worker_id"), "entity_id": r["track_id"], "entity_type": r.get("entity_type"),
         "identity_scope": r.get("identity_scope"), "identity_model_version": r.get("identity_model_version"),
@@ -366,11 +370,19 @@ def list_observations(since: float | None = None, until: float | None = None,
                       worker_id: int | None = None, entity_id: str | None = None,
                       label: str | None = None, name: str | None = None,
                       zone_id: int | None = None, cursor: str | None = None,
+                      space_revision_id: int | None = None,
+                      include_previous_space: bool = False,
                       limit: int = 200):
     """Keyset-paginated raw observations (current + legacy kinds). Pass the
     returned `next_cursor` back as `cursor`; `total` counts all matching rows."""
     limit = min(max(1, limit), 5000)
     where, args = ["1=1"], []
+    if space_revision_id is not None:
+        where.append("space_revision_id=?")
+        args.append(space_revision_id)
+    elif not include_previous_space:
+        where.append("space_revision_id=?")
+        args.append(db.current_space_revision_id())
     for clause, val in (("ts>=?", since), ("ts<=?", until), ("event_type=?", kind),
                         ("source_id=?", source_id), ("worker_id=?", worker_id),
                         ("track_id=?", entity_id), ("label=?", label), ("name=?", name),
@@ -410,7 +422,7 @@ def list_observations(since: float | None = None, until: float | None = None,
 # --------------------------------------------------------------------------
 
 def _current_detections(since: float, now: float, source_id: int | None, zone_id: int | None) -> dict:
-    where, args = ["event_type='detection'", "track_id IS NOT NULL", "ts>=?"], [since]
+    where, args = ["event_type='detection'", "track_id IS NOT NULL", "ts>=?", "space_revision_id=?"], [since, db.current_space_revision_id()]
     if source_id is not None:
         where.append("source_id=?"); args.append(source_id)
     if zone_id is not None:
@@ -433,7 +445,7 @@ def _current_detections(since: float, now: float, source_id: int | None, zone_id
 
 
 def _current_measurements(since: float, now: float, source_id: int | None, name: str | None) -> dict:
-    where, args = ["event_type='measurement'", "name IS NOT NULL", "ts>=?"], [since]
+    where, args = ["event_type='measurement'", "name IS NOT NULL", "ts>=?", "space_revision_id=?"], [since, db.current_space_revision_id()]
     if source_id is not None:
         where.append("source_id=?"); args.append(source_id)
     if name is not None:
@@ -466,8 +478,9 @@ def _current_states(since: float, now: float, source_id: int | None) -> dict:
             continue
         latest_zone = db.q1(
             "SELECT zone_id FROM events WHERE event_type='state' AND source_id=? AND name=?"
-            " AND (track_id=? OR (? IS NULL AND track_id IS NULL)) ORDER BY ts DESC, id DESC LIMIT 1",
-            (sid, name, entity_id, entity_id))
+            " AND (track_id=? OR (? IS NULL AND track_id IS NULL)) AND space_revision_id=? "
+            "ORDER BY ts DESC, id DESC LIMIT 1",
+            (sid, name, entity_id, entity_id, db.current_space_revision_id()))
         zone_id = latest_zone["zone_id"] if latest_zone else None
         series.append({
             "source_id": sid, "name": name, "entity_id": entity_id,

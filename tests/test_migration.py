@@ -127,3 +127,26 @@ def test_legacy_webcam_locator_is_promoted_but_external_ref_is_preserved(uniniti
     assert json.loads(webcam["connection_config_json"]) == {"device_index": 0}
     assert external["connection_management"] == "external_secret"
     assert json.loads(external["locator_json"]) == {"local_secret_ref": "CAMERA_URL"}
+
+
+def test_existing_events_table_adds_sample_column_before_index(uninitialized_db):
+    con = uninitialized_db.connect()
+    con.execute(
+        "CREATE TABLE events (id INTEGER PRIMARY KEY, job_id INTEGER, source_id INTEGER, "
+        "event_type TEXT, ts REAL, track_id TEXT, label TEXT, x REAL, y REAL, bbox TEXT, "
+        "zone_id INTEGER, projection_surface_id INTEGER, zone_view_id INTEGER, "
+        "zone_assignment_method TEXT, projection_method TEXT, zone_revision INTEGER, "
+        "calibration_revision INTEGER, surface_revision INTEGER, zone_view_revision INTEGER, "
+        "attributes TEXT DEFAULT '{}', created_at REAL)"
+    )
+    con.execute(
+        "INSERT INTO events (id,source_id,event_type,ts,track_id,created_at) "
+        "VALUES (1,1,'detection',1000,'legacy-track',1000)"
+    )
+    con.commit(); con.close()
+
+    uninitialized_db.init_db()
+    columns = {row[1] for row in uninitialized_db.connect().execute(
+        "PRAGMA table_info(events)").fetchall()}
+    assert {"sample_id", "space_revision_id"}.issubset(columns)
+    assert uninitialized_db.q1("SELECT track_id FROM events WHERE id=1")["track_id"] == "legacy-track"

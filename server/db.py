@@ -4,10 +4,13 @@ import json
 import os
 import sqlite3
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.environ.get("STORELENS_DATA", os.path.join(ROOT, "data"))
 DB_PATH = os.path.join(DATA_DIR, "storelens.db")
+_DB_PATH_OVERRIDE: ContextVar[str | None] = ContextVar("storelens_db_path", default=None)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stores (
@@ -17,7 +20,18 @@ CREATE TABLE IF NOT EXISTS stores (
   height_m REAL NOT NULL DEFAULT 12,
   map_json TEXT NOT NULL DEFAULT '{}',
   environment TEXT NOT NULL DEFAULT 'setup',
+  current_space_revision_id INTEGER NOT NULL DEFAULT 1,
   created_at REAL
+);
+CREATE TABLE IF NOT EXISTS space_revisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id INTEGER NOT NULL DEFAULT 1,
+  revision_number INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'current',
+  reason TEXT NOT NULL DEFAULT 'initial',
+  snapshot_json TEXT NOT NULL DEFAULT '{}',
+  created_at REAL NOT NULL,
+  UNIQUE(store_id, revision_number)
 );
 CREATE TABLE IF NOT EXISTS sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,6 +138,7 @@ CREATE TABLE IF NOT EXISTS events (
   zone_view_revision INTEGER,
   attributes TEXT DEFAULT '{}',
   sample_id TEXT,
+  space_revision_id INTEGER NOT NULL DEFAULT 1,
   created_at REAL
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
@@ -131,7 +146,6 @@ CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(event_type, ts);
 CREATE INDEX IF NOT EXISTS idx_events_zone ON events(zone_id, ts);
 CREATE INDEX IF NOT EXISTS idx_events_job ON events(job_id, ts);
 CREATE INDEX IF NOT EXISTS idx_events_track ON events(track_id, ts);
-CREATE INDEX IF NOT EXISTS idx_events_sample ON events(source_id, sample_id, ts);
 CREATE TABLE IF NOT EXISTS source_current_samples (
   source_id INTEGER NOT NULL,
   entity_type TEXT NOT NULL,
@@ -221,6 +235,7 @@ CREATE TABLE IF NOT EXISTS fused_entities (
   algorithm TEXT NOT NULL,
   algorithm_version TEXT NOT NULL,
   configuration_revision INTEGER NOT NULL,
+  space_revision_id INTEGER NOT NULL DEFAULT 1,
   created_at REAL NOT NULL,
   last_seen_at REAL NOT NULL,
   ended_at REAL
@@ -256,6 +271,7 @@ CREATE TABLE IF NOT EXISTS fused_observations (
   algorithm TEXT NOT NULL,
   algorithm_version TEXT NOT NULL,
   configuration_revision INTEGER NOT NULL,
+  space_revision_id INTEGER NOT NULL DEFAULT 1,
   created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_fused_observations_entity_ts
@@ -294,6 +310,7 @@ CREATE TABLE IF NOT EXISTS zone_occupancy_observations (
   value INTEGER NOT NULL,
   quality TEXT NOT NULL,
   provenance_json TEXT NOT NULL DEFAULT '{}',
+  space_revision_id INTEGER NOT NULL DEFAULT 1,
   created_at REAL NOT NULL,
   UNIQUE(group_id, zone_id, entity_type, ts)
 );
@@ -339,6 +356,7 @@ CREATE TABLE IF NOT EXISTS alerts (
   status TEXT NOT NULL DEFAULT 'new',
   note TEXT DEFAULT '',
   resolved_at REAL,
+  space_revision_id INTEGER NOT NULL DEFAULT 1,
   created_at REAL
 );
 CREATE TABLE IF NOT EXISTS insight_definitions (
@@ -419,19 +437,58 @@ CREATE TABLE IF NOT EXISTS dashboard_widgets (
 );
 CREATE INDEX IF NOT EXISTS idx_dashboard_widgets_dashboard
   ON dashboard_widgets(dashboard_id, sort_order, id);
+CREATE TABLE IF NOT EXISTS demo_sessions (
+  id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  recipe_version TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'guided',
+  workspace_path TEXT NOT NULL,
+  asset_root TEXT,
+  playback_epoch INTEGER NOT NULL DEFAULT 0,
+  playback_position_s REAL NOT NULL DEFAULT 0,
+  playback_started_at REAL,
+  duration_s REAL NOT NULL DEFAULT 0,
+  retained_epochs INTEGER NOT NULL DEFAULT 2,
+  action_log_json TEXT NOT NULL DEFAULT '[]',
+  result_json TEXT NOT NULL DEFAULT '{}',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL,
+  expires_at REAL
+);
 """
 
 
-def connect() -> sqlite3.Connection:
-    os.makedirs(DATA_DIR, exist_ok=True)
-    con = sqlite3.connect(DB_PATH, timeout=15)
+def current_db_path() -> str:
+    """Return the request/task-local database, or the normal workspace database."""
+    return _DB_PATH_OVERRIDE.get() or DB_PATH
+
+
+@contextmanager
+def using_database(path: str):
+    """Temporarily route all db helpers to one isolated SQLite workspace.
+
+    Context variables are async-task local, so concurrent demo requests cannot
+    leak rows into the normal workspace or into another demo session.
+    """
+    token = _DB_PATH_OVERRIDE.set(os.path.abspath(path))
+    try:
+        yield
+    finally:
+        _DB_PATH_OVERRIDE.reset(token)
+
+
+def connect(path: str | None = None) -> sqlite3.Connection:
+    resolved = os.path.abspath(path or current_db_path())
+    os.makedirs(os.path.dirname(resolved), exist_ok=True)
+    con = sqlite3.connect(resolved, timeout=15)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA foreign_keys=ON")
     return con
 
 
-def init_db():
-    con = connect()
+def init_db(path: str | None = None):
+    con = connect(path)
     try:
         con.executescript(SCHEMA)
         # Lightweight migrations for existing installations. SQLite's
@@ -441,6 +498,8 @@ def init_db():
             con.execute("ALTER TABLE stores ADD COLUMN space_type TEXT NOT NULL DEFAULT 'store'")
         if "environment" not in store_columns:
             con.execute("ALTER TABLE stores ADD COLUMN environment TEXT NOT NULL DEFAULT 'setup'")
+        if "current_space_revision_id" not in store_columns:
+            con.execute("ALTER TABLE stores ADD COLUMN current_space_revision_id INTEGER NOT NULL DEFAULT 1")
         source_columns = {r[1] for r in con.execute("PRAGMA table_info(sources)").fetchall()}
         if "calibration_revision" not in source_columns:
             con.execute("ALTER TABLE sources ADD COLUMN calibration_revision INTEGER NOT NULL DEFAULT 0")
@@ -555,6 +614,7 @@ def init_db():
             "identity_scope": "TEXT",
             "identity_model_version": "TEXT",
             "sample_id": "TEXT",
+            "space_revision_id": "INTEGER NOT NULL DEFAULT 1",
         }
         for column, sql_type in event_migrations.items():
             if column not in event_columns:
@@ -574,6 +634,12 @@ def init_db():
             con.execute("ALTER TABLE alerts ADD COLUMN note TEXT DEFAULT ''")
         if "resolved_at" not in alert_columns:
             con.execute("ALTER TABLE alerts ADD COLUMN resolved_at REAL")
+        if "space_revision_id" not in alert_columns:
+            con.execute("ALTER TABLE alerts ADD COLUMN space_revision_id INTEGER NOT NULL DEFAULT 1")
+        for table in ("fused_entities", "fused_observations", "zone_occupancy_observations"):
+            columns = {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
+            if "space_revision_id" not in columns:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN space_revision_id INTEGER NOT NULL DEFAULT 1")
         con.execute("UPDATE alerts SET status='resolved' WHERE acknowledged=1 AND status='new'")
         rule_columns = {r[1] for r in con.execute("PRAGMA table_info(alert_rules)").fetchall()}
         if "analysis_json" not in rule_columns:
@@ -636,10 +702,24 @@ def init_db():
                 "INSERT INTO stores (id, name, width_m, height_m, map_json, created_at) VALUES (1,'My space',20,12,'{}',?)",
                 (time.time(),),
             )
+        revision = con.execute(
+            "SELECT id FROM space_revisions WHERE store_id=1 AND revision_number=1"
+        ).fetchone()
+        if not revision:
+            con.execute(
+                "INSERT INTO space_revisions (store_id,revision_number,status,reason,snapshot_json,created_at) "
+                "VALUES (1,1,'current','initial','{}',?)",
+                (time.time(),),
+            )
         _migrate_insights_to_analyses(con)
         con.commit()
     finally:
         con.close()
+
+
+def current_space_revision_id() -> int:
+    row = q1("SELECT current_space_revision_id FROM stores WHERE id=1")
+    return int(row["current_space_revision_id"] if row else 1)
 
 
 def analysis_hash(subject: str, measures: list, filters: dict, grouping: dict) -> str:

@@ -59,8 +59,8 @@ def materialize_sample(source_id: int, entity_type: str, sid: str | None,
     try:
         marker = con.execute(
             "SELECT * FROM events WHERE source_id=? AND event_type='measurement' "
-            "AND name=? AND label=? AND " + predicate + " ORDER BY id DESC LIMIT 1",
-            (source_id, FRAME_COUNT_NAME, entity_type, *predicate_args),
+            "AND name=? AND label=? AND space_revision_id=? AND " + predicate + " ORDER BY id DESC LIMIT 1",
+            (source_id, FRAME_COUNT_NAME, entity_type, db.current_space_revision_id(), *predicate_args),
         ).fetchone()
         if marker is None:
             return None
@@ -70,8 +70,8 @@ def materialize_sample(source_id: int, entity_type: str, sid: str | None,
             detection_args.append(timestamp)
         detections = [dict(row) for row in con.execute(
             "SELECT * FROM events WHERE source_id=? AND event_type='detection' "
-            "AND entity_type=? AND " + detection_predicate + " ORDER BY id",
-            (source_id, entity_type, *detection_args),
+            "AND entity_type=? AND space_revision_id=? AND " + detection_predicate + " ORDER BY id",
+            (source_id, entity_type, db.current_space_revision_id(), *detection_args),
         ).fetchall()]
         expected = int(marker["value"])
         if expected < 0 or len(detections) != expected:
@@ -128,8 +128,8 @@ def rebuild_from_history() -> int:
     markers = db.q(
         "WITH ranked AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY source_id,label "
         "ORDER BY ts DESC,id DESC) rn FROM events WHERE event_type='measurement' "
-        "AND name=?) SELECT * FROM ranked WHERE rn=1",
-        (FRAME_COUNT_NAME,),
+        "AND name=? AND space_revision_id=?) SELECT * FROM ranked WHERE rn=1",
+        (FRAME_COUNT_NAME, db.current_space_revision_id()),
     )
     count = 0
     for marker in markers:

@@ -1,6 +1,7 @@
 """Logical observation sources, managed connection metadata, and geometry.
 
-StoreLens never opens or proxies a source. Workers may explicitly resolve a managed
+StoreLens never opens or proxies an operational source. The isolated guided demo serves
+only its allowlisted local sample media. Workers may explicitly resolve a managed
 connection through a separately authenticated endpoint; ordinary source reads remain
 safe to display and never contain credentials.
 """

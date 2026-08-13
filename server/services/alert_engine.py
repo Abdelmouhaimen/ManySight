@@ -29,8 +29,9 @@ ONGOING_KINDS = {"dwell_exceeds", "occupancy_exceeds", "state_alert", "analysis_
 
 def _fire(rule: dict, title: str, message: str, payload: dict, ts: float) -> dict:
     alert_id = db.ex(
-        "INSERT INTO alerts (rule_id, ts, title, message, payload_json, created_at) VALUES (?,?,?,?,?,?)",
-        (rule["id"], ts, title, message, json.dumps(payload), db.now()),
+        "INSERT INTO alerts (rule_id, ts, title, message, payload_json, space_revision_id, created_at) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (rule["id"], ts, title, message, json.dumps(payload), db.current_space_revision_id(), db.now()),
     )
     db.ex("UPDATE alert_rules SET last_fired_at=? WHERE id=?", (ts, rule["id"]))
     alert = {"id": alert_id, "rule_id": rule["id"], "rule_name": rule["name"], "ts": ts,
@@ -168,8 +169,9 @@ def _check_occupancy(rule: dict, p: dict, zone_names: dict, now: float) -> dict 
     if zid is not None:
         where, args = "zone_id=?", [zid]
     row = db.q1(
-        f"SELECT COUNT(DISTINCT track_id) n FROM events WHERE {where} AND ts>=? AND ts<=? AND track_id IS NOT NULL",
-        (*args, now - win, now),
+        f"SELECT COUNT(DISTINCT track_id) n FROM events WHERE {where} AND ts>=? AND ts<=? "
+        "AND track_id IS NOT NULL AND space_revision_id=?",
+        (*args, now - win, now, db.current_space_revision_id()),
     )
     n = row["n"] if row else 0
     if n < count:

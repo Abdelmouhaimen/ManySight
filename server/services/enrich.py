@@ -227,8 +227,8 @@ INSERT_SQL = (
     " value,label,bbox_json,keypoints_json,mask_json,point_kind,projection_surface_id,zone_view_id,"
     " zone_assignment_method,projection_method,zone_revision,calibration_revision,surface_revision,"
     " zone_view_revision,attributes,created_at,schema_version,observation_id,worker_id,name,"
-    " entity_type,value_kind,unit,confidence,identity_scope,identity_model_version,sample_id)"
-    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+    " entity_type,value_kind,unit,confidence,identity_scope,identity_model_version,sample_id,space_revision_id)"
+    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 )
 
 
@@ -302,4 +302,5 @@ def row_tuple(enriched: dict, ts: float, ingested_at: float) -> tuple:
         enriched["entity_type"], enriched["value_kind"], enriched["unit"], enriched["confidence"],
         enriched["identity_scope"], enriched["identity_model_version"],
         enriched.get("sample_id"),
+        db.current_space_revision_id(),
     )

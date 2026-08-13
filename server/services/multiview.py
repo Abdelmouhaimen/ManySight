@@ -150,9 +150,9 @@ def _process_group_sample(group: dict, sample: dict) -> None:
             fused_id = "F" + uuid.uuid4().hex[:16]
             db.ex(
                 "INSERT INTO fused_entities (id,group_id,entity_type,algorithm,algorithm_version,"
-                "configuration_revision,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?,?)",
+                "configuration_revision,space_revision_id,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?,?,?)",
                 (fused_id, group["id"], entity_type, group["algorithm"], group["algorithm_version"],
-                 group["configuration_revision"], timestamp, timestamp),
+                 group["configuration_revision"], db.current_space_revision_id(), timestamp, timestamp),
             )
         db.ex(
             "INSERT INTO fused_entity_members (fused_entity_id,source_id,worker_id,local_entity_id,"
@@ -220,10 +220,11 @@ def _refresh_group_current(group: dict, entity_type: str, as_of: float,
         if record_history:
             db.ex(
                 "INSERT INTO fused_observations (fused_entity_id,group_id,ts,x_map,y_map,zone_id,confidence,"
-                "quality,member_evidence_json,algorithm,algorithm_version,configuration_revision,created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "quality,member_evidence_json,algorithm,algorithm_version,configuration_revision,space_revision_id,created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (fused["id"], group["id"], ts, x_map, y_map, zone_id, confidence, "known", payload,
-                 group["algorithm"], group["algorithm_version"], group["configuration_revision"], db.now()),
+                 group["algorithm"], group["algorithm_version"], group["configuration_revision"],
+                 db.current_space_revision_id(), db.now()),
             )
 
     placeholders = ",".join("?" for _ in source_ids)
@@ -250,12 +251,12 @@ def _refresh_group_current(group: dict, entity_type: str, as_of: float,
         if record_history:
             db.ex(
                 "INSERT INTO zone_occupancy_observations "
-                "(group_id,zone_id,entity_type,ts,value,quality,provenance_json,created_at) "
-                "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(group_id,zone_id,entity_type,ts) DO UPDATE SET "
+                "(group_id,zone_id,entity_type,ts,value,quality,provenance_json,space_revision_id,created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(group_id,zone_id,entity_type,ts) DO UPDATE SET "
                 "value=excluded.value,quality=excluded.quality,provenance_json=excluded.provenance_json",
                 (group["id"], zone_id, entity_type, as_of, value, quality,
                  json.dumps({"fresh_source_ids": sorted(fresh_sources), "source_ids": source_ids,
-                             "fused_entity_ids": active_ids}), db.now()),
+                             "fused_entity_ids": active_ids}), db.current_space_revision_id(), db.now()),
             )
 
 
