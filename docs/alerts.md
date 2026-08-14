@@ -7,6 +7,10 @@ Legacy rule kinds remain available for dwell, occupancy, state, and event compat
 New generated workflows can use `query_condition`, which references a saved query and a
 condition such as `{operator: ">=", value: 2, for_seconds: 0}`.
 
+The operator is stored exactly as given and is never normalized: `>` and `>=` are
+different rules, and "more than 2" is `> 2`. See
+[the threshold-phrase table](queries-and-dashboards.md#threshold-phrasing-is-exact).
+
 The guided demo uses this same path for its Aisle 04 threshold during offline cache
 generation. Raw source-local samples pass through the real saved-query evaluator and
 alert engine; playable runtime reveals the resulting event only when the master media

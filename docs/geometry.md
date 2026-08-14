@@ -4,6 +4,26 @@ StoreLens uses one metric map frame for canonical physical geometry. Workers sub
 camera evidence; the platform selects the relevant plane, projects the representative
 point, assigns a zone, and stores the definition revisions used.
 
+## Defining a zone from camera evidence
+
+When a named physical region has no canonical geometry yet, the polygon is subjective and
+must be approved before it is stored. Two endpoints make that safe:
+
+- `POST /api/v1/agent/zone-preview` projects proposed camera-space polygons onto the map
+  and returns each projected footprint with validity, area, and calibration revision, plus
+  the unioned canonical preview and any calibration warnings. **It persists nothing** and
+  may be called repeatedly as the user corrects the proposal.
+- `POST /api/v1/agent/zone-commit` requires `approved=true`, then runs the same low-level
+  sequence described below: create the canonical zone from the first contribution, create
+  one zone view per contributing camera, and union the remaining contributions with
+  explicit extension calls so every step records provenance.
+
+The result is one canonical zone with one zone view per contributing camera. Cameras that
+cannot see the region get no zone view. `GET /api/v1/agent/sources/{id}/frame-capture-plan`
+supplies the local capture plan and pixel-coordinate context needed to propose polygons
+from a real image rather than from guessed coordinates; StoreLens never returns camera
+pixels itself. See [the agent operating surface](agent-surface.md).
+
 ## Canonical zones and camera views
 
 A zone is GeoJSON Polygon or MultiPolygon in map metres. MultiPolygon supports genuinely

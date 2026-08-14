@@ -59,6 +59,7 @@ registry file path.
 | `STORELENS_MCP_TRANSPORT` | `stdio` (default) or `streamable-http`. |
 | `STORELENS_MCP_HOST` / `STORELENS_MCP_PORT` | Streamable HTTP bind settings; defaults to `127.0.0.1:8001`. |
 | `STORELENS_MCP_ALLOWED_HOSTS` / `STORELENS_MCP_ALLOWED_ORIGINS` | Streamable HTTP host/origin allowlists. |
+| `STORELENS_MCP_LEGACY_TOOLS` | `1` also advertises the 59 deprecated low-level MCP tools alongside the 18 curated ones. Migration path only; see [the agent operating surface](agent-surface.md). |
 
 Do not place secrets in tracked files or command-line query parameters. The dashboard
 uses a query-string API key only where browser APIs cannot attach a header; avoid this

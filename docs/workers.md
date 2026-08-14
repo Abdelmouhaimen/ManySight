@@ -4,17 +4,33 @@ A StoreLens worker is an external process running where its camera, video, file,
 sensor is reachable. It owns capture, inference, tracking, and model-specific
 preprocessing. StoreLens owns geometry enrichment and derived analytics.
 
+## Before writing a worker
+
+`GET /api/v1/agent/worker-recipe` returns the current integration contract, generated
+from the running platform: preferred endpoint and envelope, empty-frame semantics,
+identity rules, forbidden output, sampling guidance, lifecycle expectations, and how to
+verify. Fetch it — and `GET /api/v1/agent/perception` to check whether compatible
+perception already exists — before building anything.
+
+**Do not infer the contract from an example or demo script in a repository.** Files on
+disk may predate the current API; the recipe, `GET /api/v1/observations/contract`, and
+`/openapi.json` are authoritative.
+
 ## Worker lifecycle
 
 1. Read the source and geometry needed for the task.
 2. Resolve source access with the SDK or privileged connection endpoint.
 3. Register a job describing the purpose, source IDs, and observation kinds.
-4. Register a worker instance and heartbeat every 5–15 seconds.
-5. Submit observations in batches of at most 5,000 rows; batches of 100–500 every
-   1–5 seconds are a practical default.
+4. Register a worker instance and heartbeat every 5–15 seconds. Report `local_fps` and
+   `submission_hz` in heartbeat metrics so capability inspection can show them.
+5. Submit one atomic `DetectionSample` per processed frame. Local detection and tracking
+   may run at full camera FPS; the central submission rate is a separate, task-driven
+   choice and is normally lower. For non-detection kinds, submit observations in batches
+   of at most 5,000 rows; batches of 100–500 every 1–5 seconds are a practical default.
 6. Check each heartbeat response for a cooperative stop or restart request.
-7. Verify source-local and, where configured, fused current state. Create a saved query
-   and dashboard widget only after the observations are correct.
+7. Verify source-local and, where configured, fused current state — heartbeat, freshness,
+   complete samples, projection, and zone assignment. Create a saved query and dashboard
+   widget only after the observations are correct.
 
 A job is metadata. A worker instance is heartbeat-backed runtime state. StoreLens does
 not start or relaunch arbitrary worker scripts.

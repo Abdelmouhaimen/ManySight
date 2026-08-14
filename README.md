@@ -90,6 +90,7 @@ Once running:
 | Health | <http://127.0.0.1:8000/api/v1/health> |
 | Runtime endpoint configuration | <http://127.0.0.1:8000/api/v1/platform-config> |
 | Agent guide | <http://127.0.0.1:8000/agent.md> |
+| Agent workspace snapshot | <http://127.0.0.1:8000/api/v1/agent/workspace> |
 
 The default SQLite database is `data/storelens.db`. Use the dashboard's
 **Setup** section to define the workspace, trace a floor plan, create zones, add
@@ -197,9 +198,25 @@ biometric identity or claim continuity outside its configured active-track lifet
 
 ## MCP
 
-The MCP server is an agent-facing adapter over the REST API. It exposes platform
-discovery, geometry, job/worker coordination, observations, analytics, alerts, and
-the playbooks in [`skills/`](skills/). It does not process video itself.
+The MCP server is a curated agent-facing adapter over the REST API. It holds no business
+logic and does not process video.
+
+Three interfaces, three jobs:
+
+| interface | role |
+|---|---|
+| REST + SDK | the complete low-level platform interface; `/openapi.json` is authoritative |
+| MCP | a small semantic surface for coding agents — 18 tools, not one per endpoint |
+| [`skills/`](skills/README.md) | the workflow knowledge behind those tools |
+
+An agent starts with `inspect_workspace()` for one snapshot of sources, calibration, zones,
+perception freshness, multiview groups, saved queries, dashboards, alerts, and readiness,
+then `list_workflows()` / `get_workflow(name)` to route the job it was asked to do. Zone
+geometry from camera evidence is previewed and approved before it is stored; perception is
+checked for reuse before any worker is started; and threshold words are mapped to exact
+operators. See [the agent operating surface](docs/agent-surface.md) for the full tool list,
+the `/api/v1/agent/*` endpoints behind it, and the compatibility mode that re-advertises the
+59 superseded low-level tools.
 
 For a local stdio MCP client:
 
@@ -215,6 +232,7 @@ see [Development and deployment](docs/development.md).
 ## Documentation
 
 - [Architecture and current scope](docs/architecture.md)
+- [The agent operating surface](docs/agent-surface.md)
 - [Source connections and credentials](docs/source-connections.md)
 - [Workers and observations](docs/workers.md)
 - [Geometry and calibration](docs/geometry.md)
@@ -225,6 +243,7 @@ see [Development and deployment](docs/development.md).
 - [Alerts](docs/alerts.md)
 - [Development and deployment](docs/development.md)
 - [Agent playbooks](skills/README.md)
+- [Agent-operability evaluation](evals/agent_operability/README.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 

@@ -18,8 +18,16 @@ produced an observation.
    cameras that share compatible metric world geometry.
 6. **The ManySight dashboard** is the bundled interface for setup, observations,
    fused/source-debug Live views, generated dashboards, workers, and alerts.
-7. **The MCP server** exposes safe platform operations and agent playbooks. It is not
-   a worker runtime and never receives camera credentials through ordinary discovery.
+7. **The MCP server** exposes a small curated semantic interface for coding agents over
+   the same REST API, plus the playbooks in `skills/`. REST and the SDK remain the
+   complete low-level interface; only the advertised agent surface is curated. It holds
+   no business logic, is not a worker runtime, never processes video, and never receives
+   camera credentials through ordinary discovery. See
+   [the agent operating surface](agent-surface.md).
+   The `/api/v1/agent/*` routes that back it — workspace snapshot, source detail, frame
+   capture plan, perception capability, worker recipe, zone preview/commit, workflow
+   index — add no new derivation: they read the same materialized state models and call
+   the same routers the dashboard uses.
 8. **The optional guided demo** routes an explicit browser session to a temporary
    SQLite workspace. Its offline generator derives a versioned raw `DetectionSample`
    fixture through the real platform and commits a provenance-hashed replay cache.

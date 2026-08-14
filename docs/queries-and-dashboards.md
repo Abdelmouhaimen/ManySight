@@ -33,9 +33,34 @@ possible, but Insights is not a current product page or MCP workflow.
 
 ## Typical agent workflow
 
-1. Inspect sources, geometry, current quality, and existing saved queries.
-2. Call `list_query_capabilities` and preview with `query_data`.
-3. Create or update one saved query for the question.
-4. Create a dashboard if needed.
-5. Add a widget using a presentation compatible with the query result shape.
-6. Verify the rendered result and provenance.
+1. `inspect_workspace` — sources, geometry, current quality, existing saved queries, and
+   the trimmed query-capability block.
+2. `run_query` to preview the exact definition.
+3. `configure_saved_query` once for that question; reuse an equivalent definition rather
+   than duplicating it for a different presentation or wording.
+4. `configure_dashboard` only when the user asked to see something, with a presentation
+   compatible with the result shape.
+5. Verify the rendered result and provenance.
+
+See [the agent operating surface](agent-surface.md) for the curated tool list, and
+[`queries-dashboards-alerts`](../skills/queries-dashboards-alerts/SKILL.md) for the full
+playbook including the exact comparison-operator table.
+
+## Threshold phrasing is exact
+
+An occupancy question and its threshold are separate decisions, and English threshold
+words map to exactly one operator. StoreLens never normalizes one into another:
+
+| the user says | operator |
+|---|---|
+| more than 2 / over 2 / above 2 | `>` with value 2 |
+| at least 2 / 2 or more | `>=` with value 2 |
+| fewer than 3 / less than 3 / under 3 | `<` with value 3 |
+| at most 3 / no more than 3 / 3 or fewer | `<=` with value 3 |
+| exactly 3 | `==` with value 3 |
+
+"More than 2" fires at 3, not at 2. The guided demo's own phrasing is "at least 2", which
+is `>= 2`; do not copy its operator into a differently worded request. The table is
+published at `GET /api/v1/agent/workflows/create-zone-occupancy-alert` so an agent can
+look it up instead of guessing, and an unlisted phrasing should reach the user as a
+question.

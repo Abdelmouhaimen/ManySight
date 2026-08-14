@@ -16,6 +16,13 @@ Workers do not coordinate identities. Each source posts its own `sample_id`, tim
 local `entity_id`, confidence, and pixel evidence. StoreLens waits for complete source
 samples, projects them independently, then associates active tracks centrally.
 
+Cross-camera occupancy is a count of **fused entities inside the canonical zone**. It is
+never a count of camera bounding boxes, never `DISTINCT` raw local tracker IDs across
+cameras, and never frontend polygon membership. `GET /api/v1/agent/workspace` and
+`GET /api/v1/agent/perception` report per-group readiness — member calibration, fresh and
+stale members, `known|partial|unknown` quality, and fused entity count — so an agent can
+confirm the group is usable before asking an occupancy question.
+
 ## Association and provenance
 
 The baseline is intentionally geometry-first: time gating, metric spatial gating, short
