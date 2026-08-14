@@ -1,0 +1,49 @@
+{
+  "name": "missing-entity-capability",
+  "title": "A person worker cannot answer a backpack question",
+  "origin": "Scenario D — capability gaps must be reported, not papered over.",
+  "what_it_guards": [
+    "pretending an existing person capability answers a different entity type",
+    "saving a query or alert that cannot be satisfied by any current perception"
+  ],
+  "initial_workspace": {
+    "map": {"width_m": 12, "height_m": 10, "walls": true},
+    "sources": [
+      {"key": "Camera 3", "calibrated": true, "sees_aisle_04": true},
+      {"key": "Camera 4", "calibrated": true, "sees_aisle_04": true}
+    ],
+    "zones": ["Aisle 04"],
+    "multiview_group": {"key": "Warehouse floor", "sources": ["Camera 3", "Camera 4"]},
+    "perception": "healthy person detection_tracking on both sources; no other entity type"
+  },
+  "turns": [
+    {
+      "user": "Count backpacks.",
+      "expect": {
+        "actions_required": ["inspect_perception", "ask_user"],
+        "actions_forbidden": ["configure_saved_query", "configure_alert", "configure_dashboard"],
+        "ends_with": "ask_user"
+      },
+      "why": "inspect_perception(entity_type='backpack') reports the capability missing. Say so and offer to add it; do not save a question nothing can answer."
+    }
+  ],
+  "action_arguments": [
+    {"action": "inspect_perception", "where": {"entity_type": "backpack"}}
+  ],
+  "expected_final_resources": {
+    "backpack_capability_state": "unavailable",
+    "backpack_action": "perception_missing",
+    "person_capability_state": "healthy",
+    "saved_query_count": 0,
+    "alert_rule_count": 0
+  },
+  "reference_transcript": {
+    "steps": [
+      {"turn": 0, "action": "inspect_workspace", "args": {"entity_type": "backpack"}},
+      {"turn": 0, "action": "inspect_perception", "args": {
+        "entity_type": "backpack", "source_ids": ["$Camera 3", "$Camera 4"]}},
+      {"turn": 0, "action": "ask_user", "args": {
+        "question": "No backpack perception exists — only person. Add a backpack detector?"}}
+    ]
+  }
+}

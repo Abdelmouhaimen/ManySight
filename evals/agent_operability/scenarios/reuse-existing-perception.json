@@ -1,0 +1,50 @@
+{
+  "name": "reuse-existing-perception",
+  "title": "Answer a current-occupancy question when healthy perception already exists",
+  "origin": "Scenario A — the cheap case that must not spawn a second worker.",
+  "what_it_guards": [
+    "starting duplicate perception when a compatible healthy capability already exists",
+    "counting raw source-local tracker IDs instead of fused entities"
+  ],
+  "initial_workspace": {
+    "map": {"width_m": 12, "height_m": 10, "walls": true},
+    "sources": [
+      {"key": "Camera 3", "calibrated": true, "sees_aisle_04": true},
+      {"key": "Camera 4", "calibrated": true, "sees_aisle_04": true}
+    ],
+    "zones": ["Aisle 04"],
+    "multiview_group": {"key": "Warehouse floor", "sources": ["Camera 3", "Camera 4"]},
+    "perception": "healthy person detection_tracking on both sources"
+  },
+  "turns": [
+    {
+      "user": "How many people are currently in Aisle 04?",
+      "expect": {
+        "actions_required": ["inspect_perception", "run_query"],
+        "actions_forbidden": ["get_worker_recipe", "run_shell", "configure_source"]
+      },
+      "why": "inspect_perception returns action=reuse, so the answer comes from a fused query. No worker work is needed or allowed."
+    }
+  ],
+  "order_required": [["inspect_perception", "run_query"]],
+  "actions_forbidden_overall": ["get_worker_recipe", "run_shell"],
+  "action_arguments": [
+    {"action": "run_query", "where": {"subject": "fused_entity"}}
+  ],
+  "expected_final_resources": {
+    "perception_action": "reuse",
+    "query_subject": "fused_entity",
+    "query_quality": "known",
+    "job_count": 1
+  },
+  "reference_transcript": {
+    "steps": [
+      {"turn": 0, "action": "inspect_workspace", "args": {"entity_type": "person"}},
+      {"turn": 0, "action": "inspect_perception", "args": {
+        "entity_type": "person", "source_ids": ["$Camera 3", "$Camera 4"]}},
+      {"turn": 0, "action": "run_query", "args": {
+        "subject": "fused_entity", "measures": ["current_occupancy"],
+        "filters": {"group_ids": ["$group"], "zone_ids": ["$zone"], "entity_types": ["person"]}}}
+    ]
+  }
+}

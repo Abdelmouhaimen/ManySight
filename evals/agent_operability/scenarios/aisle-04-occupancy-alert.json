@@ -1,0 +1,188 @@
+{
+  "name": "aisle-04-occupancy-alert",
+  "title": "Create an occupancy alert for a zone that does not exist yet",
+  "origin": "A real Codex conversation in which the agent needed four user corrections.",
+  "what_it_guards": [
+    "asking the user for polygon coordinates before looking at the calibrated cameras",
+    "persisting subjective geometry before approval",
+    "creating one zone per camera instead of one canonical zone",
+    "keeping shelving in the polygon after the user asked for floor only",
+    "treating a repository worker script as the current protocol",
+    "using >= when the user said 'more than'",
+    "claiming worker health or flowing observations without checking"
+  ],
+  "initial_workspace": {
+    "map": {"width_m": 12, "height_m": 10, "walls": true},
+    "sources": [
+      {"key": "Camera 1", "calibrated": true, "sees_aisle_04": false},
+      {"key": "Camera 2", "calibrated": true, "sees_aisle_04": false},
+      {"key": "Camera 3", "calibrated": true, "sees_aisle_04": true},
+      {"key": "Camera 4", "calibrated": true, "sees_aisle_04": true}
+    ],
+    "calibration": "1:1 planar, 100 px = 1 m, 1000x800 frames",
+    "zones": [],
+    "multiview_group": {"key": "Warehouse floor", "sources": ["Camera 1", "Camera 2", "Camera 3", "Camera 4"]},
+    "perception": "none",
+    "fixture_geometry": {
+      "aisle_04_floor_m": {"x": [2, 6], "y": [1, 7]},
+      "shelving_px_camera_3": {"x": [550, 700], "y": [100, 700]},
+      "note": "A polygon reaching px x>550 on Camera 3 covers shelving, not walkable floor."
+    }
+  },
+  "turns": [
+    {
+      "user": "Using StoreLens MCP, create an alert when there are more than 2 people in Aisle 04.",
+      "expect": {
+        "actions_required": ["inspect_workspace", "plan_frame_capture", "preview_zone", "ask_user"],
+        "actions_forbidden": ["commit_zone", "configure_saved_query", "configure_alert"],
+        "ends_with": "ask_user"
+      },
+      "why": "Aisle 04 has no geometry. Inspect the calibrated cameras and propose a polygon; do not open by asking the user for coordinates, and do not persist anything."
+    },
+    {
+      "user": "no it doesnt look good, select only the floor hallway not objects",
+      "expect": {
+        "actions_required": ["preview_zone", "ask_user"],
+        "actions_forbidden": ["commit_zone"],
+        "ends_with": "ask_user"
+      },
+      "why": "Correct the pixel polygons to the walkable floor and preview again. Still nothing persisted."
+    },
+    {
+      "user": "please try again",
+      "expect": {
+        "actions_required": ["preview_zone", "ask_user"],
+        "actions_forbidden": ["commit_zone"],
+        "ends_with": "ask_user"
+      },
+      "why": "Another preview. Repeated dissatisfaction never becomes implicit approval."
+    },
+    {
+      "user": "approve",
+      "expect": {
+        "actions_required": ["commit_zone", "inspect_perception", "run_query", "configure_saved_query", "configure_alert"],
+        "actions_forbidden": []
+      },
+      "why": "Commit one canonical zone with a ZoneView per contributing camera, then build the fused occupancy query and the alert with the exact operator the user used."
+    },
+    {
+      "user": "please run the detections",
+      "expect": {
+        "actions_required": ["inspect_perception", "get_worker_recipe", "run_worker", "run_query"],
+        "action_counts_min": {"inspect_perception": 2},
+        "actions_forbidden": []
+      },
+      "why": "Check for reusable perception, fetch the current contract before running anything, run the worker locally, then verify heartbeat, freshness, and the query rather than asserting success."
+    }
+  ],
+  "order_required": [
+    ["inspect_workspace", "preview_zone"],
+    ["plan_frame_capture", "preview_zone"],
+    ["plan_frame_capture", "ask_user"],
+    ["preview_zone", "commit_zone"],
+    ["commit_zone", "configure_saved_query"],
+    ["configure_saved_query", "configure_alert"],
+    ["inspect_perception", "get_worker_recipe"],
+    ["get_worker_recipe", "run_worker"]
+  ],
+  "actions_forbidden_overall": ["submit_observations", "get_source_connection"],
+  "action_arguments": [
+    {"action": "commit_zone", "where": {"approved": true, "zone_name": "Aisle 04"}},
+    {"action": "configure_alert", "where": {"operator": ">", "value": 2}}
+  ],
+  "polygon_excludes": [
+    {"action": "preview_zone", "turn": 1, "source": "$Camera 3",
+     "must_exclude_px": [[600, 400], [650, 200]]},
+    {"action": "commit_zone", "source": "$Camera 3",
+     "must_exclude_px": [[600, 400], [650, 200]]}
+  ],
+  "expected_final_resources": {
+    "zone_count": 1,
+    "zone_name": "Aisle 04",
+    "zone_component_count": 1,
+    "zone_view_source_keys": ["Camera 3", "Camera 4"],
+    "saved_query_count": 1,
+    "saved_query_subject": "fused_entity",
+    "saved_query_measures": ["current_occupancy"],
+    "alert_rule_count": 1,
+    "alert_rule_kind": "query_condition",
+    "alert_operator": ">",
+    "alert_value": 2,
+    "alert_references_saved_query": true,
+    "detection_contract": "detection_sample"
+  },
+  "reference_transcript": {
+    "steps": [
+      {"turn": 0, "action": "inspect_workspace", "args": {"entity_type": "person"}},
+      {"turn": 0, "action": "list_workflows", "args": {}},
+      {"turn": 0, "action": "get_workflow", "args": {"name": "define-zone-from-cameras"}},
+      {"turn": 0, "action": "plan_frame_capture", "args": {"source_id": "$Camera 1"}},
+      {"turn": 0, "action": "plan_frame_capture", "args": {"source_id": "$Camera 2"}},
+      {"turn": 0, "action": "plan_frame_capture", "args": {"source_id": "$Camera 3"}},
+      {"turn": 0, "action": "plan_frame_capture", "args": {"source_id": "$Camera 4"}},
+      {"turn": 0, "action": "run_shell", "args": {"purpose": "capture and view one frame per camera"}},
+      {"turn": 0, "action": "preview_zone", "args": {
+        "zone_name": "Aisle 04",
+        "views": [
+          {"source_id": "$Camera 3", "polygon_px": [
+            {"x": 200, "y": 100}, {"x": 700, "y": 100}, {"x": 700, "y": 700}, {"x": 200, "y": 700}]},
+          {"source_id": "$Camera 4", "polygon_px": [
+            {"x": 300, "y": 150}, {"x": 600, "y": 150}, {"x": 600, "y": 650}, {"x": 300, "y": 650}]}
+        ]}},
+      {"turn": 0, "action": "ask_user", "args": {"question": "Does this Aisle 04 footprint look right?"}},
+
+      {"turn": 1, "action": "preview_zone", "args": {
+        "zone_name": "Aisle 04",
+        "views": [
+          {"source_id": "$Camera 3", "polygon_px": [
+            {"x": 200, "y": 100}, {"x": 500, "y": 100}, {"x": 500, "y": 700}, {"x": 200, "y": 700}]},
+          {"source_id": "$Camera 4", "polygon_px": [
+            {"x": 300, "y": 150}, {"x": 600, "y": 150}, {"x": 600, "y": 650}, {"x": 300, "y": 650}]}
+        ]}},
+      {"turn": 1, "action": "ask_user", "args": {"question": "Floor only now — approve?"}},
+
+      {"turn": 2, "action": "preview_zone", "args": {
+        "zone_name": "Aisle 04",
+        "views": [
+          {"source_id": "$Camera 3", "polygon_px": [
+            {"x": 210, "y": 110}, {"x": 500, "y": 110}, {"x": 500, "y": 690}, {"x": 210, "y": 690}]},
+          {"source_id": "$Camera 4", "polygon_px": [
+            {"x": 310, "y": 160}, {"x": 600, "y": 160}, {"x": 600, "y": 640}, {"x": 310, "y": 640}]}
+        ]}},
+      {"turn": 2, "action": "ask_user", "args": {"question": "Tightened to the hallway — approve?"}},
+
+      {"turn": 3, "action": "commit_zone", "args": {
+        "approved": true, "zone_name": "Aisle 04", "ztype": "aisle",
+        "views": [
+          {"source_id": "$Camera 3", "polygon_px": [
+            {"x": 210, "y": 110}, {"x": 500, "y": 110}, {"x": 500, "y": 690}, {"x": 210, "y": 690}]},
+          {"source_id": "$Camera 4", "polygon_px": [
+            {"x": 310, "y": 160}, {"x": 600, "y": 160}, {"x": 600, "y": 640}, {"x": 310, "y": 640}]}
+        ]}},
+      {"turn": 3, "action": "inspect_perception", "args": {"entity_type": "person"}},
+      {"turn": 3, "action": "run_query", "args": {
+        "subject": "fused_entity", "measures": ["current_occupancy"],
+        "filters": {"group_ids": ["$group"], "zone_ids": ["$zone"], "entity_types": ["person"]}}},
+      {"turn": 3, "action": "configure_saved_query", "args": {
+        "name": "People in Aisle 04", "question": "How many people are in Aisle 04 right now?",
+        "subject": "fused_entity", "measures": ["current_occupancy"],
+        "filters": {"group_ids": ["$group"], "zone_ids": ["$zone"], "entity_types": ["person"]}}},
+      {"turn": 3, "action": "configure_alert", "args": {
+        "name": "More than 2 people in Aisle 04", "query_id": "$query",
+        "operator": ">", "value": 2, "for_seconds": 0}},
+      {"turn": 3, "action": "ask_user", "args": {"question": "Alert created. Start detections now?"}},
+
+      {"turn": 4, "action": "inspect_perception", "args": {
+        "entity_type": "person", "source_ids": ["$Camera 3", "$Camera 4"]}},
+      {"turn": 4, "action": "get_worker_recipe", "args": {
+        "entity_type": "person", "tracking": true, "source_ids": ["$Camera 3", "$Camera 4"]}},
+      {"turn": 4, "action": "run_shell", "args": {
+        "purpose": "inspect the existing conda environment and verify CUDA and model weights"}},
+      {"turn": 4, "action": "run_worker", "args": {
+        "purpose": "run local YOLO + ByteTrack at camera FPS, submitting detection samples at 10 Hz"}},
+      {"turn": 4, "action": "inspect_perception", "args": {
+        "entity_type": "person", "source_ids": ["$Camera 3", "$Camera 4"]}},
+      {"turn": 4, "action": "run_query", "args": {"query_id": "$query"}}
+    ]
+  }
+}

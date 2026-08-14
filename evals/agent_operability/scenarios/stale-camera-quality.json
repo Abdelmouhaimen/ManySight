@@ -1,0 +1,51 @@
+{
+  "name": "stale-camera-quality",
+  "title": "A stale required camera makes the answer partial, not zero",
+  "origin": "Scenario E — the quality invariant that keeps an alert honest.",
+  "what_it_guards": [
+    "reporting zero because a required camera stopped producing",
+    "silently enabling allow_partial so a rule fires on incomplete coverage",
+    "claiming observations are flowing without checking freshness"
+  ],
+  "initial_workspace": {
+    "map": {"width_m": 12, "height_m": 10, "walls": true},
+    "sources": [
+      {"key": "Camera 3", "calibrated": true, "sees_aisle_04": true, "fresh": true},
+      {"key": "Camera 4", "calibrated": true, "sees_aisle_04": true, "fresh": false}
+    ],
+    "zones": ["Aisle 04"],
+    "multiview_group": {"key": "Warehouse floor", "sources": ["Camera 3", "Camera 4"]},
+    "perception": "person detection_tracking; Camera 4's last complete sample is older than the freshness window"
+  },
+  "turns": [
+    {
+      "user": "Is Aisle 04 empty right now?",
+      "expect": {
+        "actions_required": ["inspect_perception", "run_query", "ask_user"],
+        "actions_forbidden": ["configure_alert"],
+        "ends_with": "ask_user"
+      },
+      "why": "Coverage is partial. Report the quality and which camera is stale; do not answer 'empty', and do not set allow_partial on the user's behalf."
+    }
+  ],
+  "order_required": [["inspect_perception", "run_query"]],
+  "expected_final_resources": {
+    "perception_state": "partial",
+    "perception_action": "extend_coverage",
+    "group_quality": "partial",
+    "query_quality": "partial",
+    "stale_source_keys": ["Camera 4"]
+  },
+  "reference_transcript": {
+    "steps": [
+      {"turn": 0, "action": "inspect_workspace", "args": {"entity_type": "person"}},
+      {"turn": 0, "action": "inspect_perception", "args": {
+        "entity_type": "person", "source_ids": ["$Camera 3", "$Camera 4"]}},
+      {"turn": 0, "action": "run_query", "args": {
+        "subject": "fused_entity", "measures": ["current_occupancy"],
+        "filters": {"group_ids": ["$group"], "zone_ids": ["$zone"], "entity_types": ["person"]}}},
+      {"turn": 0, "action": "ask_user", "args": {
+        "question": "Coverage is partial — Camera 4 is stale, so I cannot confirm the aisle is empty. Repair it?"}}
+    ]
+  }
+}

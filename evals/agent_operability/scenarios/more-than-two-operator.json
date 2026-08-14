@@ -1,0 +1,54 @@
+{
+  "name": "more-than-two-operator",
+  "title": "\"More than 2\" is > 2, not >= 2",
+  "origin": "Scenario C — the exclusive half of the operator pair, and the exact wording of the real request.",
+  "what_it_guards": [
+    "using >= 2 when the user said 'more than 2'",
+    "copying the guided demo's 'at least 2' threshold into a differently phrased request"
+  ],
+  "initial_workspace": {
+    "map": {"width_m": 12, "height_m": 10, "walls": true},
+    "sources": [
+      {"key": "Camera 3", "calibrated": true, "sees_aisle_04": true},
+      {"key": "Camera 4", "calibrated": true, "sees_aisle_04": true}
+    ],
+    "zones": ["Aisle 04"],
+    "multiview_group": {"key": "Warehouse floor", "sources": ["Camera 3", "Camera 4"]},
+    "perception": "healthy person detection_tracking on both sources"
+  },
+  "turns": [
+    {
+      "user": "Alert me when more than 2 people are in Aisle 04.",
+      "expect": {
+        "actions_required": ["configure_saved_query", "configure_alert"],
+        "actions_forbidden": ["commit_zone", "get_worker_recipe"]
+      },
+      "why": "Same workspace as the at-least scenario; only the operator differs, and it must differ."
+    }
+  ],
+  "order_required": [["configure_saved_query", "configure_alert"]],
+  "action_arguments": [
+    {"action": "configure_alert", "where": {"operator": ">", "value": 2}}
+  ],
+  "expected_final_resources": {
+    "alert_operator": ">",
+    "alert_value": 2,
+    "fires_at_occupancy_3": true,
+    "fires_at_occupancy_2": false
+  },
+  "reference_transcript": {
+    "steps": [
+      {"turn": 0, "action": "inspect_workspace", "args": {"entity_type": "person"}},
+      {"turn": 0, "action": "run_query", "args": {
+        "subject": "fused_entity", "measures": ["current_occupancy"],
+        "filters": {"group_ids": ["$group"], "zone_ids": ["$zone"], "entity_types": ["person"]}}},
+      {"turn": 0, "action": "configure_saved_query", "args": {
+        "name": "People in Aisle 04", "subject": "fused_entity",
+        "measures": ["current_occupancy"],
+        "filters": {"group_ids": ["$group"], "zone_ids": ["$zone"], "entity_types": ["person"]}}},
+      {"turn": 0, "action": "configure_alert", "args": {
+        "name": "More than 2 people in Aisle 04", "query_id": "$query",
+        "operator": ">", "value": 2, "for_seconds": 0}}
+    ]
+  }
+}
