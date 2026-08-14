@@ -223,6 +223,15 @@ def _public(row: dict) -> dict:
     result = db.jload(row["result_json"], {})
     recipe = load_recipe()
     source_ids = result.get("source_ids", {})
+    # A camera only carries a zone trace once that zone view really exists in the
+    # workspace, so a guided walkthrough shows each contribution appearing.
+    traced_sources = set()
+    if result.get("zone_id"):
+        workspace = Path(row["workspace_path"])
+        if workspace.is_file():
+            with db.using_database(str(workspace)):
+                traced_sources = {view["source_id"] for view in db.q(
+                    "SELECT source_id FROM zone_views WHERE zone_id=?", (result["zone_id"],))}
     result["camera_overlays"] = {
         camera["key"]: {
             "camera_key": camera["key"],
@@ -235,7 +244,8 @@ def _public(row: dict) -> dict:
                 "color": recipe["zone"]["color"],
                 "polygons_px": camera.get("zone_view_polygons_px")
                 or [camera["zone_view_px"]],
-            }] if camera.get("zone_view_px") else [],
+            }] if camera.get("zone_view_px")
+                and source_ids.get(camera["key"]) in traced_sources else [],
         }
         for camera in recipe["cameras"]
     }
@@ -273,8 +283,15 @@ def _action(log: list, name: str, result: dict, explanation: str) -> None:
     log.append({"name": name, "status": "completed", "result": result, "explanation": explanation})
 
 
-def _setup_workspace(path: Path, session_id: str, base_url: str) -> tuple[list, dict]:
-    from ..routers import alerts, analyses, calibrations, dashboards, geometry, multiview, sources, store, zones
+def _setup_space(path: Path, session_id: str, base_url: str) -> tuple[list, dict]:
+    """Create the camera and space setup: mapped space, four sources, placements,
+    imported calibrations, and the calibrated multiview group.
+
+    This is everything a promotion may copy. The monitored zone and the analyses
+    that answer the demo's question are applied separately (see apply_request), so
+    a guided walkthrough can create them at the step that explains them.
+    """
+    from ..routers import calibrations, multiview, sources, store
 
     recipe = load_recipe()
     log: list[dict] = []
@@ -312,53 +329,6 @@ def _setup_workspace(path: Path, session_id: str, base_url: str) -> tuple[list, 
         _action(log, "Open four synchronized camera captures",
                 {"camera_keys": list(source_ids), "source_fps": recipe["frame"]["fps"]},
                 "Opened the four native NVIDIA recordings on one shared media timeline.")
-        zone_cameras = [camera for camera in recipe["cameras"] if camera.get("zone_view_px")]
-        seed_key = recipe["zone"]["seed_camera_key"]
-        seed_camera = next(camera for camera in zone_cameras if camera["key"] == seed_key)
-        seed_polygon = [{"x": p[0], "y": p[1]} for p in seed_camera["zone_view_px"]]
-        monitored_zone = zones.create_zone(zones.ZoneIn(
-            name=recipe["zone"]["name"], ztype=recipe["zone"]["ztype"],
-            color=recipe["zone"]["color"], polygon_px=seed_polygon,
-            source_id=source_ids[seed_key],
-        ))
-        _action(log, f"Draw {recipe['zone']['name']} polygon on Camera 3",
-                {"source_id": source_ids[seed_key], "polygon_px": seed_polygon},
-                "Stored the camera-specific floor-region trace as source pixel evidence.")
-        _action(log, "Project Camera 3 polygon",
-                {"source_id": source_ids[seed_key], "zone_id": monitored_zone["id"],
-                 "projected_polygon_m": monitored_zone["polygon"]},
-                "Projected the traced camera-floor polygon through its validated calibration.")
-        views = []
-        extensions = []
-        for camera in zone_cameras:
-            polygon = [{"x": p[0], "y": p[1]} for p in camera["zone_view_px"]]
-            view = geometry.create_zone_view(geometry.ZoneViewIn(
-                zone_id=monitored_zone["id"], source_id=source_ids[camera["key"]],
-                outer_polygon_px=polygon, detection_polygon_px=polygon,
-                membership_rule="point", threshold=0.5,
-            ))
-            views.append(view["id"])
-            if camera["key"] != seed_key:
-                _action(log, "Draw Aisle 04 polygon on Camera 4",
-                        {"source_id": source_ids[camera["key"]], "polygon_px": polygon},
-                        "Stored the second camera-specific trace without inventing views for Cameras 1 or 2.")
-                extended = geometry.extend_zone_from_view(view["id"])
-                extensions.append({
-                    "camera_key": camera["key"],
-                    "zone_view_id": view["id"],
-                    "projected_contribution_m": extended["projected_contribution"],
-                })
-                _action(log, "Project Camera 4 polygon", extensions[-1],
-                        "Projected Camera 4 through its validated calibration into the same metric floor plane.")
-        monitored_zone = zones.get_zone(monitored_zone["id"])
-        _action(log, "Combine overlapping physical contributions",
-                {"zone_view_ids": views, "extensions": extensions,
-                 "component_count": monitored_zone["component_count"]},
-                "Only cameras 3 and 4 see Aisle 04; their projected floor footprints overlap into one polygon with revision provenance.")
-        _action(log, f"Create canonical {recipe['zone']['name']}",
-                {"zone_id": monitored_zone["id"], "geometry": monitored_zone["geometry"],
-                 "revision": monitored_zone["revision"]},
-                "The canonical zone is metric geometry derived centrally from the two calibrated camera contributions.")
         group = multiview.create_group(multiview.MultiviewGroupIn(
             name=recipe["multiview"]["name"], source_ids=list(source_ids.values()),
             time_tolerance_s=recipe["multiview"]["time_tolerance_s"],
@@ -368,37 +338,157 @@ def _setup_workspace(path: Path, session_id: str, base_url: str) -> tuple[list, 
         ))
         _action(log, "Create calibrated multiview group", {"group_id": group["id"]},
                 "Enabled StoreLens-owned geometry/time association for anonymous source-local tracks.")
-        query = analyses.create_analysis(analyses.AnalysisIn(
-            name=recipe["query"]["name"], question=recipe["query"]["question"],
-            subject="fused_entity", measures=["current_occupancy"],
-            filters={"group_ids": [group["id"]], "zone_ids": [monitored_zone["id"]],
-                     "entity_types": ["person"]}, created_by="agent", status="ready",
+    return log, {"source_ids": source_ids, "group_id": group["id"]}
+
+
+def _stage_zone_seed(recipe: dict, result: dict, log: list) -> None:
+    """The first camera's floor trace, projected into a canonical zone."""
+    from ..routers import geometry, zones
+
+    seed_key = recipe["zone"]["seed_camera_key"]
+    seed_camera = next(camera for camera in recipe["cameras"] if camera["key"] == seed_key)
+    seed_polygon = [{"x": p[0], "y": p[1]} for p in seed_camera["zone_view_px"]]
+    monitored_zone = zones.create_zone(zones.ZoneIn(
+        name=recipe["zone"]["name"], ztype=recipe["zone"]["ztype"],
+        color=recipe["zone"]["color"], polygon_px=seed_polygon,
+        source_id=result["source_ids"][seed_key],
+    ))
+    _action(log, f"Draw {recipe['zone']['name']} polygon on Camera 3",
+            {"source_id": result["source_ids"][seed_key], "polygon_px": seed_polygon},
+            "Stored the camera-specific floor-region trace as source pixel evidence.")
+    _action(log, "Project Camera 3 polygon",
+            {"source_id": result["source_ids"][seed_key], "zone_id": monitored_zone["id"],
+             "projected_polygon_m": monitored_zone["polygon"]},
+            "Projected the traced camera-floor polygon through its validated calibration.")
+    view = geometry.create_zone_view(geometry.ZoneViewIn(
+        zone_id=monitored_zone["id"], source_id=result["source_ids"][seed_key],
+        outer_polygon_px=seed_polygon, detection_polygon_px=seed_polygon,
+        membership_rule="point", threshold=0.5,
+    ))
+    result["zone_id"] = monitored_zone["id"]
+    result["zone_name"] = recipe["zone"]["name"]
+    result["zone_view_ids"] = [view["id"]]
+
+
+def _stage_zone_extend(recipe: dict, result: dict, log: list) -> None:
+    """The second camera's trace, projected and unioned into the same zone."""
+    from ..routers import geometry, zones
+
+    seed_key = recipe["zone"]["seed_camera_key"]
+    views = list(result.get("zone_view_ids") or [])
+    extensions = []
+    for camera in recipe["cameras"]:
+        if not camera.get("zone_view_px") or camera["key"] == seed_key:
+            continue
+        polygon = [{"x": p[0], "y": p[1]} for p in camera["zone_view_px"]]
+        view = geometry.create_zone_view(geometry.ZoneViewIn(
+            zone_id=result["zone_id"], source_id=result["source_ids"][camera["key"]],
+            outer_polygon_px=polygon, detection_polygon_px=polygon,
+            membership_rule="point", threshold=0.5,
         ))
-        _action(log, "Save the fused occupancy query", {"query_id": query["id"]},
-                "Saved one canonical deterministic question; presentation is separate.")
-        dashboard = dashboards.create_dashboard(dashboards.DashboardIn(
-            name=recipe["dashboard"]["name"],
-            description="Guided demo view backed by the saved fused occupancy query.",
-            created_by="agent",
-        ))
-        widget = dashboards.add_widget(dashboard["id"], dashboards.WidgetIn(
-            query_id=query["id"], title=f"Fused people in {recipe['zone']['name']}", presentation="number",
-        ))
-        _action(log, "Generate query-backed dashboard", {"dashboard_id": dashboard["id"],
-                                                          "widget_id": widget["id"]},
-                "The widget executes the same saved query used by the alert.")
-        rule = alerts.create_rule(alerts.RuleIn(
-            name=recipe["alert"]["name"], kind="query_condition", params={"query_id": query["id"]},
-            condition={"operator": recipe["alert"]["operator"], "value": recipe["alert"]["value"],
-                       "for_seconds": 0, "window_s": 5},
-            cooldown_s=recipe["alert"]["cooldown_s"], enabled=True,
-        ))
-        _action(log, "Create query-backed alert", {"alert_rule_id": rule["id"]},
-                "The rule evaluates the saved fused occupancy query and is edge-triggered.")
-    return log, {"source_ids": source_ids, "zone_id": monitored_zone["id"],
-                 "zone_name": recipe["zone"]["name"],
-                 "group_id": group["id"], "query_id": query["id"],
-                 "dashboard_id": dashboard["id"], "alert_rule_id": rule["id"]}
+        views.append(view["id"])
+        _action(log, "Draw Aisle 04 polygon on Camera 4",
+                {"source_id": result["source_ids"][camera["key"]], "polygon_px": polygon},
+                "Stored the second camera-specific trace without inventing views for Cameras 1 or 2.")
+        extended = geometry.extend_zone_from_view(view["id"])
+        extensions.append({
+            "camera_key": camera["key"],
+            "zone_view_id": view["id"],
+            "projected_contribution_m": extended["projected_contribution"],
+        })
+        _action(log, "Project Camera 4 polygon", extensions[-1],
+                "Projected Camera 4 through its validated calibration into the same metric floor plane.")
+    monitored_zone = zones.get_zone(result["zone_id"])
+    _action(log, "Combine overlapping physical contributions",
+            {"zone_view_ids": views, "extensions": extensions,
+             "component_count": monitored_zone["component_count"]},
+            "Only cameras 3 and 4 see Aisle 04; their projected floor footprints overlap into one polygon with revision provenance.")
+    _action(log, f"Create canonical {recipe['zone']['name']}",
+            {"zone_id": monitored_zone["id"], "geometry": monitored_zone["geometry"],
+             "revision": monitored_zone["revision"]},
+            "The canonical zone is metric geometry derived centrally from the two calibrated camera contributions.")
+    result["zone_view_ids"] = views
+
+
+def _stage_query(recipe: dict, result: dict, log: list) -> None:
+    from ..routers import analyses
+
+    query = analyses.create_analysis(analyses.AnalysisIn(
+        name=recipe["query"]["name"], question=recipe["query"]["question"],
+        subject="fused_entity", measures=["current_occupancy"],
+        filters={"group_ids": [result["group_id"]], "zone_ids": [result["zone_id"]],
+                 "entity_types": ["person"]}, created_by="agent", status="ready",
+    ))
+    _action(log, "Save the fused occupancy query", {"query_id": query["id"]},
+            "Saved one canonical deterministic question; presentation is separate.")
+    result["query_id"] = query["id"]
+
+
+def _stage_alert(recipe: dict, result: dict, log: list) -> None:
+    from ..routers import alerts
+
+    rule = alerts.create_rule(alerts.RuleIn(
+        name=recipe["alert"]["name"], kind="query_condition",
+        params={"query_id": result["query_id"]},
+        condition={"operator": recipe["alert"]["operator"], "value": recipe["alert"]["value"],
+                   "for_seconds": 0, "window_s": 5},
+        cooldown_s=recipe["alert"]["cooldown_s"], enabled=True,
+    ))
+    _action(log, "Create query-backed alert", {"alert_rule_id": rule["id"]},
+            "The rule evaluates the saved fused occupancy query and is edge-triggered.")
+    result["alert_rule_id"] = rule["id"]
+
+
+def _stage_dashboard(recipe: dict, result: dict, log: list) -> None:
+    from ..routers import dashboards
+
+    dashboard = dashboards.create_dashboard(dashboards.DashboardIn(
+        name=recipe["dashboard"]["name"],
+        description="Guided demo view backed by the saved fused occupancy query.",
+        created_by="agent",
+    ))
+    widget = dashboards.add_widget(dashboard["id"], dashboards.WidgetIn(
+        query_id=result["query_id"], title=f"Fused people in {recipe['zone']['name']}",
+        presentation="number",
+    ))
+    _action(log, "Generate query-backed dashboard",
+            {"dashboard_id": dashboard["id"], "widget_id": widget["id"]},
+            "The widget executes the same saved query used by the alert.")
+    result["dashboard_id"] = dashboard["id"]
+
+
+# Ordered stages that answer the demo's question. Each is applied by its own real
+# operation so a walkthrough can show it happening at the step that explains it,
+# and each carries the check that makes re-applying it a no-op.
+REQUEST_STAGES = {
+    "zone_seed": (_stage_zone_seed, lambda result: bool(result.get("zone_id"))),
+    "zone_extend": (_stage_zone_extend,
+                    lambda result: len(result.get("zone_view_ids") or []) >= 2),
+    "query": (_stage_query, lambda result: bool(result.get("query_id"))),
+    "alert": (_stage_alert, lambda result: bool(result.get("alert_rule_id"))),
+    "dashboard": (_stage_dashboard, lambda result: bool(result.get("dashboard_id"))),
+}
+REQUEST_STAGE_ORDER = list(REQUEST_STAGES)
+
+
+def _apply_request(path: Path, log: list, result: dict) -> tuple[list, dict]:
+    """Apply every request stage in order, in one workspace context."""
+    recipe = load_recipe()
+    with db.using_database(str(path)):
+        for stage in REQUEST_STAGE_ORDER:
+            REQUEST_STAGES[stage][0](recipe, result, log)
+    return log, result
+
+
+def _setup_workspace(path: Path, session_id: str, base_url: str) -> tuple[list, dict]:
+    """Full prepared demo workspace: space setup plus every request stage.
+
+    The offline cache builder and the explore-only demo mode both need the whole
+    configuration up front; the guided walkthrough applies the request stages as
+    it explains them.
+    """
+    log, result = _setup_space(path, session_id, base_url)
+    return _apply_request(path, log, result)
 
 
 def create_session(base_url: str, mode: str = "guided") -> dict:
@@ -416,7 +506,13 @@ def create_session(base_url: str, mode: str = "guided") -> dict:
     workspace_path = workspace_dir / "storelens.db"
     db.init_db(str(workspace_path))
     try:
-        log, result = _setup_workspace(workspace_path, session_id, base_url.rstrip("/"))
+        # A guided session starts with camera and space setup only, so the
+        # walkthrough can create the zone and its analyses at the step that
+        # explains them. Explore-only sessions get the whole configuration.
+        if mode == "guided":
+            log, result = _setup_space(workspace_path, session_id, base_url.rstrip("/"))
+        else:
+            log, result = _setup_workspace(workspace_path, session_id, base_url.rstrip("/"))
         result["derived_replay"] = cache["metadata"]
     except Exception:
         shutil.rmtree(workspace_dir, ignore_errors=True)
@@ -432,6 +528,40 @@ def create_session(base_url: str, mode: str = "guided") -> dict:
     )
     logger.info("demo session created", extra={"demo_session_id": session_id, "mode": mode})
     return get_session(session_id)
+
+
+def apply_request_stage(session_id: str, stage: str) -> dict:
+    """Apply one prepared request stage to an active guided session.
+
+    Each stage runs the same real StoreLens operations the prepared workspace
+    uses, so a walkthrough step reports work that actually happened. Applying a
+    stage that already exists is a no-op, which keeps refreshes and retries safe.
+    """
+    if stage not in REQUEST_STAGES:
+        raise HTTPException(422, f"stage must be one of {REQUEST_STAGE_ORDER}")
+    row = _session_row(session_id)
+    if row["status"] not in ACTIVE_STATES:
+        raise HTTPException(409, "applying a demo request stage requires an active demo")
+    if not _session_cache_current(row):
+        raise HTTPException(409, "demo session belongs to an obsolete derived cache")
+    apply_stage, already_applied = REQUEST_STAGES[stage]
+    result = db.jload(row["result_json"], {})
+    log = db.jload(row["action_log_json"], [])
+    index = REQUEST_STAGE_ORDER.index(stage)
+    for earlier in REQUEST_STAGE_ORDER[:index]:
+        if not REQUEST_STAGES[earlier][1](result):
+            raise HTTPException(409, f"demo request stage '{earlier}' must be applied first")
+    if already_applied(result):
+        return {"session_id": session_id, "stage": stage, "applied": False, "result": result}
+    with db.using_database(row["workspace_path"]):
+        apply_stage(load_recipe(), result, log)
+    _normal_ex(
+        "UPDATE demo_sessions SET action_log_json=?,result_json=?,updated_at=? WHERE id=?",
+        (json.dumps(log), json.dumps(result), db.now(), session_id),
+    )
+    logger.info("demo request stage applied",
+                extra={"demo_session_id": session_id, "stage": stage})
+    return {"session_id": session_id, "stage": stage, "applied": True, "result": result}
 
 
 def media_path(session_id: str, camera_key: str) -> Path:

@@ -23,6 +23,10 @@ class PracticeCalibrationIn(BaseModel):
     source_id: int
 
 
+class RequestStageIn(BaseModel):
+    stage: str
+
+
 @router.get("/assets")
 def get_asset_status():
     return demo_runtime.asset_status()
@@ -72,6 +76,12 @@ def restore_practice_calibration(session_id: str, body: PracticeCalibrationIn):
              summary="Restore the prepared demo map after a practice plan trace")
 def restore_practice_space(session_id: str):
     return demo_runtime.restore_practice_space(session_id)
+
+
+@router.post("/sessions/{session_id}/apply-request",
+             summary="Apply one prepared request stage to a guided demo session")
+def apply_request_stage(session_id: str, body: RequestStageIn):
+    return demo_runtime.apply_request_stage(session_id, body.stage)
 
 
 @router.post("/sessions/{session_id}/discard")

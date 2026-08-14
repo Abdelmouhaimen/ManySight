@@ -1203,6 +1203,9 @@ function CalibrationMap({ store, zones, sources, svgRef, onClick, points, pendin
       store={store}
       zones={zones}
       sources={sources}
+      // The same plan image the workbench shows, so matching points has a
+      // recognisable floor to aim at instead of an empty grid.
+      backgroundUrl={demoSessionId() ? assetUrl("/demo/plan.png") : null}
       draft={[]}
       selectedSourceId={null}
       tool="select"

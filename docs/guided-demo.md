@@ -152,12 +152,33 @@ small progress card, a slight dimming layer, and a spotlight around the control 
 the current step is about.
 
 The card lives at the top left of the content area, clear of the sidebar, and survives
-navigation and a browser refresh for as long as its demo session is active. It reports
+navigation and a browser refresh for as long as its demo session is active. It stays
+parked: a spotlight covering most of the viewport is treated as a region rather than a
+control, a slight clip is tolerated, and the card only leaves its home corner when it
+would genuinely cover the element being explained — returning as soon as that step ends.
+Steps are paced to be watched rather than skimmed, and each holds its finished state on
+screen before moving on. It reports
 what is happening now, what is already complete, what happens next, and whether
 StoreLens is doing something automatically or waiting for a click. States are `pending`,
 `active`, `loading`, `complete`, `error`, and `waiting_for_user`, each shown with an icon
 and text rather than colour alone. Escape releases the dimming, the card can be collapsed
 or hidden, and **Exit demo** always remains reachable.
+
+A guided session is deliberately incomplete when it starts. `POST /api/v1/demo/sessions`
+with `mode=guided` creates only the camera and space setup — the mapped space, the four
+sources with their placements and imported calibrations, and the calibrated multiview
+group. The monitored zone, its two camera views, the saved query, the alert rule, and the
+dashboard do not exist yet, so nothing on screen claims to exist before the step that
+explains it: the floor map has no Aisle 04, and no camera carries a zone trace.
+
+The walkthrough then applies those stages one at a time through
+`POST /api/v1/demo/sessions/{id}/apply-request` with a `stage` of `zone_seed`,
+`zone_extend`, `query`, `alert`, or `dashboard`. Each stage runs the same real StoreLens
+operations the prepared workspace uses, in the same order, and appends the same
+action-log entries; stages are ordered (a stage refuses to run before its prerequisite)
+and idempotent, so a refresh or a retry never duplicates geometry. `mode=learn`, the
+explore-only demo, is still configured up front, and the offline cache builder still
+constructs the whole workspace in one pass, so the derived replay cache is unaffected.
 
 Two teaching paths are offered once the four demo sources are ready:
 
@@ -166,7 +187,9 @@ Two teaching paths are offered once the four demo sources are ready:
 - **Show me how** navigates to the real Setup area and spotlights the actual
   **Digitize plan** control, then the actual **Calibrate camera** control for Camera 1.
   The user works in the real digitizer and the real calibration dialog; the tour never
-  substitutes its own controls.
+  substitutes its own controls. Both the digitizer canvas and the calibration dialog's
+  floor map keep the bird's-eye plan behind them, so matching points has a recognisable
+  floor to aim at.
 
 The practice detour writes real data, so it is followed by a restore step. Saving a
 traced plan legitimately clears placements and floor calibrations, and
@@ -204,8 +227,9 @@ Everything the card reports is read from real state: session results and action 
 demo-workspace sources, zones, zone views, saved query, alert rule and dashboard, and the
 committed replay cache. Progress presentation is sequenced, never invented — the four
 source rows appear one at a time because their real IDs already exist, an uncalibrated
-camera is never shown as calibrated, and the alert step reports the occupancy StoreLens
-derived for the sample that actually fired rather than a fixed number. The walkthrough
+camera is never shown as calibrated, a camera's zone trace appears only once that zone
+view has been created, and the alert step reports the occupancy StoreLens derived for the
+sample that actually fired rather than a fixed number. The walkthrough
 performs no projection, fusion, query, or alert evaluation of its own and takes no part in
 playback timing.
 

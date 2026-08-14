@@ -151,6 +151,39 @@ test("an inset keeps the card clear of persistent chrome such as the sidebar", (
   assert.equal(placement.top, 84);
 });
 
+test("the card stays parked for whole-region spotlights and slight clips", () => {
+  const card = { width: 340, height: 320 };
+  const region = spotlightGeometry({ top: 260, left: 220, width: 1200, height: 620 },
+    { viewport: VIEWPORT });
+  const overRegion = cardPlacement({ card, obstacles: [region], viewport: VIEWPORT,
+    inset: { top: 84, left: 226, right: CARD_MARGIN, bottom: CARD_MARGIN } });
+  assert.equal(overRegion.placement, "top-left",
+    "a spotlight covering most of the page is a region, not something to dodge");
+
+  const clipped = spotlightGeometry({ top: 380, left: 226, width: 300, height: 120 },
+    { viewport: VIEWPORT });
+  const tolerant = cardPlacement({ card, obstacles: [clipped], viewport: VIEWPORT,
+    inset: { top: 84, left: 226, right: CARD_MARGIN, bottom: CARD_MARGIN } });
+  assert.equal(tolerant.placement, "top-left", "a small clip is tolerated");
+
+  const covering = spotlightGeometry({ top: 90, left: 230, width: 340, height: 300 },
+    { viewport: VIEWPORT });
+  const moved = cardPlacement({ card, obstacles: [covering], viewport: VIEWPORT,
+    inset: { top: 84, left: 226, right: CARD_MARGIN, bottom: CARD_MARGIN } });
+  assert.notEqual(moved.placement, "top-left", "a control it would really cover still moves it");
+});
+
+test("passing the current placement keeps the card where it already is", () => {
+  const card = { width: 340, height: 320 };
+  const rightSide = spotlightGeometry({ top: 90, left: 1000, width: 380, height: 300 },
+    { viewport: VIEWPORT });
+  const first = cardPlacement({ card, obstacles: [rightSide], viewport: VIEWPORT });
+  assert.equal(first.placement, "top-left");
+  const sticky = cardPlacement({ card, obstacles: [rightSide], viewport: VIEWPORT,
+    preferred: "bottom-left" });
+  assert.equal(sticky.placement, "bottom-left", "an already-clear position is not second-guessed");
+});
+
 test("a narrow viewport shrinks the card box instead of pushing it off screen", () => {
   const narrow = { width: 420, height: 640 };
   const placement = cardPlacement({ card: { width: 340, height: 700 }, hole: null, viewport: narrow });

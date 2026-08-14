@@ -29,14 +29,18 @@ test("the tour starts on the prepared-workspace step and reflects real session s
   assert.deepEqual(tourChecklist(state).map((row) => row.status), TOUR_GROUPS.map(() => "pending"));
 });
 
-test("an automatic step shows its completion before advancing", () => {
+test("an automatic step stays on screen long enough to read, then advances", () => {
+  const minMs = tourStepById("workspace").minMs;
+  assert.ok(minMs >= 1000, "steps are paced for a first-time viewer");
   let state = initialTourState("session-1", 0);
-  state = evaluateTour(state, observed(), 100);
+  state = evaluateTour(state, observed(), minMs - 1);
+  assert.equal(state.status, "loading", "already-true work is still held on screen");
+  state = evaluateTour(state, observed(), minMs);
   assert.equal(state.status, "complete");
-  assert.equal(state.stepId, "workspace", "the finished step stays visible briefly");
-  state = evaluateTour(state, observed(), 100 + COMPLETION_DWELL_MS - 1);
+  assert.equal(state.stepId, "workspace", "the finished step stays visible");
+  state = evaluateTour(state, observed(), minMs + COMPLETION_DWELL_MS - 1);
   assert.equal(state.stepId, "workspace");
-  state = evaluateTour(state, observed(), 100 + COMPLETION_DWELL_MS);
+  state = evaluateTour(state, observed(), minMs + COMPLETION_DWELL_MS);
   assert.equal(state.stepId, "sources");
   assert.equal(state.status, "loading");
 });
@@ -120,9 +124,11 @@ test("the practice detour restores prepared geometry before continuing", () => {
   assert.equal(step.effect, "restorePracticeSpace");
   const state = { ...initialTourState("session-1", 0), branch: "manual", stepId: "space-restore",
     status: "loading" };
-  assert.equal(evaluateTour(state, observed({ events: { planSavedAt: 1 } }), 500).status, "loading");
+  const held = step.minMs;
+  assert.equal(evaluateTour(state, observed({ events: { planSavedAt: 1 } }), held).status, "loading");
   const restored = observed({ events: { planSavedAt: 1, planRestoredAt: 2 } });
-  assert.equal(evaluateTour(state, restored, 500).status, "complete");
+  assert.equal(evaluateTour(state, restored, held - 1).status, "loading");
+  assert.equal(evaluateTour(state, restored, held).status, "complete");
 });
 
 test("manual calibration teaches Camera 1 and reports the remaining validated cameras", () => {

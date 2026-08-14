@@ -48,6 +48,15 @@ export function useDemoReplay(demoId) {
     return () => { cancelled = true; };
   }, [demoId, synchronize]);
 
+  /** Re-read the session payload only. The clock anchor is deliberately left
+   * alone, so refreshing what the workspace contains never re-times playback. */
+  const refreshSession = useCallback(async () => {
+    if (!demoId) return null;
+    const next = await api.get(`/demo/sessions/${demoId}`);
+    setSession(next);
+    return next;
+  }, [demoId]);
+
   useEffect(() => {
     if (!session) return undefined;
     let request;
@@ -65,5 +74,5 @@ export function useDemoReplay(demoId) {
   }, [session?.id, session?.duration_s]);
 
   const replay = useMemo(() => replayStateAt(cache, clock.position, clock.epoch), [cache, clock.position, clock.epoch]);
-  return { session, cache, clock, replay, error, synchronize };
+  return { session, cache, clock, replay, error, synchronize, refreshSession };
 }

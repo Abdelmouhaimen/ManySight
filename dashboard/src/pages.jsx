@@ -801,8 +801,8 @@ export function ConfigurePage({ notify, refreshShell }) {
     return () => window.removeEventListener("storelens-setup-tab", onRequestedTab);
   }, []);
   useEffect(() => onTourEvent((detail) => {
-    // Restoring prepared demo geometry changes this workspace behind the view.
-    if (detail.kind === "plan-restored") {
+    // The guided demo creates and restores real geometry behind this view.
+    if (detail.kind === "workspace-changed") {
       load();
       refreshShell?.();
     }

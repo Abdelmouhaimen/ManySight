@@ -43,6 +43,89 @@ def test_canonical_fixture_is_synchronized_and_worker_raw_only():
     assert [camera["key"] for camera in recipe["cameras"] if camera.get("zone_view_px")] == CAMERAS[2:]
 
 
+def _apply_all_stages(client, session_id: str) -> dict:
+    from server.services.demo_runtime import REQUEST_STAGE_ORDER
+
+    latest = None
+    for stage in REQUEST_STAGE_ORDER:
+        response = client.post(
+            f"/api/v1/demo/sessions/{session_id}/apply-request", json={"stage": stage})
+        assert response.status_code == 200, response.text
+        assert response.json()["applied"] is True
+        latest = response.json()
+    return latest
+
+
+def test_guided_session_starts_with_camera_and_space_setup_only(client, tmp_path, monkeypatch):
+    _assets(tmp_path, monkeypatch)
+    session = client.post("/api/v1/demo/sessions", json={"mode": "guided"}).json()
+    headers = {"X-StoreLens-Demo-Session": session["id"]}
+    # Prepared: the space, the four cameras, their calibrations, and the group.
+    assert len(client.get("/api/v1/sources", headers=headers).json()) == 4
+    assert len(client.get("/api/v1/calibrations", headers=headers).json()) == 4
+    assert len(client.get("/api/v1/multiview/groups", headers=headers).json()) == 1
+    assert session["result"]["group_id"]
+    # Not yet created: the monitored zone and everything derived from it.
+    assert client.get("/api/v1/zones", headers=headers).json() == []
+    assert client.get("/api/v1/zone-views", headers=headers).json() == []
+    assert client.get("/api/v1/queries", headers=headers).json() == []
+    assert client.get("/api/v1/alert-rules", headers=headers).json() == []
+    assert client.get("/api/v1/dashboards", headers=headers).json() == []
+    assert "zone_id" not in session["result"]
+    assert "query_id" not in session["result"]
+    assert all(overlay["zones"] == [] for overlay in session["result"]["camera_overlays"].values()), \
+        "no camera claims a zone trace before that zone view exists"
+
+    # A learn-by-exploring session is configured up front, as before.
+    learn = client.post("/api/v1/demo/sessions", json={"mode": "learn"}).json()
+    learn_headers = {"X-StoreLens-Demo-Session": learn["id"]}
+    assert len(client.get("/api/v1/zones", headers=learn_headers).json()) == 1
+    assert learn["result"]["query_id"] and learn["result"]["alert_rule_id"]
+    assert learn["result"]["dashboard_id"]
+    for camera in CAMERAS[2:]:
+        assert learn["result"]["camera_overlays"][camera]["zones"][0]["name"] == "Aisle 04"
+    client.post(f"/api/v1/demo/sessions/{learn['id']}/discard")
+    client.post(f"/api/v1/demo/sessions/{session['id']}/discard")
+
+
+def test_request_stages_are_ordered_and_idempotent(client, tmp_path, monkeypatch):
+    _assets(tmp_path, monkeypatch)
+    session = client.post("/api/v1/demo/sessions", json={"mode": "guided"}).json()
+    headers = {"X-StoreLens-Demo-Session": session["id"]}
+    apply_url = f"/api/v1/demo/sessions/{session['id']}/apply-request"
+    assert client.post(apply_url, json={"stage": "nonsense"}).status_code == 422
+    assert client.post(apply_url, json={"stage": "query"}).status_code == 409, \
+        "the zone must exist before the query that filters on it"
+
+    first = client.post(apply_url, json={"stage": "zone_seed"})
+    assert first.status_code == 200, first.text
+    assert first.json()["applied"] is True
+    zone_id = first.json()["result"]["zone_id"]
+    assert len(client.get("/api/v1/zones", headers=headers).json()) == 1
+    assert len(client.get("/api/v1/zone-views", headers=headers).json()) == 1
+    overlays = client.get(f"/api/v1/demo/sessions/{session['id']}").json()["result"]["camera_overlays"]
+    assert overlays[CAMERAS[2]]["zones"][0]["name"] == "Aisle 04"
+    assert overlays[CAMERAS[3]]["zones"] == [], "camera 4 has not contributed yet"
+
+    repeat = client.post(apply_url, json={"stage": "zone_seed"})
+    assert repeat.status_code == 200
+    assert repeat.json()["applied"] is False
+    assert repeat.json()["result"]["zone_id"] == zone_id
+    assert len(client.get("/api/v1/zones", headers=headers).json()) == 1
+    assert len(client.get("/api/v1/zone-views", headers=headers).json()) == 1
+
+    assert client.post(apply_url, json={"stage": "zone_extend"}).json()["applied"] is True
+    assert client.post(apply_url, json={"stage": "zone_extend"}).json()["applied"] is False
+    assert len(client.get("/api/v1/zone-views", headers=headers).json()) == 2
+    assert client.post(apply_url, json={"stage": "alert"}).status_code == 409
+    assert client.post(apply_url, json={"stage": "query"}).json()["applied"] is True
+    assert client.post(apply_url, json={"stage": "alert"}).json()["applied"] is True
+    assert client.post(apply_url, json={"stage": "dashboard"}).json()["applied"] is True
+    assert len(client.get("/api/v1/alert-rules", headers=headers).json()) == 1
+    assert len(client.get("/api/v1/dashboards", headers=headers).json()) == 1
+    client.post(f"/api/v1/demo/sessions/{session['id']}/discard")
+
+
 def test_demo_workspace_is_isolated_and_cached_replay_is_truthful(client, tmp_path, monkeypatch):
     _assets(tmp_path, monkeypatch)
     assert client.get("/api/v1/sources").json() == []
@@ -53,6 +136,9 @@ def test_demo_workspace_is_isolated_and_cached_replay_is_truthful(client, tmp_pa
     assert len(client.get("/api/v1/sources", headers=headers).json()) == 4
     assert client.get("/api/v1/sources").json() == []
     assert client.get("/api/v1/jobs", headers=headers).json() == []
+    assert all(item["status"] == "completed" for item in session["action_log"])
+    _apply_all_stages(client, session["id"])
+    session = client.get(f"/api/v1/demo/sessions/{session['id']}").json()
     assert all(item["status"] == "completed" for item in session["action_log"])
     assert session["result"]["query_id"]
     overlays = session["result"]["camera_overlays"]
@@ -100,7 +186,7 @@ def test_promotion_copies_setup_only_by_default(client, tmp_path, monkeypatch):
     _assets(tmp_path, monkeypatch)
     from server.services import demo_media
     monkeypatch.setattr(demo_media, "start", lambda _root: "http://127.0.0.1:8765")
-    created = client.post("/api/v1/demo/sessions", json={}).json()
+    created = client.post("/api/v1/demo/sessions", json={"mode": "learn"}).json()
     promoted = client.post(
         f"/api/v1/demo/sessions/{created['id']}/promote",
         json={"include_recorded_observations": False},
@@ -298,9 +384,15 @@ def test_practice_plan_trace_is_restored_to_the_prepared_demo_space(client, tmp_
         assert after["calibration"]["provider"] == "nvidia_mv3dt"
         assert after["calibration"]["H"] == before["calibration"]["H"]
         assert after["placement"]["x"] == pytest.approx(before["placement"]["x"])
-    # The prepared zone, query, alert, dashboard, and replay cache are untouched.
-    assert client.get("/api/v1/zones", headers=headers).json()[0]["name"] == "Aisle 04"
     assert client.get(f"/api/v1/demo/sessions/{session['id']}/replay-cache").status_code == 200
+    # The walkthrough continues from restored geometry: the canonical zone still
+    # projects into the prepared metric frame.
+    _apply_all_stages(client, session["id"])
+    zone = client.get("/api/v1/zones", headers=headers).json()[0]
+    assert zone["name"] == "Aisle 04"
+    assert zone["geometry"]["type"] == "Polygon"
+    xs = [point[0] for ring in zone["geometry"]["coordinates"] for point in ring]
+    assert max(xs) <= prepared_store["width_m"] + 1e-6
     client.post(f"/api/v1/demo/sessions/{session['id']}/discard")
 
 
@@ -320,7 +412,7 @@ def test_opt_in_observation_promotion_remaps_sources_and_drops_demo_zone_links(
     from server.services import demo_media
     monkeypatch.setattr(demo_media, "start", lambda _root: "http://127.0.0.1:8765")
     existing = client.post("/api/v1/sources", json={"name": "Existing", "kind": "webcam"}).json()
-    session = client.post("/api/v1/demo/sessions", json={}).json()
+    session = client.post("/api/v1/demo/sessions", json={"mode": "learn"}).json()
     client.post(f"/api/v1/demo/sessions/{session['id']}/start")
     time.sleep(0.4)
     promoted = client.post(

@@ -3,6 +3,7 @@ import { RefreshCw, Trash2 } from "lucide-react";
 import { api } from "./api.js";
 import { AnalysisCard } from "./analytics.jsx";
 import { EmptyState, ErrorState, LoadingState, PageHeader } from "./components.jsx";
+import { onTourEvent } from "./demo-tour.jsx";
 
 export function GeneratedDashboardPage({ liveTick = 0, notify, demoReplay }) {
   const [state, setState] = useState({ loading: true, error: null, dashboards: [], queries: [], context: {} });
@@ -21,6 +22,10 @@ export function GeneratedDashboardPage({ liveTick = 0, notify, demoReplay }) {
     }
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // The guided demo creates its dashboard while this page is open.
+  useEffect(() => onTourEvent(
+    (detail) => { if (detail.kind === "workspace-changed") load(); },
+  ), []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!liveTick) return;
     const timer = window.setTimeout(load, 500);

@@ -10,6 +10,10 @@ export const TOUR_TARGET_ATTRIBUTE = "data-demo-tour";
 export const DEFAULT_PADDING = 10;
 export const DEFAULT_RADIUS = 14;
 export const CARD_MARGIN = 16;
+/** A spotlight covering more of the viewport than this is a region, not a control. */
+export const REGION_OBSTACLE_RATIO = 0.3;
+/** Overlap this small (as a share of the card) is not worth moving the card for. */
+export const TOLERATED_OVERLAP_RATIO = 0.12;
 /* Enough attempts (~9s of backoff) for a route change plus the target view's own
  * data loading, so a slow page never turns into a false "control not found". */
 export const MAX_TARGET_ATTEMPTS = 20;
@@ -120,10 +124,19 @@ function placementRect(placement, card, viewport, inset) {
  * element and any open StoreLens dialog. Preference order starts at the
  * documented top-left position below the existing header area; the caller's
  * inset keeps it clear of persistent chrome such as the sidebar.
+ *
+ * The card is meant to feel parked. Two rules keep it still: a spotlight that
+ * covers most of the viewport is a region rather than a control, so there is
+ * nothing to dodge, and a slight clip of an obstacle is tolerated instead of
+ * chasing corners. Pass the current placement as `preferred` for hysteresis.
  */
 export function cardPlacement({ card, hole, obstacles, viewport, inset, preferred = "top-left" } = {}) {
   if (!card || !viewport) return null;
-  const blocked = [...(obstacles || []), hole].filter(Boolean);
+  const viewportArea = Math.max(1, viewport.width * viewport.height);
+  const blocked = [...(obstacles || []), hole]
+    .filter(Boolean)
+    .filter((obstacle) => area(obstacle) / viewportArea <= REGION_OBSTACLE_RATIO);
+  const tolerated = area(card) * TOLERATED_OVERLAP_RATIO;
   const box = {
     top: inset?.top ?? 84,
     right: inset?.right ?? CARD_MARGIN,
@@ -132,11 +145,10 @@ export function cardPlacement({ card, hole, obstacles, viewport, inset, preferre
   };
   const order = [preferred, ...PLACEMENTS.filter((value) => value !== preferred)];
   const candidates = order.map((placement) => placementRect(placement, card, viewport, box));
-  const clear = candidates.find((candidate) =>
-    blocked.every((obstacle) => !rectsOverlap(candidate, obstacle, CARD_MARGIN)));
-  if (clear) return clear;
   const cost = (candidate) => blocked.reduce((total, obstacle) =>
     total + overlapArea(candidate, obstacle), 0);
+  const clear = candidates.find((candidate) => cost(candidate) <= tolerated);
+  if (clear) return clear;
   return candidates.reduce((best, candidate) =>
     cost(candidate) < cost(best) ? candidate : best, candidates[0]);
 }

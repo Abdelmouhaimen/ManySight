@@ -86,7 +86,7 @@ async function loadWorkspace() {
  * performs is restoring prepared demo geometry after the optional practice
  * detour, so both setup paths converge on the same validated state.
  */
-export function useDemoTour({ session, cache, replay } = {}) {
+export function useDemoTour({ session, cache, replay, refreshSession } = {}) {
   const sessionId = session?.mode === "guided" ? session.id : null;
   const [state, setState] = useState(null);
   const [events, setEvents] = useState({});
@@ -158,17 +158,40 @@ export function useDemoTour({ session, cache, replay } = {}) {
     try {
       const result = await api.post(`/demo/sessions/${id}/restore-practice-space`, {});
       reportTourEvent({ kind: "plan-restored", at: Date.now(), result });
+      reportTourEvent({ kind: "workspace-changed", stage: "practice-space-restore" });
     } catch (error) {
       console.warn("guided tour could not restore the prepared demo space", error);
       reportTourEvent({ kind: "plan-restored", at: Date.now() });
     }
   }, []);
 
+  /**
+   * Ask the demo session to apply one prepared request stage. The zone, query,
+   * alert, and dashboard are created here — at the step that explains them — by
+   * the same real operations the prepared workspace uses, so the walkthrough
+   * reports work that just happened instead of work done before it started.
+   */
+  const applyRequestStage = useCallback(async (stage) => {
+    const id = demoSessionId();
+    if (!id) return;
+    try {
+      await api.post(`/demo/sessions/${id}/apply-request`, { stage });
+    } catch (error) {
+      console.warn(`guided tour could not apply the "${stage}" demo request stage`, error);
+    }
+    await refreshSession?.().catch(() => {});
+    await refreshWorkspace();
+    reportTourEvent({ kind: "workspace-changed", stage });
+  }, [refreshSession, refreshWorkspace]);
+
   useEffect(() => {
     if (!step?.effect || dismissed || effectRun.current.has(step.id)) return;
     effectRun.current.add(step.id);
     if (step.effect === "restorePracticeSpace") restorePracticeSpace();
-  }, [step?.id, step?.effect, dismissed, restorePracticeSpace]);
+    else if (step.effect.startsWith("applyRequest:")) {
+      applyRequestStage(step.effect.slice("applyRequest:".length));
+    }
+  }, [step?.id, step?.effect, dismissed, restorePracticeSpace, applyRequestStage]);
 
   // Target resolution: keep retrying while a route change or lazy view renders,
   // then report a safe fallback instead of advancing a required interaction.
@@ -382,6 +405,7 @@ export function TourCard({ tour }) {
  */
 export function DemoTourLayer({ tour }) {
   const anchorRef = useRef(null);
+  const placementRef = useRef(null);
   const [cardSize, setCardSize] = useState({ width: 328, height: 300 });
   const [chrome, setChrome] = useState({ dialog: null, sidebarRight: 0 });
 
@@ -461,6 +485,8 @@ export function DemoTourLayer({ tour }) {
   // A wide StoreLens dialog leaves only a narrow gutter, so the card slims down
   // rather than sitting on top of the controls the step is talking about.
   const beside = Boolean(chrome.dialog) && !hole;
+  // The card should feel parked, not restless: its last corner is tried first,
+  // so it only moves when it would actually cover the thing being explained.
   const placement = cardPlacement({
     card: beside ? { width: NARROW_CARD_WIDTH, height: cardSize.height } : cardSize,
     obstacles: [hole, chrome.dialog],
@@ -473,8 +499,11 @@ export function DemoTourLayer({ tour }) {
       right: CARD_GUTTER,
       bottom: CARD_GUTTER,
     },
-    preferred: "top-left",
+    // Stickiness only applies while something is spotlighted; a step with
+    // nothing to dodge always returns the card to its home corner.
+    preferred: hole || chrome.dialog ? placementRef.current || "top-left" : "top-left",
   });
+  placementRef.current = placement?.placement || placementRef.current;
   // Two portals, because `position: fixed` always creates a stacking context:
   // the dimming layer must stay *below* StoreLens dialogs (120) while the card
   // stays above them, and one shared parent could not do both.

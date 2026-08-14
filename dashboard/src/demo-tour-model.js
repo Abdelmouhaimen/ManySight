@@ -10,12 +10,15 @@
  * be exercised without a browser.
  */
 
-export const REVEAL_STAGGER_MS = 320;
-export const COMPLETION_DWELL_MS = 900;
-export const STEP_TIMEOUT_MS = 20000;
+/* Pacing is deliberately unhurried: every step is something a first-time viewer
+ * is meant to read and watch happen in the real interface. `minMs` on a step
+ * holds it on screen for at least that long once its real work is done. */
+export const REVEAL_STAGGER_MS = 600;
+export const COMPLETION_DWELL_MS = 1900;
+export const STEP_TIMEOUT_MS = 25000;
 /* The recorded threshold event can already be active when playback starts, so
- * the card watches the real replay for a moment before reacting to it. */
-export const WATCH_MIN_MS = 2600;
+ * the card watches the real replay for a while before reacting to it. */
+export const WATCH_MIN_MS = 4000;
 
 /** Checklist rows shown in the progress card, in order. */
 export const TOUR_GROUPS = [
@@ -58,12 +61,24 @@ function cameraItems(observed, ready = (camera) => Boolean(camera.sourceId), suf
   }));
 }
 
+/** Does this camera's zone view exist in the demo workspace yet? */
+function zoneCameraAdded(observed, index) {
+  return observed.zoneCameras.some((camera) => camera.index === index && camera.viewAdded);
+}
+
+function zoneCameraLine(observed, index) {
+  const camera = observed.cameras.find((item) => item.index === index);
+  return line(`${camera?.name || `Camera ${index}`} view added`,
+    zoneCameraAdded(observed, index) ? "complete" : "active");
+}
+
 const STEPS = [
   {
     id: "workspace",
     group: "workspace",
     type: "automatic",
     route: "demo",
+    minMs: 1400,
     title: "Preparing your demo",
     description: "Creating a temporary StoreLens workspace…",
     detail: (observed) => [line("Demo workspace ready", observed.workspaceReady ? "complete" : "active")],
@@ -103,6 +118,7 @@ const STEPS = [
     branch: "auto",
     type: "automatic",
     route: "demo",
+    minMs: 1800,
     title: "Preparing the physical space",
     description: "Using the prepared demo floor plan and camera positions.",
     detail: (observed, elapsed) => staged([
@@ -167,6 +183,7 @@ const STEPS = [
     type: "automatic",
     route: "setup",
     effect: "restorePracticeSpace",
+    minMs: 1800,
     title: "Physical map created",
     description:
       "StoreLens compares your trace, then restores the prepared demo plan so the recorded replay keeps its exact geometry.",
@@ -224,6 +241,7 @@ const STEPS = [
     branch: "manual",
     type: "automatic",
     route: "setup",
+    minMs: 1800,
     title: "Preparing remaining cameras",
     description: "Cameras 2 to 4 use their validated imported calibrations.",
     detail: (observed, elapsed) => staged(
@@ -269,12 +287,12 @@ const STEPS = [
     type: "automatic",
     route: "demo",
     target: "camera-3-tile",
+    effect: "applyRequest:zone_seed",
+    minMs: 3200,
     title: "Creating Aisle 04",
-    description: "This camera sees part of the physical area.",
-    detail: (observed) => [
-      line("Camera 3 view added", observed.zoneCameras[0]?.viewAdded ? "complete" : "active"),
-    ],
-    complete: (observed) => Boolean(observed.zoneCameras[0]?.viewAdded),
+    description: "This camera sees part of the physical area. Watch its floor trace appear.",
+    detail: (observed) => [zoneCameraLine(observed, 3)],
+    complete: (observed) => zoneCameraAdded(observed, 3),
   },
   {
     id: "zone-camera-4",
@@ -282,12 +300,12 @@ const STEPS = [
     type: "automatic",
     route: "demo",
     target: "camera-4-tile",
+    effect: "applyRequest:zone_extend",
+    minMs: 3200,
     title: "Creating Aisle 04",
     description: "Another camera sees the same physical zone from a different view.",
-    detail: (observed) => [
-      line("Camera 4 view added", observed.zoneCameras[1]?.viewAdded ? "complete" : "active"),
-    ],
-    complete: (observed) => Boolean(observed.zoneCameras[1]?.viewAdded),
+    detail: (observed) => [zoneCameraLine(observed, 4)],
+    complete: (observed) => zoneCameraAdded(observed, 4),
   },
   {
     id: "zone-canonical",
@@ -296,16 +314,22 @@ const STEPS = [
     route: "setup",
     setupTab: "space",
     target: "floor-map",
+    minMs: 3200,
     title: "One physical zone",
-    description: "The two camera views refer to the same metric floor area.",
-    detail: (observed) => [line(`${observed.zoneName || "Zone"} created`, observed.zoneId ? "complete" : "active")],
-    complete: (observed) => Boolean(observed.zoneId),
+    description: "Both camera views project into the same metric floor area.",
+    detail: (observed) => [
+      line(`${observed.zoneName || "Zone"} created`, observed.zoneId ? "complete" : "active"),
+    ],
+    complete: (observed) => Boolean(observed.zoneId)
+      && observed.zoneCameras.filter((camera) => camera.viewAdded).length >= 2,
   },
   {
     id: "query",
     group: "query",
     type: "automatic",
     route: "setup",
+    effect: "applyRequest:query",
+    minMs: 2400,
     title: "Creating occupancy query",
     description: "One saved question, derived centrally by StoreLens.",
     detail: (observed) => [line(observed.queryName || "Occupancy query", observed.queryId ? "complete" : "active")],
@@ -316,6 +340,8 @@ const STEPS = [
     group: "alert",
     type: "automatic",
     route: "setup",
+    effect: "applyRequest:alert",
+    minMs: 2400,
     title: "Creating alert",
     description: (observed) => observed.alertCondition
       ? `Trigger when: ${observed.queryName || "the saved query"} ${observed.alertCondition}`
@@ -329,6 +355,8 @@ const STEPS = [
     type: "automatic",
     route: "overview",
     target: "dashboard-kpi",
+    effect: "applyRequest:dashboard",
+    minMs: 2400,
     title: "Creating dashboard",
     description: "The widget is a view over the saved query — not a second calculation.",
     detail: (observed) => [
@@ -352,13 +380,14 @@ const STEPS = [
     route: "demo",
     dim: false,
     timeoutMs: null,
+    minMs: WATCH_MIN_MS,
     title: "Replay is running",
     description: "Video, boxes, fused positions, KPI, and alerts follow one master clock.",
     detail: (observed) => [
       line(`Fused people in ${observed.zoneName || "the zone"}: ${observed.kpiValue ?? "—"}`,
         observed.alertEvent ? "complete" : "active"),
     ],
-    complete: (observed, elapsed) => Boolean(observed.alertEvent) && elapsed >= WATCH_MIN_MS,
+    complete: (observed) => Boolean(observed.alertEvent),
   },
   {
     id: "alert-reached",
@@ -479,7 +508,9 @@ export function evaluateTour(state, observed, nowMs = 0) {
     return nowMs - state.completedAt >= COMPLETION_DWELL_MS ? advanceTour(state, nowMs) : state;
   }
   const done = step.complete ? Boolean(step.complete(observed, elapsed)) : false;
-  if (done) return { ...state, status: "complete", completedAt: nowMs, error: null };
+  if (done && elapsed >= (step.minMs || 0)) {
+    return { ...state, status: "complete", completedAt: nowMs, error: null };
+  }
   if (step.type === "automatic" && state.status !== "error") {
     const timeout = step.timeoutMs === undefined ? STEP_TIMEOUT_MS : step.timeoutMs;
     if (timeout && elapsed > timeout) {
