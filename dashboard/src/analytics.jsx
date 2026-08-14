@@ -21,9 +21,10 @@ const SUBJECT_LABELS = {
   fused_entity: "Anonymous fused tracks",
 };
 
-function useQueryResult(definition, rangeSeconds, liveTick) {
+function useQueryResult(definition, rangeSeconds, liveTick, enabled = true) {
   const [state, setState] = useState({ loading: true, data: null, error: null });
   useEffect(() => {
+    if (!enabled) return undefined;
     let cancelled = false;
     const until = Date.now() / 1000;
     setState((current) => ({ ...current, loading: true }));
@@ -40,7 +41,7 @@ function useQueryResult(definition, rangeSeconds, liveTick) {
     });
     return () => { cancelled = true; };
   }, [rangeSeconds, JSON.stringify(definition.measures), JSON.stringify(definition.filters),
-    JSON.stringify(definition.grouping), definition.subject, liveTick]); // eslint-disable-line react-hooks/exhaustive-deps
+    JSON.stringify(definition.grouping), definition.subject, liveTick, enabled]); // eslint-disable-line react-hooks/exhaustive-deps
   return state;
 }
 
@@ -111,10 +112,10 @@ function QueryBody({ definition, context, result, loading, error }) {
   return <DataTable columns={columns} rows={rows} empty="No rows for this query." />;
 }
 
-export function AnalysisCard({ definition, rangeSeconds, context, liveTick }) {
-  const { loading, data, error } = useQueryResult(definition, rangeSeconds, liveTick);
+export function AnalysisCard({ definition, rangeSeconds, context, liveTick, resultOverride = null }) {
+  const { loading, data, error } = useQueryResult(definition, rangeSeconds, liveTick, !resultOverride);
   return <Panel title={definition.name} subtitle={definition.question || SUBJECT_LABELS[definition.subject]}>
-    <QueryBody definition={definition} context={context} result={data} loading={loading} error={error} />
+    <QueryBody definition={definition} context={context} result={resultOverride || data} loading={resultOverride ? false : loading} error={resultOverride ? null : error} />
     {definition.migration_note && <p className="definition-note">Migrated definition: {definition.migration_note}</p>}
   </Panel>;
 }

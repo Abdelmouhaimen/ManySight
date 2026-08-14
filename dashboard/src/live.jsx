@@ -17,6 +17,7 @@ import {
   latestFrameTracks,
   reconcileCompletedFrames,
 } from "./live-state.js";
+import { trackColor } from "./live-colors.js";
 import {
   Badge,
   EmptyState,
@@ -39,16 +40,6 @@ function scopedTrackKey(observation) {
     return `${observation.source_id}:${entity}`;
   }
   return `${observation.worker_id || observation.job_id || observation.source_id}:${entity}`;
-}
-
-// Stable pseudo-random color: the same scoped track keeps its color across refreshes.
-export function trackColor(key) {
-  let hash = 2166136261;
-  for (let index = 0; index < key.length; index += 1) {
-    hash ^= key.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `hsl(${Math.abs(hash) % 360} 72% 47%)`;
 }
 
 function groupTracks(observations) {
@@ -469,7 +460,7 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken }) {
   );
 }
 
-export function LivePage({ liveTick = 0 }) {
+function OperationalLivePage({ liveTick = 0 }) {
   const [state, setState] = useState({ loading: true, error: null, data: null });
   const [sourceId, setSourceId] = useState("all");
   const [identityMode, setIdentityMode] = useState("fused");
@@ -677,7 +668,7 @@ export function LivePage({ liveTick = 0 }) {
 
       {!data.observations.length && !data.latestFrames.length ? (
         <EmptyState title="No completed person-detection frames yet">
-          Start a person-detection worker that submits detections and one detection_frame_count measurement for every processed frame, including zero, with one shared timestamp.
+          Start a person-detection worker that submits one atomic DetectionSample for every processed frame. An empty detections list is a confirmed zero-person frame.
         </EmptyState>
       ) : (
         <div className="live-layout">
@@ -701,7 +692,7 @@ export function LivePage({ liveTick = 0 }) {
                   const key = track.key;
                   return (
                     <div key={key}>
-                      <i style={{ background: trackColor(key) }} />
+                      <i style={{ background: track.color }} />
                       <span><strong>{latest.entity_id}</strong><small>{latest.entity_type} · {latest.zone_name || "unassigned floor"}</small></span>
                       <time>{track.age.toFixed(1)}s</time>
                     </div>
@@ -725,4 +716,48 @@ export function LivePage({ liveTick = 0 }) {
       )}
     </>
   );
+}
+
+function DemoLivePage({ demoReplay }) {
+  const [context, setContext] = useState({ loading: true, error: null, store: null, zones: [], sources: [] });
+  const [resetToken, setResetToken] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([api.get("/store"), api.get("/zones"), api.get("/sources")])
+      .then(([store, zones, sources]) => { if (!cancelled) setContext({ loading: false, error: null, store, zones, sources }); })
+      .catch((error) => { if (!cancelled) setContext((value) => ({ ...value, loading: false, error })); });
+    return () => { cancelled = true; };
+  }, [demoReplay.session?.id]);
+  if (context.loading) return <LoadingState label="Loading synchronized demo map…" />;
+  if (context.error) return <ErrorState error={context.error} />;
+  const replay = demoReplay.replay;
+  const tracks = (replay?.entities || []).map((entity) => {
+    const observation = {
+      entity_id: entity.runtime_id, entity_type: entity.entity_type,
+      zone_id: entity.zone_id,
+      zone_name: context.zones.find((zone) => Number(zone.id) === Number(entity.zone_id))?.name,
+      geometry: { point_map: entity.point_map },
+    };
+    return {
+      key: entity.runtime_id, colorKey: entity.runtime_id, color: trackColor(entity.runtime_id),
+      age: Math.max(0, replay.videoTime - Number(replay.derivedSample?.video_time_s || 0)),
+      opacity: entity.quality === "known" ? 1 : .45, trail: [], rows: [observation],
+      position: { ...entity.point_map, observation }, frame: { stale: entity.quality !== "known" },
+    };
+  });
+  const kpi = replay?.kpi;
+  return <>
+    <PageHeader eyebrow="Guided demo · synchronized Live" title="StoreLens-derived fused state"
+      description="Visual positions interpolate only between adjacent confirmed samples for the same anonymous fused ID. Occupancy, quality, and alerts remain stepwise derived truth." />
+    <div className="live-toolbar" role="toolbar" aria-label="Demo replay status">
+      <button onClick={() => setResetToken((value) => value + 1)}><RotateCcw size={14} /> Reset 3D view</button>
+      <time>Media {replay.videoTime.toFixed(3)}s · frame {replay.frameIndex} · derived {replay.derivedSample?.video_time_s?.toFixed(3) ?? "—"}s · epoch {replay.epoch}</time>
+    </div>
+    <div className="live-layout"><LiveScene3D store={context.store} zones={context.zones} sources={context.sources} renderedTracks={tracks} resetToken={resetToken} /><aside className="live-rail"><div className="live-summary-grid"><MetricCard label="Fused people" value={tracks.length} note="Interpolated presentation positions" /><MetricCard label="People in Aisle 04" value={kpi?.value ?? "—"} note={`${kpi?.quality || "unknown"} · ${kpi?.evidence?.source_count || 0} contributing sources`} /></div><section className="live-rail-section"><div className="live-rail-heading"><Users size={15} /><div><strong>Anonymous fused tracks</strong><small>One stable color per epoch-namespaced global ID</small></div></div><div className="live-track-list">{tracks.slice(0, 16).map((track) => <div key={track.key}><i style={{ background: track.color }} /><span><strong>{track.key}</strong><small>{track.position.observation.zone_name || "unassigned floor"}</small></span><time>{track.age.toFixed(2)}s</time></div>)}</div></section><div className="live-provenance"><Camera size={14} /><span>Cached state was derived offline through StoreLens from complete four-camera detection samples at {demoReplay.cache?.metadata?.sample_rate_hz} Hz.</span></div></aside></div>
+  </>;
+}
+
+export function LivePage(props) {
+  if (props.demoReplay?.session && props.demoReplay?.cache) return <DemoLivePage demoReplay={props.demoReplay} />;
+  return <OperationalLivePage liveTick={props.liveTick} />;
 }

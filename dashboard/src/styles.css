@@ -1444,7 +1444,8 @@ textarea:focus-visible {
   flex-wrap: wrap;
   gap: 6px;
 }
-.blueprint-toolbar button {
+.blueprint-toolbar button,
+.blueprint-toolbar-upload {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1457,6 +1458,11 @@ textarea:focus-visible {
   font-size: 12px;
   font-weight: 680;
   cursor: pointer;
+}
+.blueprint-toolbar-upload:hover {
+  border-color: var(--violet);
+  background: rgba(112, 89, 255, 0.09);
+  color: var(--violet);
 }
 .blueprint-toolbar button:hover:not(:disabled),
 .blueprint-toolbar button.active {
@@ -1471,6 +1477,18 @@ textarea:focus-visible {
 .blueprint-hint {
   color: var(--muted);
   font-size: 12px;
+}
+.blueprint-background-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid rgba(15, 138, 82, 0.22);
+  border-radius: 9px;
+  background: rgba(15, 138, 82, 0.07);
+  color: #11653f;
+  font-size: 12px;
+  font-weight: 650;
 }
 .blueprint-canvas {
   width: 100%;
@@ -1743,6 +1761,10 @@ textarea:focus-visible {
   fill: #fffefa;
   stroke: #bcbab1;
   stroke-width: 0.06;
+}
+.workbench-plan-background {
+  opacity: 0.64;
+  pointer-events: none;
 }
 .workbench-imported-floor {
   fill: rgba(72, 151, 86, 0.3);
@@ -3514,7 +3536,16 @@ body {
 .demo-status-strip button + button { margin-left: -7px; }
 .demo-video-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
 .demo-video-grid figure { margin: 0; overflow: hidden; border: 1px solid #d9d7cf; border-radius: 13px; background: #111; }
+.demo-video-stage { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: #111; }
 .demo-video-grid video { width: 100%; aspect-ratio: 16 / 9; display: block; object-fit: cover; background: #111; }
+.demo-video-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.demo-zone-trace { fill: rgba(134,197,24,.11); stroke: #9bd52d; stroke-width: 3px; stroke-dasharray: 10 7; }
+.demo-zone-trace.active { fill: rgba(239,68,68,.16); stroke: #ff4f4f; }
+.demo-detection-trace > rect:first-child { stroke-width: 3px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
+.demo-detection-trace text, .demo-overlay-badge text { fill: #10110f; font-size: 20px; font-weight: 850; letter-spacing: .02em; }
+.demo-overlay-badge rect { fill: rgba(155,213,45,.94); }
+.demo-overlay-badge.active rect { fill: rgba(255,79,79,.95); }
+.demo-overlay-badge text { font-size: 18px; }
 .demo-video-grid figcaption { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 11px; color: #e9e8e3; background: #1d1d1b; font-size: 8px; }
 .demo-video-grid figcaption span { color: #98978f; }
 .demo-outcome-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-top: 12px; }
@@ -3546,11 +3577,23 @@ body {
 .maintenance-grid { display: grid; gap: 13px; }
 .maintenance-grid .panel + .panel { margin-top: 0; }
 .maintenance-copy { margin: 0 0 18px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.demo-sync-debug { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 8px; margin: 10px 0 16px; padding: 12px; border: 1px solid #8b7cf6; border-radius: 12px; background: #18152b; color: #eeebff; }
+.demo-sync-debug code { font-size: 9px; color: inherit; }
+.demo-geometry-story { margin-top: 18px; }
+.demo-geometry-steps { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
+.demo-geometry-steps > div { display: grid; gap: 3px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: #faf8f2; }
+.demo-geometry-steps small { color: var(--muted); }
+.demo-geometry-steps svg { width: 100%; height: 150px; margin-top: 8px; background: #f1efe8; border-radius: 8px; }
+.demo-geometry-steps .projection { stroke-width: 3; vector-effect: non-scaling-stroke; }
+.demo-geometry-steps .contribution-0 { fill: rgba(73,214,255,.28); stroke: #1686a8; }
+.demo-geometry-steps .contribution-1 { fill: rgba(196,132,252,.28); stroke: #8452b8; }
+.demo-geometry-steps .union { fill: rgba(163,230,53,.35); stroke: #4d7d0a; }
 @media (max-width: 900px) {
   .demo-hero { grid-template-columns: 1fr; background: linear-gradient(160deg,#fff 0 65%,#eeebff 65%); }
   .demo-video-grid, .demo-outcome-grid, .demo-timeline ol { grid-template-columns: 1fr; }
   .demo-explore { align-items: flex-start; flex-direction: column; }
   .demo-explore > div:last-child { justify-content: flex-start; }
+  .demo-geometry-steps { grid-template-columns: 1fr; }
 }
 @media (max-width: 620px) {
   .demo-status-strip { align-items: flex-start; flex-wrap: wrap; }

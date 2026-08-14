@@ -17,6 +17,7 @@ import { ObservationsPage } from "./observations.jsx";
 import { ConfigurePage, ReviewPage, SourcesPage } from "./pages.jsx";
 import { GeneratedDashboardPage } from "./dashboard-page.jsx";
 import { DemoPage } from "./demo.jsx";
+import { useDemoReplay } from "./demo-replay.js";
 import "./styles.css";
 
 const LivePage = lazy(() =>
@@ -61,6 +62,7 @@ function App() {
   const [initialSignal, setInitialSignal] = useState(null);
   const [toast, setToast] = useState(null);
   const [demoId, setDemoId] = useState(demoSessionId());
+  const demoReplay = useDemoReplay(demoId);
 
   const notify = (title, message = "", tone = "success") => {
     setToast({ title, message, tone });
@@ -225,6 +227,7 @@ function App() {
             clearInitial={() => setInitialSignal(null)}
             notify={notify}
             refreshShell={refreshShell}
+            demoReplay={demoReplay}
           />
         </Suspense>
       </main>

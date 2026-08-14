@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   Crosshair,
@@ -9,7 +9,7 @@ import {
   ScanLine,
   Undo2,
 } from "lucide-react";
-import { api } from "./api.js";
+import { api, assetUrl, demoSessionId } from "./api.js";
 import { Modal, Panel } from "./components.jsx";
 
 const EMPTY_DRAWING = {
@@ -162,8 +162,9 @@ async function rectifyImage(imageState, corners) {
   return { url: URL.createObjectURL(blob), width, height };
 }
 
-function PlanDigitizerModal({ onClose, onSaved }) {
+function PlanDigitizerModal({ onClose, onSaved, backgroundUrl = null }) {
   const svgRef = useRef(null);
+  const ownedUrls = useRef(new Set());
   const [original, setOriginal] = useState(null);
   const [image, setImage] = useState(null);
   const [drawing, setDrawing] = useState(EMPTY_DRAWING);
@@ -171,8 +172,37 @@ function PlanDigitizerModal({ onClose, onSaved }) {
   const [knownDistance, setKnownDistance] = useState(0);
   const [useScaleOrigin, setUseScaleOrigin] = useState(true);
   const [yAxisUp, setYAxisUp] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(Boolean(backgroundUrl));
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!backgroundUrl) return undefined;
+    let cancelled = false;
+    const loadBackground = async () => {
+      setBusy(true);
+      try {
+        const response = await fetch(backgroundUrl);
+        if (!response.ok) throw new Error("The bird's-eye demo plan could not be loaded.");
+        const prepared = await prepareImage(await response.blob());
+        ownedUrls.current.add(prepared.url);
+        if (cancelled) return;
+        setOriginal(prepared);
+        setImage(prepared);
+        setError("");
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    };
+    loadBackground();
+    return () => { cancelled = true; };
+  }, [backgroundUrl]);
+
+  useEffect(() => () => {
+    ownedUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    ownedUrls.current.clear();
+  }, []);
 
   const scale = drawing.scale.length === 2 && knownDistance > 0
     ? distance(drawing.scale[0], drawing.scale[1]) / knownDistance
@@ -193,7 +223,7 @@ function PlanDigitizerModal({ onClose, onSaved }) {
     setError("");
     try {
       const prepared = await prepareImage(file);
-      if (image?.url) URL.revokeObjectURL(image.url);
+      ownedUrls.current.add(prepared.url);
       setOriginal(prepared);
       setImage(prepared);
       setDrawing(EMPTY_DRAWING);
@@ -241,7 +271,7 @@ function PlanDigitizerModal({ onClose, onSaved }) {
     setError("");
     try {
       const corrected = await rectifyImage(image, drawing.rectify);
-      if (image.url !== original.url) URL.revokeObjectURL(image.url);
+      ownedUrls.current.add(corrected.url);
       setImage(corrected);
       setDrawing(EMPTY_DRAWING);
     } catch (err) {
@@ -253,7 +283,6 @@ function PlanDigitizerModal({ onClose, onSaved }) {
 
   const restoreOriginal = () => {
     if (!original || image.url === original.url) return;
-    URL.revokeObjectURL(image.url);
     setImage(original);
     setDrawing(EMPTY_DRAWING);
   };
@@ -299,18 +328,20 @@ function PlanDigitizerModal({ onClose, onSaved }) {
       {!image ? (
         <label className="blueprint-upload">
           <ImagePlus size={30} />
-          <strong>{busy ? "Preparing image…" : "Choose a photographed or scanned plan"}</strong>
-          <span>JPG, PNG, or WebP. The image stays in this browser.</span>
+          <strong>{busy ? (backgroundUrl ? "Loading bird's-eye demo plan…" : "Preparing image…") : "Choose a photographed or scanned plan"}</strong>
+          <span>{backgroundUrl ? "The warehouse bird's-eye view will appear behind the tracing tools." : "JPG, PNG, or WebP. The image stays in this browser."}</span>
           <input type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={busy} onChange={(event) => event.target.files?.[0] && chooseImage(event.target.files[0])} />
         </label>
       ) : (
         <div className="blueprint-digitizer stack">
           <div className="blueprint-toolbar" role="toolbar" aria-label="Blueprint tracing tools">
+            <label className="blueprint-toolbar-upload"><ImagePlus size={14} /> Replace background<input type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={busy} onChange={(event) => event.target.files?.[0] && chooseImage(event.target.files[0])} /></label>
             {MODES.map(([value, label, Icon]) => <button key={value} className={mode === value ? "active" : ""} onClick={() => setMode(value)}><Icon size={14} /> {label}</button>)}
             <button onClick={closePolygon} disabled={drawing.current.length < 3}><CheckCircle2 size={14} /> Close polygon</button>
             <button onClick={undo}><Undo2 size={14} /> Undo</button>
             <button onClick={() => setDrawing(EMPTY_DRAWING)}><RotateCcw size={14} /> Clear</button>
           </div>
+          {backgroundUrl && image === original && <div className="blueprint-background-note"><CheckCircle2 size={14} /> NVIDIA warehouse bird's-eye plan loaded as the tracing background.</div>}
           <div className="blueprint-hint">{HINTS[mode]}</div>
           <svg ref={svgRef} className="blueprint-canvas" viewBox={`0 0 ${image.width} ${image.height}`} onClick={clickCanvas} role="img" aria-label="Plan tracing canvas">
             <image href={image.url} width={image.width} height={image.height} opacity=".72" preserveAspectRatio="none" />
@@ -343,15 +374,16 @@ function PlanDigitizerModal({ onClose, onSaved }) {
 
 export function PlanDigitizer({ onRefresh, notify }) {
   const [open, setOpen] = useState(false);
+  const demoBackground = demoSessionId() ? assetUrl("/demo/plan.png") : null;
   return <>
     <Panel
       title="Floor plan"
       subtitle="Trace a photographed plan and calibrate it directly in metres"
       action={<button className="button button-dark" onClick={() => setOpen(true)}><ImagePlus size={14} /> Digitize plan</button>}
     >
-      <p className="form-note">The source image is processed locally in your browser. StoreLens receives only the traced polygons, metric scale, and coordinate metadata.</p>
+      <p className="form-note">{demoBackground ? "The demo keeps the real warehouse bird's-eye plan behind both the tracing canvas and the floor map workbench. You can replace it while digitizing." : "The source image is processed locally in your browser. StoreLens receives only the traced polygons, metric scale, and coordinate metadata."}</p>
     </Panel>
-    {open && <PlanDigitizerModal onClose={() => setOpen(false)} onSaved={async (result) => {
+    {open && <PlanDigitizerModal backgroundUrl={demoBackground} onClose={() => setOpen(false)} onSaved={async (result) => {
       setOpen(false);
       await onRefresh();
       notify("Metric floor plan saved", `${result.polygon_count} polygon${result.polygon_count === 1 ? "" : "s"} · ${result.width_m.toFixed(2)} × ${result.height_m.toFixed(2)} m · ${result.invalidated_calibrations} calibration${result.invalidated_calibrations === 1 ? "" : "s"} cleared`);

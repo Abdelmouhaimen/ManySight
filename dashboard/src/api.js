@@ -25,6 +25,12 @@ async function request(method, path, body) {
     } catch {
       /* non-json error */
     }
+    if (response.status === 409 && demoSessionId()
+        && /demo session is not active/i.test(String(detail))) {
+      localStorage.removeItem("storelens_demo_session");
+      window.dispatchEvent(new Event("storelens-demo-session"));
+      if (!path.startsWith("/demo/")) return request(method, path, body);
+    }
     throw new Error(
       typeof detail === "string" ? detail : JSON.stringify(detail),
     );

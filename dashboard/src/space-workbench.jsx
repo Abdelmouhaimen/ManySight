@@ -5,6 +5,7 @@ import {
   Crosshair,
   Eraser,
   ExternalLink,
+  FileUp,
   MapPin,
   MousePointer2,
   Pencil,
@@ -131,6 +132,7 @@ function MapSurface({
   store,
   zones,
   sources,
+  backgroundUrl,
   draft,
   selectedSourceId,
   tool,
@@ -170,6 +172,17 @@ function MapSurface({
           height={height}
           className="workbench-floor"
         />
+        {backgroundUrl && (
+          <image
+            href={backgroundUrl}
+            x="0"
+            y="0"
+            width={width}
+            height={height}
+            preserveAspectRatio="none"
+            className="workbench-plan-background"
+          />
+        )}
         {(store?.map?.floor_polygons || []).map((floor, index) => (
           <polygon
             key={`imported-floor-${index}`}
@@ -278,6 +291,9 @@ function MapSurface({
 
 export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
   const svgRef = useRef(null);
+  const demoPlanBackground = demoSessionId()
+    ? assetUrl("/demo/plan.png")
+    : null;
   const [tool, setTool] = useState("select");
   const [draft, setDraft] = useState([]);
   const [selectedSourceId, setSelectedSourceId] = useState(
@@ -567,6 +583,7 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
           store={store}
           zones={zones}
           sources={displaySources}
+          backgroundUrl={demoPlanBackground}
           draft={draft}
           selectedSourceId={selectedSourceId}
           tool={tool}
