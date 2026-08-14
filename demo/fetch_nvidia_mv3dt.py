@@ -35,7 +35,7 @@ def main() -> None:
                 if destination != target and destination not in target.parents:
                     raise RuntimeError(f"archive contains an unsafe path: {member.filename}")
             bundle.extractall(destination)
-    dataset = destination / "datasets" / "mtmc_4cam"
+    dataset = destination / "datasets" / "mtmc_12cam"
     print(f"Installed locally at: {dataset}")
     print(f"Set STORELENS_DEMO_ASSET_DIR={dataset} when using a different destination.")
 

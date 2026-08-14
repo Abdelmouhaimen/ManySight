@@ -1,7 +1,7 @@
-"""Isolated guided-demo workspaces and deterministic observation replay."""
+"""Isolated guided-demo workspaces and deterministic cached replay."""
 from __future__ import annotations
 
-import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -10,7 +10,7 @@ import shutil
 import tempfile
 import time
 import uuid
-from collections import defaultdict
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -20,14 +20,21 @@ from .. import db
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "demo" / "fixtures" / "nvidia_mv3dt_yolo11n_bytetrack.jsonl"
 RECIPE = ROOT / "demo" / "fixtures" / "nvidia_mv3dt_recipe.json"
+DERIVED_CACHE = ROOT / "demo" / "fixtures" / "nvidia_mv3dt_derived_replay.json"
+DERIVATION_FILES = [
+    ROOT / "server" / "routers" / "observations.py",
+    ROOT / "server" / "services" / "enrich.py",
+    ROOT / "server" / "services" / "current_state.py",
+    ROOT / "server" / "services" / "multiview.py",
+    ROOT / "server" / "routers" / "analytics_query.py",
+    ROOT / "server" / "services" / "alert_engine.py",
+]
 UPSTREAM_ARCHIVE = (
     "https://github.com/NVIDIA/DeepStream/raw/refs/heads/main/"
     "src/apps/reference_apps/deepstream-tracker-3d-multi-view/assets/datasets.zip"
 )
 SESSION_ROOT = Path(tempfile.gettempdir()) / "storelens-demo-sessions"
 ACTIVE_STATES = {"ready", "running", "paused"}
-_tasks: dict[str, asyncio.Task] = {}
-_controls: dict[str, dict] = {}
 logger = logging.getLogger("storelens.demo")
 
 
@@ -57,32 +64,103 @@ def load_fixture() -> tuple[dict, list[dict]]:
     return rows[0], rows[1:]
 
 
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _canonical_hash(value) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def derivation_hash() -> str:
+    """Hash the platform code paths that produce the committed replay timeline."""
+    digest = hashlib.sha256()
+    for path in DERIVATION_FILES:
+        digest.update(path.relative_to(ROOT).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+@lru_cache(maxsize=1)
+def load_derived_cache() -> dict:
+    """Load and verify the committed StoreLens-derived playback artifact."""
+    if not DERIVED_CACHE.is_file():
+        raise HTTPException(503, "the derived guided-demo replay cache is not available")
+    cache = json.loads(DERIVED_CACHE.read_text(encoding="utf-8"))
+    metadata = cache.get("metadata", {})
+    recipe = load_recipe()
+    expected = {
+        "type": "storelens_derived_replay_cache",
+        "recipe_version": recipe["recipe_version"],
+        "raw_fixture_sha256": _sha256(FIXTURE),
+        "recipe_sha256": _sha256(RECIPE),
+        "geometry_hash": _canonical_hash(cache.get("geometry")),
+        "fusion_config_hash": _canonical_hash(recipe["multiview"]),
+        "derivation_code_hash": derivation_hash(),
+        "sample_rate_hz": float(recipe["replay"]["sample_rate_hz"]),
+        "source_fps": recipe["frame"]["fps"],
+        "payload_sha256": _canonical_hash({
+            "geometry": cache.get("geometry"), "timeline": cache.get("timeline")
+        }),
+    }
+    mismatches = [key for key, value in expected.items() if metadata.get(key) != value]
+    if mismatches:
+        raise HTTPException(
+            503,
+            "guided-demo replay cache is stale or invalid; rebuild it "
+            f"(mismatch: {', '.join(mismatches)})",
+        )
+    if not cache.get("timeline"):
+        raise HTTPException(503, "guided-demo replay cache has no derived samples")
+    return cache
+
+
 def resolve_asset_root(explicit: str | None = None) -> Path | None:
     candidates = [
         explicit,
         os.environ.get("STORELENS_DEMO_ASSET_DIR"),
-        str(ROOT / "data" / "demo-assets" / "datasets" / "mtmc_4cam"),
-        str(Path(tempfile.gettempdir()) / "storelens-demo-assets" / "datasets" / "mtmc_4cam"),
+        str(ROOT / "data" / "demo-assets" / "datasets" / "mtmc_12cam"),
+        str(Path(tempfile.gettempdir()) / "storelens-demo-assets" / "datasets" / "mtmc_12cam"),
     ]
     for value in candidates:
         if not value:
             continue
         root = Path(value).expanduser().resolve()
         videos = root / "videos"
-        if all((videos / f"Warehouse_Synthetic_Cam{i:03d}.mp4").is_file() for i in range(1, 5)):
+        if (
+            (root / "map.png").is_file()
+            and all((videos / f"Warehouse_Synthetic_Cam{i:03d}.mp4").is_file() for i in range(1, 5))
+            and (root / "camInfo" / "Warehouse_Synthetic_Cam012.yml").is_file()
+        ):
             return root
     return None
 
 
 def asset_status() -> dict:
     root = resolve_asset_root()
+    cache_ready = True
+    cache_error = None
+    try:
+        cache_metadata = load_derived_cache()["metadata"]
+    except HTTPException as exc:
+        cache_ready = False
+        cache_metadata = None
+        cache_error = str(exc.detail)
     return {
-        "available": root is not None,
-        "dataset": "NVIDIA DeepStream MV3DT mtmc_4cam synthetic warehouse sample",
+        "available": root is not None and cache_ready,
+        "dataset": "NVIDIA DeepStream MV3DT mtmc_12cam synthetic warehouse sample (cameras 1-4)",
         "download_url": UPSTREAM_ARCHIVE,
         "install_command": "python demo/fetch_nvidia_mv3dt.py",
         "environment_variable": "STORELENS_DEMO_ASSET_DIR",
         "redistributed_by_storelens": False,
+        "bird_view_available": root is not None,
+        "derived_cache_available": cache_ready,
+        "derived_cache": cache_metadata,
+        "derived_cache_error": cache_error,
     }
 
 
@@ -93,9 +171,17 @@ def _session_row(session_id: str) -> dict:
     return row
 
 
+def _session_cache_current(row: dict) -> bool:
+    stored = db.jload(row.get("result_json"), {}).get("derived_replay", {})
+    return stored == load_derived_cache()["metadata"]
+
+
 def session_database(session_id: str) -> str | None:
-    row = _normal_row("SELECT status,workspace_path FROM demo_sessions WHERE id=?", (session_id,))
-    if not row or row["status"] not in ACTIVE_STATES:
+    row = _normal_row(
+        "SELECT status,workspace_path,result_json FROM demo_sessions WHERE id=?",
+        (session_id,),
+    )
+    if not row or row["status"] not in ACTIVE_STATES or not _session_cache_current(row):
         return None
     path = Path(row["workspace_path"]).resolve()
     root = SESSION_ROOT.resolve()
@@ -104,11 +190,28 @@ def session_database(session_id: str) -> str | None:
     return str(path)
 
 
+def _clock(row: dict, now: float | None = None) -> dict:
+    current = db.now() if now is None else float(now)
+    duration = max(float(row["duration_s"] or 0), 0.001)
+    absolute = int(row["playback_epoch"] or 0) * duration + float(row["playback_position_s"] or 0)
+    if row["status"] == "running" and row["playback_started_at"] is not None:
+        absolute = max(0.0, current - float(row["playback_started_at"]))
+    epoch = int(absolute // duration)
+    position = absolute - epoch * duration
+    return {
+        "server_now": current,
+        "absolute_s": absolute,
+        "position_s": position,
+        "epoch": epoch,
+        "status": row["status"],
+    }
+
+
 def _public(row: dict) -> dict:
-    control = _controls.get(row["id"])
-    status = control.get("status") if control else row["status"]
-    position = float(control.get("position_s", row["playback_position_s"])) if control else float(row["playback_position_s"])
-    epoch = int(control.get("epoch", row["playback_epoch"])) if control else int(row["playback_epoch"])
+    clock = _clock(row)
+    status = row["status"]
+    position = clock["position_s"]
+    epoch = clock["epoch"]
     usage = {"database_bytes": 0, "observations": 0, "fused_observations": 0,
              "retained_epochs": int(row["retained_epochs"])}
     workspace = Path(row["workspace_path"])
@@ -117,26 +220,53 @@ def _public(row: dict) -> dict:
         with db.using_database(str(workspace)):
             usage["observations"] = db.q1("SELECT COUNT(*) n FROM events")["n"]
             usage["fused_observations"] = db.q1("SELECT COUNT(*) n FROM fused_observations")["n"]
+    result = db.jload(row["result_json"], {})
+    recipe = load_recipe()
+    source_ids = result.get("source_ids", {})
+    result["camera_overlays"] = {
+        camera["key"]: {
+            "camera_key": camera["key"],
+            "source_id": source_ids.get(camera["key"]),
+            "frame_width": recipe["frame"]["width"],
+            "frame_height": recipe["frame"]["height"],
+            "fps": recipe["frame"]["fps"],
+            "zones": [{
+                "name": recipe["zone"]["name"],
+                "color": recipe["zone"]["color"],
+                "polygons_px": camera.get("zone_view_polygons_px")
+                or [camera["zone_view_px"]],
+            }] if camera.get("zone_view_px") else [],
+        }
+        for camera in recipe["cameras"]
+    }
     return {
         "id": row["id"], "status": status, "mode": row["mode"],
         "recipe_version": row["recipe_version"], "playback_epoch": epoch,
         "playback_position_s": position, "duration_s": row["duration_s"],
         "action_log": db.jload(row["action_log_json"], []),
-        "result": db.jload(row["result_json"], {}),
+        "result": result,
         "created_at": row["created_at"], "updated_at": row["updated_at"],
         "demo_workspace": True, "resource_usage": usage,
+        "master_clock": clock,
     }
 
 
 def get_session(session_id: str) -> dict:
-    return _public(_session_row(session_id))
+    row = _session_row(session_id)
+    if row["recipe_version"] != load_recipe()["recipe_version"]:
+        raise HTTPException(409, "demo session belongs to an obsolete dataset recipe; start a new demo")
+    if not _session_cache_current(row):
+        raise HTTPException(409, "demo session belongs to an obsolete derived cache; start a new demo")
+    return _public(row)
 
 
 def active_session() -> dict | None:
     row = _normal_row(
-        "SELECT * FROM demo_sessions WHERE status IN ('ready','running','paused') ORDER BY created_at DESC LIMIT 1"
+        "SELECT * FROM demo_sessions WHERE status IN ('ready','running','paused') "
+        "AND recipe_version=? ORDER BY created_at DESC LIMIT 1",
+        (load_recipe()["recipe_version"],),
     )
-    return _public(row) if row else None
+    return _public(row) if row and _session_cache_current(row) else None
 
 
 def _action(log: list, name: str, result: dict, explanation: str) -> None:
@@ -148,6 +278,8 @@ def _setup_workspace(path: Path, session_id: str, base_url: str) -> tuple[list, 
 
     recipe = load_recipe()
     log: list[dict] = []
+    _action(log, "Inspect workspace", {"workspace": "isolated demo"},
+            "Confirmed that guided-demo changes are isolated from the normal StoreLens workspace.")
     with db.using_database(str(path)):
         configured = store.update_store(store.StorePatch(
             name=recipe["store"]["name"], space_type=recipe["store"]["space_type"],
@@ -177,28 +309,56 @@ def _setup_workspace(path: Path, session_id: str, base_url: str) -> tuple[list, 
                     {"source_id": source["id"], "calibration_id": imported["id"],
                      "verification": imported["verification"]},
                     "Imported a real 3x4 world-to-pixel matrix and derived the floor homography.")
-        first = recipe["cameras"][0]
-        projected_zone = zones.create_zone(zones.ZoneIn(
+        _action(log, "Open four synchronized camera captures",
+                {"camera_keys": list(source_ids), "source_fps": recipe["frame"]["fps"]},
+                "Opened the four native NVIDIA recordings on one shared media timeline.")
+        zone_cameras = [camera for camera in recipe["cameras"] if camera.get("zone_view_px")]
+        seed_key = recipe["zone"]["seed_camera_key"]
+        seed_camera = next(camera for camera in zone_cameras if camera["key"] == seed_key)
+        seed_polygon = [{"x": p[0], "y": p[1]} for p in seed_camera["zone_view_px"]]
+        monitored_zone = zones.create_zone(zones.ZoneIn(
             name=recipe["zone"]["name"], ztype=recipe["zone"]["ztype"],
-            color=recipe["zone"]["color"], polygon_px=[{"x": p[0], "y": p[1]}
-                                                       for p in first["zone_projection_px"]],
-            source_id=source_ids[first["key"]],
+            color=recipe["zone"]["color"], polygon_px=seed_polygon,
+            source_id=source_ids[seed_key],
         ))
-        _action(log, "Project the Aisle 04 camera polygon",
-                {"source_id": source_ids[first["key"]], "zone_id": projected_zone["id"],
-                 "projected_polygon_m": projected_zone["polygon"]},
-                "StoreLens projected predetermined camera pixels through the imported floor calibration.")
+        _action(log, f"Draw {recipe['zone']['name']} polygon on Camera 3",
+                {"source_id": source_ids[seed_key], "polygon_px": seed_polygon},
+                "Stored the camera-specific floor-region trace as source pixel evidence.")
+        _action(log, "Project Camera 3 polygon",
+                {"source_id": source_ids[seed_key], "zone_id": monitored_zone["id"],
+                 "projected_polygon_m": monitored_zone["polygon"]},
+                "Projected the traced camera-floor polygon through its validated calibration.")
         views = []
-        for camera in recipe["cameras"]:
+        extensions = []
+        for camera in zone_cameras:
             polygon = [{"x": p[0], "y": p[1]} for p in camera["zone_view_px"]]
             view = geometry.create_zone_view(geometry.ZoneViewIn(
-                zone_id=projected_zone["id"], source_id=source_ids[camera["key"]],
+                zone_id=monitored_zone["id"], source_id=source_ids[camera["key"]],
                 outer_polygon_px=polygon, detection_polygon_px=polygon,
                 membership_rule="point", threshold=0.5,
             ))
             views.append(view["id"])
-        _action(log, "Create camera-specific Aisle 04 views", {"zone_view_ids": views},
-                "The views are source pixel evidence; the canonical zone remains metric map geometry.")
+            if camera["key"] != seed_key:
+                _action(log, "Draw Aisle 04 polygon on Camera 4",
+                        {"source_id": source_ids[camera["key"]], "polygon_px": polygon},
+                        "Stored the second camera-specific trace without inventing views for Cameras 1 or 2.")
+                extended = geometry.extend_zone_from_view(view["id"])
+                extensions.append({
+                    "camera_key": camera["key"],
+                    "zone_view_id": view["id"],
+                    "projected_contribution_m": extended["projected_contribution"],
+                })
+                _action(log, "Project Camera 4 polygon", extensions[-1],
+                        "Projected Camera 4 through its validated calibration into the same metric floor plane.")
+        monitored_zone = zones.get_zone(monitored_zone["id"])
+        _action(log, "Combine overlapping physical contributions",
+                {"zone_view_ids": views, "extensions": extensions,
+                 "component_count": monitored_zone["component_count"]},
+                "Only cameras 3 and 4 see Aisle 04; their projected floor footprints overlap into one polygon with revision provenance.")
+        _action(log, f"Create canonical {recipe['zone']['name']}",
+                {"zone_id": monitored_zone["id"], "geometry": monitored_zone["geometry"],
+                 "revision": monitored_zone["revision"]},
+                "The canonical zone is metric geometry derived centrally from the two calibrated camera contributions.")
         group = multiview.create_group(multiview.MultiviewGroupIn(
             name=recipe["multiview"]["name"], source_ids=list(source_ids.values()),
             time_tolerance_s=recipe["multiview"]["time_tolerance_s"],
@@ -211,7 +371,7 @@ def _setup_workspace(path: Path, session_id: str, base_url: str) -> tuple[list, 
         query = analyses.create_analysis(analyses.AnalysisIn(
             name=recipe["query"]["name"], question=recipe["query"]["question"],
             subject="fused_entity", measures=["current_occupancy"],
-            filters={"group_ids": [group["id"]], "zone_ids": [projected_zone["id"]],
+            filters={"group_ids": [group["id"]], "zone_ids": [monitored_zone["id"]],
                      "entity_types": ["person"]}, created_by="agent", status="ready",
         ))
         _action(log, "Save the fused occupancy query", {"query_id": query["id"]},
@@ -222,7 +382,7 @@ def _setup_workspace(path: Path, session_id: str, base_url: str) -> tuple[list, 
             created_by="agent",
         ))
         widget = dashboards.add_widget(dashboard["id"], dashboards.WidgetIn(
-            query_id=query["id"], title="Fused people in Aisle 04", presentation="number",
+            query_id=query["id"], title=f"Fused people in {recipe['zone']['name']}", presentation="number",
         ))
         _action(log, "Generate query-backed dashboard", {"dashboard_id": dashboard["id"],
                                                           "widget_id": widget["id"]},
@@ -235,7 +395,8 @@ def _setup_workspace(path: Path, session_id: str, base_url: str) -> tuple[list, 
         ))
         _action(log, "Create query-backed alert", {"alert_rule_id": rule["id"]},
                 "The rule evaluates the saved fused occupancy query and is edge-triggered.")
-    return log, {"source_ids": source_ids, "zone_id": projected_zone["id"],
+    return log, {"source_ids": source_ids, "zone_id": monitored_zone["id"],
+                 "zone_name": recipe["zone"]["name"],
                  "group_id": group["id"], "query_id": query["id"],
                  "dashboard_id": dashboard["id"], "alert_rule_id": rule["id"]}
 
@@ -248,6 +409,7 @@ def create_session(base_url: str, mode: str = "guided") -> dict:
         raise HTTPException(409, {"code": "demo_assets_missing", **asset_status()})
     logger.info("demo assets resolved", extra={"asset_kind": "nvidia_mv3dt"})
     metadata, _ = load_fixture()
+    cache = load_derived_cache()
     session_id = uuid.uuid4().hex
     workspace_dir = (SESSION_ROOT / session_id).resolve()
     workspace_dir.mkdir(parents=True, exist_ok=False)
@@ -255,6 +417,7 @@ def create_session(base_url: str, mode: str = "guided") -> dict:
     db.init_db(str(workspace_path))
     try:
         log, result = _setup_workspace(workspace_path, session_id, base_url.rstrip("/"))
+        result["derived_replay"] = cache["metadata"]
     except Exception:
         shutil.rmtree(workspace_dir, ignore_errors=True)
         raise
@@ -263,7 +426,8 @@ def create_session(base_url: str, mode: str = "guided") -> dict:
         "INSERT INTO demo_sessions (id,status,recipe_version,mode,workspace_path,asset_root,duration_s,"
         "action_log_json,result_json,created_at,updated_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (session_id, "ready", load_recipe()["recipe_version"], mode, str(workspace_path),
-         str(asset_root), float(metadata["duration_s"]), json.dumps(log), json.dumps(result),
+         str(asset_root), float(cache["metadata"].get("duration_s", metadata["duration_s"])),
+         json.dumps(log), json.dumps(result),
          now, now, now + 24 * 3600),
     )
     logger.info("demo session created", extra={"demo_session_id": session_id, "mode": mode})
@@ -272,9 +436,14 @@ def create_session(base_url: str, mode: str = "guided") -> dict:
 
 def media_path(session_id: str, camera_key: str) -> Path:
     row = _session_row(session_id)
-    if row["status"] == "discarded":
-        raise HTTPException(410, "demo session was discarded")
     recipe = load_recipe()
+    if row["status"] not in ACTIVE_STATES:
+        raise HTTPException(410 if row["status"] == "discarded" else 409,
+                            "demo media requires an active current-version session")
+    if row["recipe_version"] != recipe["recipe_version"]:
+        raise HTTPException(409, "demo session belongs to an obsolete dataset recipe")
+    if not _session_cache_current(row):
+        raise HTTPException(409, "demo session belongs to an obsolete derived cache")
     allowed = {camera["key"] for camera in recipe["cameras"]}
     if camera_key not in allowed:
         raise HTTPException(404, "demo camera not found")
@@ -285,6 +454,66 @@ def media_path(session_id: str, camera_key: str) -> Path:
     return path
 
 
+def camera_evidence(session_id: str, camera_key: str) -> dict:
+    """Return allowlisted worker-local fixture output for the native video overlay.
+
+    This data is camera-pixel evidence only. It contains no StoreLens zone,
+    projection, multiview, query, or alert result. Those live in the separately
+    versioned StoreLens-derived replay cache.
+    """
+    row = _session_row(session_id)
+    recipe = load_recipe()
+    if row["status"] not in ACTIVE_STATES:
+        raise HTTPException(410 if row["status"] == "discarded" else 409,
+                            "demo evidence requires an active current-version session")
+    if row["recipe_version"] != recipe["recipe_version"]:
+        raise HTTPException(409, "demo session belongs to an obsolete dataset recipe")
+    if not _session_cache_current(row):
+        raise HTTPException(409, "demo session belongs to an obsolete derived cache")
+    allowed = {camera["key"] for camera in recipe["cameras"]}
+    if camera_key not in allowed:
+        raise HTTPException(404, "demo camera not found")
+    metadata, records = load_fixture()
+    return {
+        "schema_version": metadata["schema_version"],
+        "producer": metadata["producer"],
+        "camera_key": camera_key,
+        "fps": metadata["fps"],
+        "frame_count": metadata["frame_count"],
+        "frames": [record for record in records if record["source_key"] == camera_key],
+    }
+
+
+def replay_cache(session_id: str) -> dict:
+    """Return the validated analytical cache used by synchronized demo playback."""
+    row = _session_row(session_id)
+    if row["status"] not in ACTIVE_STATES:
+        raise HTTPException(410 if row["status"] == "discarded" else 409,
+                            "demo replay cache requires an active session")
+    if row["recipe_version"] != load_recipe()["recipe_version"]:
+        raise HTTPException(409, "demo session belongs to an obsolete dataset recipe")
+    if not _session_cache_current(row):
+        raise HTTPException(409, "demo session belongs to an obsolete derived cache")
+    return load_derived_cache()
+
+
+def plan_path(session_id: str) -> Path:
+    """Return only the allowlisted NVIDIA bird's-eye plan for an active demo."""
+    row = _session_row(session_id)
+    if row["status"] not in ACTIVE_STATES:
+        raise HTTPException(410 if row["status"] == "discarded" else 409,
+                            "demo plan requires an active current-version session")
+    if row["recipe_version"] != load_recipe()["recipe_version"]:
+        raise HTTPException(409, "demo session belongs to an obsolete dataset recipe")
+    if not _session_cache_current(row):
+        raise HTTPException(409, "demo session belongs to an obsolete derived cache")
+    root = Path(row["asset_root"] or "").resolve()
+    path = (root / "map.png").resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(404, "demo bird's-eye plan is not installed")
+    return path
+
+
 def restore_practice_calibration(session_id: str, source_id: int) -> dict:
     """Compare a learned planar calibration, then restore validated demo geometry."""
     from . import homography
@@ -292,6 +521,8 @@ def restore_practice_calibration(session_id: str, source_id: int) -> dict:
     row = _session_row(session_id)
     if row["status"] not in ACTIVE_STATES:
         raise HTTPException(409, "practice calibration requires an active demo")
+    if not _session_cache_current(row):
+        raise HTTPException(409, "demo session belongs to an obsolete derived cache")
     with db.using_database(row["workspace_path"]):
         source = db.q1("SELECT * FROM sources WHERE id=?", (source_id,))
         if not source:
@@ -308,7 +539,9 @@ def restore_practice_calibration(session_id: str, source_id: int) -> dict:
         if not practice_h or not validated_h:
             raise HTTPException(409, "both practice and validated calibrations are required")
         camera = next(item for item in load_recipe()["cameras"] if item["key"] == camera_key)
-        points = camera["zone_view_px"]
+        points = camera.get("zone_view_px") or [
+            [300, 300], [1200, 250], [1500, 850], [500, 900],
+        ]
         practice_map = homography.project(practice_h, points)
         validated_map = homography.project(validated_h, points)
         differences = [math.hypot(a[0] - b[0], a[1] - b[1])
@@ -340,227 +573,58 @@ def restore_practice_calibration(session_id: str, source_id: int) -> dict:
     }
 
 
-async def _replay(session_id: str) -> None:
-    from ..routers.observations import ObservationBatch, ObservationIn, submit_observations
-
-    metadata, records = load_fixture()
-    by_time: dict[float, list[dict]] = defaultdict(list)
-    for record in records:
-        by_time[float(record["video_time_s"])].append(record)
-    timeline = sorted(by_time)
-    row = _session_row(session_id)
-    result = db.jload(row["result_json"], {})
-    source_ids = result["source_ids"]
-    control = _controls[session_id]
-    try:
-        while not control["stop"]:
-            if control["status"] == "paused":
-                control["last_tick"] = db.now()
-                await asyncio.sleep(0.1)
-                continue
-            if db.now() < control.get("hold_until", 0):
-                control["last_tick"] = db.now()
-                await asyncio.sleep(0.05)
-                continue
-            epoch = control["epoch"]
-            epoch_started = control["epoch_started"]
-            tick = db.now()
-            position = control["position_s"] + max(0.0, tick - control["last_tick"])
-            control["last_tick"] = tick
-            control["position_s"] = min(position, control["duration_s"])
-            # Process one synchronized source timestamp per turn. Derivation time does
-            # not advance the media clock, so the browser cannot outrun evidence and
-            # API/SSE requests are never starved by an unbounded catch-up burst.
-            due = [stamp for stamp in timeline if control["next_time"] <= stamp <= position][:1]
-            for stamp in due:
-                observations = []
-                sample_ts = epoch_started + stamp
-                for frame in sorted(by_time[stamp], key=lambda value: value["source_key"]):
-                    source_key = frame["source_key"]
-                    source_id = source_ids[source_key]
-                    sample_id = f"demo-e{epoch}-f{frame['frame_index']}-{source_key}"
-                    for index, detection in enumerate(frame["detections"]):
-                        local_id = detection["local_track_id"] or f"untracked-{index}"
-                        observations.append(ObservationIn(
-                            schema_version=2,
-                            observation_id=f"demo:{session_id}:{epoch}:{source_key}:{frame['frame_index']}:d:{index}",
-                            sample_id=sample_id, kind="detection", timestamp=sample_ts,
-                            source_id=source_id, confidence=detection["confidence"],
-                            entity_id=f"e{epoch}:{source_key}:{local_id}", entity_type="person",
-                            label="person", identity_scope="source",
-                            identity_model_version="yolo11n-bytetrack-fixture-v1",
-                            geometry={"bbox_px": detection["bbox_px"], "point_px": detection["point_px"]},
-                            attributes={"producer_kind": "replay", "fixture_schema_version": 1,
-                                        "playback_epoch": epoch, "source_frame_index": frame["frame_index"]},
-                        ))
-                    observations.append(ObservationIn(
-                        schema_version=2,
-                        observation_id=f"demo:{session_id}:{epoch}:{source_key}:{frame['frame_index']}:marker",
-                        sample_id=sample_id, kind="measurement", timestamp=sample_ts,
-                        source_id=source_id, name="detection_frame_count", label="person",
-                        value=len(frame["detections"]), value_kind="gauge", unit="detections",
-                        attributes={"producer_kind": "replay", "fixture_schema_version": 1,
-                                    "playback_epoch": epoch, "source_frame_index": frame["frame_index"]},
-                    ))
-                with db.using_database(row["workspace_path"]):
-                    await submit_observations(ObservationBatch(observations=observations))
-                    from . import alert_engine
-                    zone_names = {item["id"]: item["name"] for item in db.q("SELECT id,name FROM zones")}
-                    fired = alert_engine.evaluate_ongoing(sample_ts, zone_names)
-                    if fired:
-                        logger.info(
-                            "demo query alert fired",
-                            extra={"demo_session_id": session_id, "alert_count": len(fired)},
-                        )
-                        if not control.get("acceptance_alert_seen"):
-                            # Keep the real threshold state visible long enough for
-                            # polling UIs to render it, then continue normal playback.
-                            control["acceptance_alert_seen"] = True
-                            control["hold_until"] = db.now() + 2.0
-                control["next_time"] = stamp + 1e-6
-                control["last_tick"] = db.now()
-            if position >= control["duration_s"]:
-                _reset_epoch_state(row["workspace_path"], db.now())
-                control["epoch"] += 1
-                logger.info(
-                    "demo replay epoch incremented",
-                    extra={"demo_session_id": session_id, "playback_epoch": control["epoch"]},
-                )
-                control["epoch_started"] = epoch_started + control["duration_s"]
-                control["position_s"] = 0.0
-                control["next_time"] = 0.0
-                control["last_tick"] = db.now()
-                _prune_epochs(row["workspace_path"], session_id, control["epoch"], row["retained_epochs"])
-            if db.now() - control["last_persisted"] >= 1:
-                _normal_ex(
-                    "UPDATE demo_sessions SET status=?,playback_epoch=?,playback_position_s=?,"
-                    "playback_started_at=?,updated_at=? WHERE id=?",
-                    (control["status"], control["epoch"], control["position_s"],
-                     control["epoch_started"], db.now(), session_id),
-                )
-                control["last_persisted"] = db.now()
-            await asyncio.sleep(0.05)
-    finally:
-        _tasks.pop(session_id, None)
-        if control.get("stop"):
-            _controls.pop(session_id, None)
-
-
-def _prune_epochs(workspace_path: str, session_id: str, current_epoch: int, retained: int) -> None:
-    oldest = max(0, current_epoch - int(retained) + 1)
-    with db.using_database(workspace_path):
-        rows = db.q("SELECT id,observation_id FROM events WHERE observation_id LIKE ?", (f"demo:{session_id}:%",))
-        remove = []
-        for row in rows:
-            try:
-                epoch = int(row["observation_id"].split(":", 3)[2])
-            except (ValueError, IndexError):
-                continue
-            if epoch < oldest:
-                remove.append(row["id"])
-        for start in range(0, len(remove), 500):
-            chunk = remove[start:start + 500]
-            db.ex(f"DELETE FROM events WHERE id IN ({','.join('?' for _ in chunk)})", chunk)
-        earliest = db.q1(
-            "SELECT MIN(ts) ts FROM events WHERE observation_id LIKE ?",
-            (f"demo:{session_id}:%",),
-        )["ts"]
-        if earliest is not None:
-            db.ex("DELETE FROM fused_observations WHERE ts<?", (earliest,))
-            db.ex("DELETE FROM zone_occupancy_observations WHERE ts<?", (earliest,))
-            db.ex("DELETE FROM alerts WHERE ts<?", (earliest,))
-            ended = [item["id"] for item in db.q(
-                "SELECT id FROM fused_entities WHERE ended_at IS NOT NULL AND last_seen_at<?", (earliest,)
-            )]
-            for fused_id in ended:
-                db.ex("DELETE FROM fused_entity_members WHERE fused_entity_id=?", (fused_id,))
-                db.ex("DELETE FROM fused_entities WHERE id=?", (fused_id,))
-
-
-def _reset_epoch_state(workspace_path: str, at_time: float) -> None:
-    """Prevent identities or instantaneous state from crossing a media rewind."""
-    with db.using_database(workspace_path):
-        db.ex("UPDATE fused_entities SET ended_at=? WHERE ended_at IS NULL", (at_time,))
-        for table in ("source_current_entities", "source_current_samples",
-                      "fused_current_entities", "zone_current_occupancy"):
-            db.ex(f"DELETE FROM {table}")
-
-
 def start(session_id: str) -> dict:
     row = _session_row(session_id)
     if row["status"] not in ACTIVE_STATES:
         raise HTTPException(409, f"cannot start a {row['status']} demo")
-    task = _tasks.get(session_id)
-    if task and not task.done():
-        _controls[session_id]["status"] = "running"
-        _controls[session_id]["last_tick"] = db.now()
-        return get_session(session_id)
-    position = float(row["playback_position_s"] or 0)
+    if not _session_cache_current(row):
+        raise HTTPException(409, "demo session belongs to an obsolete derived cache")
+    clock = _clock(row)
     now = db.now()
-    _controls[session_id] = {
-        "status": "running", "stop": False, "epoch": int(row["playback_epoch"] or 0),
-        "position_s": position, "duration_s": float(row["duration_s"]),
-        "epoch_started": float(row["playback_started_at"] or (now - position)),
-        "next_time": position, "last_tick": now,
-        "acceptance_alert_seen": False, "hold_until": 0.0,
-        "last_persisted": 0.0,
-    }
-    _normal_ex("UPDATE demo_sessions SET status='running',playback_started_at=?,updated_at=? WHERE id=?",
-               (_controls[session_id]["epoch_started"], now, session_id))
+    _normal_ex(
+        "UPDATE demo_sessions SET status='running',playback_epoch=?,playback_position_s=?,"
+        "playback_started_at=?,updated_at=? WHERE id=?",
+        (clock["epoch"], clock["position_s"], now - clock["absolute_s"], now, session_id),
+    )
     actions = db.jload(row["action_log_json"], [])
-    if not any(item.get("name") == "Start deterministic observation replay" for item in actions):
-        _action(actions, "Start deterministic observation replay",
-                {"producer_kind": "replay", "fixture_schema_version": 1,
-                 "runtime_gpu_required": False},
-                "The replay controller submits progressive schema-v2 source samples through the normal ingestion boundary.")
+    if not any(item.get("name") == "Start synchronized derived replay" for item in actions):
+        metadata = load_derived_cache()["metadata"]
+        _action(actions, "Start synchronized derived replay",
+                {"source_fps": metadata["source_fps"],
+                 "derived_sample_rate_hz": metadata["sample_rate_hz"],
+                 "runtime_gpu_required": False,
+                 "payload_sha256": metadata["payload_sha256"]},
+                "One lightweight master clock now drives native video, exact source evidence, and the offline StoreLens-derived cache.")
         _normal_ex("UPDATE demo_sessions SET action_log_json=?,updated_at=? WHERE id=?",
                    (json.dumps(actions), db.now(), session_id))
-    _tasks[session_id] = asyncio.create_task(_replay(session_id))
-    logger.info("demo replay started", extra={"demo_session_id": session_id})
+    logger.info("demo cached replay started", extra={"demo_session_id": session_id})
     return get_session(session_id)
 
 
 def pause(session_id: str) -> dict:
-    control = _controls.get(session_id)
-    if not control:
-        raise HTTPException(409, "demo replay is not running")
-    control["status"] = "paused"
-    control["last_tick"] = db.now()
-    _normal_ex("UPDATE demo_sessions SET status='paused',playback_position_s=?,updated_at=? WHERE id=?",
-               (control["position_s"], db.now(), session_id))
-    return get_session(session_id)
-
-
-def restart(session_id: str) -> dict:
     row = _session_row(session_id)
-    with db.using_database(row["workspace_path"]):
-        from ..routers.workspace import _clear_observations
-        con = db.connect()
-        try:
-            con.execute("BEGIN IMMEDIATE"); _clear_observations(con); con.commit()
-        finally:
-            con.close()
-    control = _controls.get(session_id)
-    if control:
-        control.update({"epoch": 0, "position_s": 0.0, "epoch_started": db.now(),
-                        "next_time": 0.0, "last_tick": db.now(), "status": "running",
-                        "acceptance_alert_seen": False, "hold_until": 0.0})
-    else:
-        _normal_ex("UPDATE demo_sessions SET playback_epoch=0,playback_position_s=0,status='ready' WHERE id=?",
-                   (session_id,))
-        return start(session_id)
+    if row["status"] != "running":
+        raise HTTPException(409, "demo replay is not running")
+    if not _session_cache_current(row):
+        raise HTTPException(409, "demo session belongs to an obsolete derived cache")
+    clock = _clock(row)
+    _normal_ex(
+        "UPDATE demo_sessions SET status='paused',playback_epoch=?,playback_position_s=?,"
+        "playback_started_at=NULL,updated_at=? WHERE id=?",
+        (clock["epoch"], clock["position_s"], db.now(), session_id),
+    )
     return get_session(session_id)
 
 
 async def _stop_replay(session_id: str, status: str) -> None:
-    """Stop one replay task and wait until it releases the temporary database."""
-    control = _controls.get(session_id)
-    if control:
-        control["status"] = status
-        control["stop"] = True
-    task = _tasks.get(session_id)
-    if task and task is not asyncio.current_task():
-        await asyncio.gather(task, return_exceptions=True)
+    """Persist the lightweight master clock before changing lifecycle state."""
+    row = _session_row(session_id)
+    clock = _clock(row)
+    _normal_ex(
+        "UPDATE demo_sessions SET status=?,playback_epoch=?,playback_position_s=?,"
+        "playback_started_at=NULL,updated_at=? WHERE id=?",
+        (status, clock["epoch"], clock["position_s"], db.now(), session_id),
+    )
 
 
 async def discard(session_id: str) -> dict:
@@ -582,9 +646,6 @@ def cleanup_expired(now: float | None = None) -> int:
         "AND status IN ('ready','running','paused')", (cutoff,))
     cleaned = 0
     for row in expired:
-        control = _controls.get(row["id"])
-        if control:
-            control["status"] = "expired"; control["stop"] = True
         workspace = Path(row["workspace_path"]).resolve().parent
         if SESSION_ROOT.resolve() in workspace.parents and workspace.exists():
             shutil.rmtree(workspace, ignore_errors=True)
@@ -595,15 +656,53 @@ def cleanup_expired(now: float | None = None) -> int:
 
 
 async def promote(session_id: str, base_url: str, include_observations: bool = False) -> dict:
-    """Promote only camera/space setup. Demo analyses and Aisle 04 stay isolated."""
+    """Promote only camera/space setup. Demo zones and analyses stay isolated."""
     row = _session_row(session_id)
     if row["status"] not in ACTIVE_STATES:
         raise HTTPException(409, "only an active demo can be promoted")
+    if not _session_cache_current(row):
+        raise HTTPException(409, "demo session belongs to an obsolete derived cache")
     await _stop_replay(session_id, "promoting")
     logger.info(
         "demo promotion started",
         extra={"demo_session_id": session_id, "include_observations": include_observations},
     )
+    if include_observations:
+        from ..routers.observations import (
+            DetectionIn, DetectionSampleIn, ObservationBatch,
+            detection_sample_batch, ingest_observations,
+        )
+        clock = _clock(row)
+        _, raw_records = load_fixture()
+        maximum_frame = math.floor(clock["position_s"] * load_recipe()["frame"]["fps"] + 1e-7)
+        stride = max(1, round(load_recipe()["frame"]["fps"] /
+                              load_derived_cache()["metadata"]["sample_rate_hz"]))
+        source_ids = db.jload(row["result_json"], {})["source_ids"]
+        observations = []
+        for frame in raw_records:
+            if frame["frame_index"] % stride or frame["frame_index"] > maximum_frame:
+                continue
+            runtime_sample_id = f"promote-e{clock['epoch']}:{frame['sample_id']}"
+            sample = DetectionSampleIn(
+                source_id=source_ids[frame["source_key"]], sample_id=runtime_sample_id,
+                timestamp=float(row["created_at"]) + clock["epoch"] * float(row["duration_s"])
+                + float(frame["video_time_s"]), frame_index=frame["frame_index"],
+                entity_type="person", attributes={"producer_kind": "guided_demo_replay",
+                                                    "playback_epoch": clock["epoch"]},
+                detections=[DetectionIn(
+                    entity_id=str(item["local_track_id"]), label="person",
+                    confidence=item["confidence"], bbox_px=item["bbox_px"],
+                    point_px=item["point_px"], identity_scope="source",
+                    identity_model_version="yolo11n-bytetrack-fixture-v1",
+                ) for item in frame["detections"]],
+            )
+            batch, _ = detection_sample_batch(sample)
+            observations.extend(batch.observations)
+        if observations:
+            with db.using_database(row["workspace_path"]):
+                result, _ = await ingest_observations(ObservationBatch(observations=observations))
+            if result["rejected"]:
+                raise HTTPException(500, "could not materialize opted-in demo observations")
     with db.using_database(row["workspace_path"]):
         demo_store = db.q1("SELECT * FROM stores WHERE id=1")
         demo_sources = db.q("SELECT * FROM sources ORDER BY id")
@@ -714,21 +813,23 @@ async def promote(session_id: str, base_url: str, include_observations: bool = F
     )
     return {"promoted": True, "source_id_map": source_map,
             "observations_promoted": promoted_observations,
-            "excluded": ["Aisle 04", "zone views", "saved query", "dashboard", "alert rule", "fired alerts"]}
+            "excluded": [load_recipe()["zone"]["name"], "zone views", "saved query", "dashboard", "alert rule", "fired alerts"]}
 
 
 def resume_active_sessions() -> int:
-    """Recover persisted running sessions after a local server restart."""
+    """Validate persisted running sessions; their clocks need no worker task."""
     recovered = 0
+    current_recipe = load_recipe()["recipe_version"]
     rows = _normal_rows("SELECT * FROM demo_sessions WHERE status='running' ORDER BY created_at")
     for row in rows:
-        if not Path(row["workspace_path"]).is_file():
+        if (row["recipe_version"] != current_recipe
+                or not Path(row["workspace_path"]).is_file()
+                or not _session_cache_current(row)):
             _normal_ex(
                 "UPDATE demo_sessions SET status='error',updated_at=? WHERE id=?",
                 (db.now(), row["id"]),
             )
             continue
-        start(row["id"])
         recovered += 1
     return recovered
 
@@ -738,7 +839,8 @@ def resume_promoted_media() -> bool:
     row = _normal_row(
         "SELECT * FROM demo_sessions WHERE status='promoted' ORDER BY updated_at DESC LIMIT 1"
     )
-    if not row or not row["asset_root"] or resolve_asset_root(row["asset_root"]) is None:
+    if (not row or row["recipe_version"] != load_recipe()["recipe_version"]
+            or not row["asset_root"] or resolve_asset_root(row["asset_root"]) is None):
         return False
     sources = _normal_rows("SELECT metadata_json FROM sources")
     if not any(db.jload(source["metadata_json"], {}).get("promoted_from_demo") == row["id"]
@@ -750,8 +852,5 @@ def resume_promoted_media() -> bool:
 
 
 async def shutdown() -> None:
-    for control in _controls.values():
-        control["stop"] = True
-    tasks = list(_tasks.values())
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
+    """Cached demo playback has no background processing task to stop."""
+    return None

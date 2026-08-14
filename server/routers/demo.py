@@ -48,6 +48,11 @@ def get_session(session_id: str):
     return demo_runtime.get_session(session_id)
 
 
+@router.get("/sessions/{session_id}/replay-cache", include_in_schema=False)
+def get_replay_cache(session_id: str):
+    return demo_runtime.replay_cache(session_id)
+
+
 @router.post("/sessions/{session_id}/start")
 async def start_session(session_id: str):
     return demo_runtime.start(session_id)
@@ -56,11 +61,6 @@ async def start_session(session_id: str):
 @router.post("/sessions/{session_id}/pause")
 def pause_session(session_id: str):
     return demo_runtime.pause(session_id)
-
-
-@router.post("/sessions/{session_id}/restart")
-async def restart_session(session_id: str):
-    return demo_runtime.restart(session_id)
 
 
 @router.post("/sessions/{session_id}/restore-practice-calibration")
@@ -83,3 +83,13 @@ async def promote_session(session_id: str, body: PromotionIn, request: Request):
 def get_media(camera_key: str, demo_session: str):
     path = demo_runtime.media_path(demo_session, camera_key)
     return FileResponse(path, media_type="video/mp4")
+
+
+@router.get("/sessions/{session_id}/camera-evidence/{camera_key}", include_in_schema=False)
+def get_camera_evidence(session_id: str, camera_key: str):
+    return demo_runtime.camera_evidence(session_id, camera_key)
+
+
+@router.get("/plan.png", include_in_schema=False)
+def get_plan(demo_session: str):
+    return FileResponse(demo_runtime.plan_path(demo_session), media_type="image/png")

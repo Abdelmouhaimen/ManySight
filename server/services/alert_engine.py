@@ -259,7 +259,10 @@ def _check_analysis_condition(rule: dict, now: float) -> dict | None:
                 f"(query: {analysis.get('name', subject)})",
                 {"subject": subject, "measure": measures[0], "value": value,
                  "condition": condition, "held_since": true_since, "quality": quality,
-                 "query_id": db.jload(rule["params_json"], {}).get("query_id")}, now)
+                 "query_id": db.jload(rule["params_json"], {}).get("query_id"),
+                 "evidence_window": result.get("metadata", {}).get("evidence_window"),
+                 "query_result": {"shape": result.get("shape"), "rows": result.get("rows"),
+                                  "metadata": result.get("metadata")}}, now)
     db.ex("UPDATE alert_rules SET condition_state_json=? WHERE id=?",
           (json.dumps({"true_since": true_since, "active": True, "fired": True}), rule["id"]))
     return alert

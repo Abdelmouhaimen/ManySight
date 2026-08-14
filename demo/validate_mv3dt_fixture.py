@@ -19,8 +19,8 @@ def validate(path: Path) -> dict:
     by_time: dict[float, set[str]] = defaultdict(set)
     previous = {camera: -1.0 for camera in cameras}
     for index, frame in enumerate(frames, 2):
-        if frame.get("type") != "source_frame" or frame.get("schema_version") != 1:
-            raise ValueError(f"line {index}: invalid source-frame envelope")
+        if frame.get("type") != "detection_sample" or frame.get("schema_version") != 2:
+            raise ValueError(f"line {index}: invalid DetectionSample envelope")
         camera = frame.get("source_key")
         timestamp = frame.get("video_time_s")
         if camera not in cameras or not isinstance(timestamp, (int, float)) or not math.isfinite(timestamp):
@@ -30,10 +30,13 @@ def validate(path: Path) -> dict:
         previous[camera] = timestamp
         by_time[float(timestamp)].add(camera)
         detections = frame.get("detections")
+        expected_sample_id = f"{camera}-frame-{frame.get('frame_index')}"
+        if frame.get("sample_id") != expected_sample_id:
+            raise ValueError(f"line {index}: invalid source-local sample_id")
         if not isinstance(detections, list):
             raise ValueError(f"line {index}: detections must be a list (empty represents zero)")
-        if frame.get("detection_frame_count") != len(detections):
-            raise ValueError(f"line {index}: frame count does not match detections")
+        if "detection_frame_count" in frame:
+            raise ValueError(f"line {index}: preferred DetectionSample must not author a completion measurement")
         for detection in detections:
             if set(detection) != {"local_track_id", "confidence", "bbox_px", "point_px"}:
                 raise ValueError(f"line {index}: unexpected detection fields")

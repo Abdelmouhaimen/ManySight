@@ -1,7 +1,8 @@
-"""Precompute the optional NVIDIA four-camera replay fixture.
+"""Precompute the optional NVIDIA replay fixture from cameras 1-4 of mtmc_12cam.
 
 This command is intentionally offline tooling. It needs Ultralytics, YOLO11n,
-OpenCV, and a CUDA-capable PyTorch install; the StoreLens demo runtime does not.
+OpenCV, and PyTorch; CUDA is used when available, while the StoreLens demo runtime
+does not import any model dependency.
 No source frames or weights are written to the repository fixture.
 """
 from __future__ import annotations
@@ -24,6 +25,10 @@ def generate(dataset: Path, model_path: Path, output: Path, sample_fps: float) -
     from ultralytics import YOLO
 
     random.seed(0); np.random.seed(0); torch.manual_seed(0)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(0)
+    device = 0 if torch.cuda.is_available() else "cpu"
+    device_label = "CUDA" if torch.cuda.is_available() else "CPU"
     videos = [dataset / "videos" / f"{camera}.mp4" for camera in CAMERAS]
     missing = [str(path) for path in videos if not path.is_file()]
     if missing:
@@ -38,11 +43,11 @@ def generate(dataset: Path, model_path: Path, output: Path, sample_fps: float) -
         raise SystemExit("camera videos must have one shared frame count")
     step = max(1, round(fps[0] / sample_fps))
     header = {
-        "type": "fixture_metadata", "schema_version": 1,
-        "producer": {"detector": "yolo11n", "tracker": "ByteTrack", "device": "CUDA",
+        "type": "fixture_metadata", "schema_version": 2, "fixture_version": 3,
+        "producer": {"detector": "yolo11n", "tracker": "ByteTrack", "device": device_label,
                      "ultralytics_version": ultralytics.__version__,
                      "model_sha256": hashlib.sha256(model_path.read_bytes()).hexdigest()},
-        "dataset": "NVIDIA DeepStream MV3DT mtmc_4cam synthetic warehouse sample",
+        "dataset": "NVIDIA DeepStream MV3DT mtmc_12cam synthetic warehouse sample (cameras 1-4)",
         "source_scope": "anonymous source-local tracks",
         "fps": fps[0], "frame_count": frames[0], "processed_stride": step,
         "duration_s": frames[0] / fps[0], "camera_keys": CAMERAS,
@@ -57,10 +62,11 @@ def generate(dataset: Path, model_path: Path, output: Path, sample_fps: float) -
                 ok, frame = capture.read()
                 if not ok:
                     raise RuntimeError(f"{camera}: could not decode frame {frame_index}")
-                result = model.track(
-                    frame, persist=True, tracker="bytetrack.yaml", classes=[0], conf=0.25,
-                    imgsz=960, device=0, half=True, verbose=False,
-                )[0]
+                track_options = {
+                    "persist": True, "tracker": "bytetrack.yaml", "classes": [0],
+                    "conf": 0.25, "imgsz": 960, "device": device, "verbose": False,
+                }
+                result = model.track(frame, **track_options)[0]
                 detections = []
                 boxes = result.boxes
                 if boxes is not None:
@@ -76,10 +82,10 @@ def generate(dataset: Path, model_path: Path, output: Path, sample_fps: float) -
                             "point_px": [round((x0 + x1) / 2, 4), y1],
                         })
                 record = {
-                    "type": "source_frame", "schema_version": 1,
+                    "type": "detection_sample", "schema_version": 2,
                     "source_key": camera, "frame_index": frame_index,
+                    "sample_id": f"{camera}-frame-{frame_index}",
                     "video_time_s": round(frame_index / fps[camera_index], 6),
-                    "detection_frame_count": len(detections),
                     "detections": detections,
                 }
                 stream.write(json.dumps(record, sort_keys=True) + "\n")
@@ -90,11 +96,11 @@ def generate(dataset: Path, model_path: Path, output: Path, sample_fps: float) -
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=Path, required=True,
-                        help="Path to the extracted datasets/mtmc_4cam directory")
+                        help="Path to the extracted datasets/mtmc_12cam directory")
     parser.add_argument("--model", type=Path, required=True, help="Local yolo11n.pt path")
     parser.add_argument("--output", type=Path,
                         default=Path(__file__).parent / "fixtures" / "nvidia_mv3dt_yolo11n_bytetrack.jsonl")
-    parser.add_argument("--sample-fps", type=float, default=1.0)
+    parser.add_argument("--sample-fps", type=float, default=30.0)
     args = parser.parse_args()
     generate(args.dataset, args.model, args.output, args.sample_fps)
 

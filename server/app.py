@@ -70,8 +70,8 @@ app = FastAPI(
                 "temporal analytics. StoreLens manages logical sources, protected connection configuration, mapped "
                 "geometry, heartbeat-backed workers, schema-v2 detection/measurement/state observations, derived "
                 "current/fused state, saved queries, generated dashboards, and alerts. Local workers open sources and run models; the platform "
-                "does not proxy operational feeds or execute worker code. An optional isolated guided demo replays a versioned raw-observation "
-                "fixture and serves only allowlisted local sample media.",
+                "does not proxy operational feeds or execute worker code. An optional isolated guided demo presents allowlisted local media "
+                "and a provenance-hashed cache derived offline through the real StoreLens pipeline on one synchronized replay clock.",
     lifespan=lifespan,
 )
 
@@ -162,8 +162,9 @@ def agent_guide(request: Request):
 
 StoreLens is an observation and analytics platform. It never opens or proxies an
 operational camera feed and never runs computer-vision models. Its optional guided demo
-serves only allowlisted local sample media and replays precomputed raw detections; it is
-not a worker or live inference. StoreLens can keep source credentials encrypted for
+serves only allowlisted local sample media and a cache derived offline through the real
+platform pipeline; runtime is neither a worker, live inference, nor live fusion.
+StoreLens can keep source credentials encrypted for
 explicitly privileged worker resolution; the worker still opens the feed locally and posts
 raw observations over HTTPS.
 
@@ -192,10 +193,12 @@ raw observations over HTTPS.
    every sample including repeats). Never resolve a zone or send zone_id/zone, and
    never compute zone entry/exit, dwell, occupancy, movement, or a state change —
    StoreLens derives all of those itself. See `GET {endpoints["rest_url"]}/observations/contract`.
-6. For every processed person-detection frame, send its zero or more detections,
-   then one `detection_frame_count` measurement including zero, all with one exact
-   timestamp and one opaque `sample_id`. Prefer the SDK atomic sample builder. Never use a fake detection for an empty frame. Live scene state changes
-   only when this newer completion marker arrives; freshness is reported separately.
+6. For every processed person-detection frame, prefer one atomic
+   `POST {endpoints["rest_url"]}/detection-samples` envelope with one exact timestamp,
+   opaque `sample_id`, and zero or more detections. `detections=[]` is a known empty
+   frame. Prefer the SDK sample builder; never create a fake detection for an empty
+   frame. Legacy detection rows completed by `detection_frame_count` remain compatible.
+   Live changes only after a newer complete sample arrives; freshness is separate.
 7. Verify with `GET {endpoints["rest_url"]}/observations/latest`,
    `GET {endpoints["rest_url"]}/observations/latest-frames`, and
    `GET {endpoints["rest_url"]}/multiview/current`. Preview a deterministic query, save it
