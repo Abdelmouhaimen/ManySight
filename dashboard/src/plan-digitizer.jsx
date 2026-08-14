@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { api, assetUrl, demoSessionId } from "./api.js";
 import { Modal, Panel } from "./components.jsx";
+import { reportTourEvent } from "./demo-tour.jsx";
 
 const EMPTY_DRAWING = {
   polygons: [],
@@ -204,6 +205,16 @@ function PlanDigitizerModal({ onClose, onSaved, backgroundUrl = null }) {
     ownedUrls.current.clear();
   }, []);
 
+  // Real tracing progress, so a guided walkthrough can follow the actual trace.
+  useEffect(() => {
+    reportTourEvent({
+      kind: "digitizer-progress",
+      polygons: drawing.polygons.length,
+      scalePoints: drawing.scale.length,
+      knownDistance: Number(knownDistance) || 0,
+    });
+  }, [drawing.polygons.length, drawing.scale.length, knownDistance]);
+
   const scale = drawing.scale.length === 2 && knownDistance > 0
     ? distance(drawing.scale[0], drawing.scale[1]) / knownDistance
     : 0;
@@ -379,12 +390,13 @@ export function PlanDigitizer({ onRefresh, notify }) {
     <Panel
       title="Floor plan"
       subtitle="Trace a photographed plan and calibrate it directly in metres"
-      action={<button className="button button-dark" onClick={() => setOpen(true)}><ImagePlus size={14} /> Digitize plan</button>}
+      action={<button className="button button-dark" data-demo-tour="digitize-plan" onClick={() => { setOpen(true); reportTourEvent({ kind: "digitizer-open" }); }}><ImagePlus size={14} /> Digitize plan</button>}
     >
       <p className="form-note">{demoBackground ? "The demo keeps the real warehouse bird's-eye plan behind both the tracing canvas and the floor map workbench. You can replace it while digitizing." : "The source image is processed locally in your browser. StoreLens receives only the traced polygons, metric scale, and coordinate metadata."}</p>
     </Panel>
-    {open && <PlanDigitizerModal backgroundUrl={demoBackground} onClose={() => setOpen(false)} onSaved={async (result) => {
+    {open && <PlanDigitizerModal backgroundUrl={demoBackground} onClose={() => { setOpen(false); reportTourEvent({ kind: "digitizer-closed" }); }} onSaved={async (result) => {
       setOpen(false);
+      reportTourEvent({ kind: "plan-saved", at: Date.now(), result });
       await onRefresh();
       notify("Metric floor plan saved", `${result.polygon_count} polygon${result.polygon_count === 1 ? "" : "s"} · ${result.width_m.toFixed(2)} × ${result.height_m.toFixed(2)} m · ${result.invalidated_calibrations} calibration${result.invalidated_calibrations === 1 ? "" : "s"} cleared`);
     }} />}

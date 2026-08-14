@@ -112,9 +112,9 @@ function QueryBody({ definition, context, result, loading, error }) {
   return <DataTable columns={columns} rows={rows} empty="No rows for this query." />;
 }
 
-export function AnalysisCard({ definition, rangeSeconds, context, liveTick, resultOverride = null }) {
+export function AnalysisCard({ definition, rangeSeconds, context, liveTick, resultOverride = null, tour = null }) {
   const { loading, data, error } = useQueryResult(definition, rangeSeconds, liveTick, !resultOverride);
-  return <Panel title={definition.name} subtitle={definition.question || SUBJECT_LABELS[definition.subject]}>
+  return <Panel tour={tour} title={definition.name} subtitle={definition.question || SUBJECT_LABELS[definition.subject]}>
     <QueryBody definition={definition} context={context} result={resultOverride || data} loading={resultOverride ? false : loading} error={resultOverride ? null : error} />
     {definition.migration_note && <p className="definition-note">Migrated definition: {definition.migration_note}</p>}
   </Panel>;

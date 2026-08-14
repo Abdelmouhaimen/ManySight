@@ -18,6 +18,7 @@ import { ConfigurePage, ReviewPage, SourcesPage } from "./pages.jsx";
 import { GeneratedDashboardPage } from "./dashboard-page.jsx";
 import { DemoPage } from "./demo.jsx";
 import { useDemoReplay } from "./demo-replay.js";
+import { DemoTourLayer, useDemoTour } from "./demo-tour.jsx";
 import "./styles.css";
 
 const LivePage = lazy(() =>
@@ -63,6 +64,8 @@ function App() {
   const [toast, setToast] = useState(null);
   const [demoId, setDemoId] = useState(demoSessionId());
   const demoReplay = useDemoReplay(demoId);
+  // Tour state lives here so navigation between routes never resets it.
+  const demoTour = useDemoTour(demoReplay);
 
   const notify = (title, message = "", tone = "success") => {
     setToast({ title, message, tone });
@@ -179,7 +182,11 @@ function App() {
           </small>
         </div>
         <div className="topbar-status">
-          <a className={`button ${demoId ? "button-demo-active" : "button-dark"}`} href="#demo">
+          <a
+            className={`button ${demoId ? "button-demo-active" : "button-dark"}`}
+            href="#demo"
+            data-demo-tour="try-demo"
+          >
             <PlayCircle size={14} /> {demoId ? "Demo workspace" : "Try Demo"}
           </a>
           <EnvironmentBadge value={shell.store?.environment || "setup"} />
@@ -203,6 +210,7 @@ function App() {
               key={value}
               href={`#${value}`}
               className={route === value ? "active" : ""}
+              data-demo-tour={`nav-${value}`}
             >
               <Icon size={17} />
               <span>{label}</span>
@@ -232,6 +240,7 @@ function App() {
         </Suspense>
       </main>
       <Toast toast={toast} dismiss={() => setToast(null)} />
+      <DemoTourLayer tour={demoTour} />
     </div>
   );
 }

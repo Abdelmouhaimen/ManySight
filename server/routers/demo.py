@@ -68,6 +68,12 @@ def restore_practice_calibration(session_id: str, body: PracticeCalibrationIn):
     return demo_runtime.restore_practice_calibration(session_id, body.source_id)
 
 
+@router.post("/sessions/{session_id}/restore-practice-space",
+             summary="Restore the prepared demo map after a practice plan trace")
+def restore_practice_space(session_id: str):
+    return demo_runtime.restore_practice_space(session_id)
+
+
 @router.post("/sessions/{session_id}/discard")
 async def discard_session(session_id: str):
     return await demo_runtime.discard(session_id)

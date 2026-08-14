@@ -55,9 +55,9 @@ export function MetricCard({ label, value, note, primary = false, tone = "" }) {
   );
 }
 
-export function Panel({ title, subtitle, action, className = "", children }) {
+export function Panel({ title, subtitle, action, className = "", tour = null, children }) {
   return (
-    <article className={`panel ${className}`}>
+    <article className={`panel ${className}`} data-demo-tour={tour || undefined}>
       <div className="panel-heading">
         <div>
           <h2>{title}</h2>

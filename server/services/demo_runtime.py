@@ -514,6 +514,39 @@ def plan_path(session_id: str) -> Path:
     return path
 
 
+def _validated_calibration(source_id: int) -> tuple[dict, dict] | None:
+    """The imported rich calibration and its derived planar homography, if any."""
+    rich = db.q1("SELECT * FROM camera_calibrations WHERE source_id=?", (source_id,))
+    if not rich:
+        return None
+    validated = db.jload(rich["derived_homography_json"], {})
+    if not validated.get("pixel_to_world"):
+        return None
+    return rich, validated
+
+
+def _apply_validated_calibration(source: dict, rich: dict, validated: dict,
+                                 comparison: dict | None = None) -> int:
+    """Restore the imported NVIDIA matrix as the source's active floor calibration."""
+    revision = int(source["calibration_revision"] or 0) + 1
+    restored = {
+        "H": validated["pixel_to_world"],
+        "H_map_to_pixel": validated.get("world_to_pixel"),
+        "frame_w": rich["frame_w"], "frame_h": rich["frame_h"],
+        "provider": rich["provider"], "rich_calibration_id": rich["id"],
+        "world_frame": db.jload(rich["world_frame_json"], {}),
+        "units": "m", "ground_plane_z": rich["ground_plane_z"],
+        "revision": revision,
+    }
+    if comparison is not None:
+        restored["practice_comparison"] = comparison
+    db.ex(
+        "UPDATE sources SET calibration_json=?,calibration_revision=? WHERE id=?",
+        (json.dumps(restored), revision, source["id"]),
+    )
+    return revision
+
+
 def restore_practice_calibration(session_id: str, source_id: int) -> dict:
     """Compare a learned planar calibration, then restore validated demo geometry."""
     from . import homography
@@ -531,19 +564,18 @@ def restore_practice_calibration(session_id: str, source_id: int) -> dict:
         camera_key = metadata.get("demo_fixture_source_key")
         if not camera_key:
             raise HTTPException(409, "source is not part of the guided replay")
-        rich = db.q1("SELECT * FROM camera_calibrations WHERE source_id=?", (source_id,))
+        bundle = _validated_calibration(source_id)
         practice = db.jload(source["calibration_json"], {})
         practice_h = practice.get("H")
-        validated = db.jload(rich["derived_homography_json"], {}) if rich else {}
-        validated_h = validated.get("pixel_to_world")
-        if not practice_h or not validated_h:
+        if not practice_h or not bundle:
             raise HTTPException(409, "both practice and validated calibrations are required")
+        rich, validated = bundle
         camera = next(item for item in load_recipe()["cameras"] if item["key"] == camera_key)
         points = camera.get("zone_view_px") or [
             [300, 300], [1200, 250], [1500, 850], [500, 900],
         ]
         practice_map = homography.project(practice_h, points)
-        validated_map = homography.project(validated_h, points)
+        validated_map = homography.project(validated["pixel_to_world"], points)
         differences = [math.hypot(a[0] - b[0], a[1] - b[1])
                        for a, b in zip(practice_map, validated_map)]
         comparison = {
@@ -552,24 +584,65 @@ def restore_practice_calibration(session_id: str, source_id: int) -> dict:
             "control_point_error_m": practice.get("error_m"),
             "sample_points": len(points),
         }
-        revision = int(source["calibration_revision"] or 0) + 1
-        restored = {
-            "H": validated_h,
-            "H_map_to_pixel": validated.get("world_to_pixel"),
-            "frame_w": rich["frame_w"], "frame_h": rich["frame_h"],
-            "provider": rich["provider"], "rich_calibration_id": rich["id"],
-            "world_frame": db.jload(rich["world_frame_json"], {}),
-            "units": "m", "ground_plane_z": rich["ground_plane_z"],
-            "revision": revision, "practice_comparison": comparison,
-        }
-        db.ex(
-            "UPDATE sources SET calibration_json=?,calibration_revision=? WHERE id=?",
-            (json.dumps(restored), revision, source_id),
-        )
+        _apply_validated_calibration(source, rich, validated, comparison)
     return {
         "source_id": source_id, "camera_key": camera_key, "comparison": comparison,
         "used_for_replay": "validated_nvidia_calibration",
         "explanation": "The practice homography was computed and compared. The validated matrix was restored for reliable replay.",
+    }
+
+
+def restore_practice_space(session_id: str) -> dict:
+    """Compare a practice floor-plan trace, then restore the prepared demo space.
+
+    The guided walkthrough can send a user through the real plan digitizer. Saving
+    a real trace legitimately clears placements and floor calibrations, so this
+    reinstates exactly the prepared recipe map, placements, and imported NVIDIA
+    matrices. Both teaching paths therefore continue from one validated state and
+    the committed replay keeps the projection it was derived with.
+    """
+    from ..routers import sources as sources_router
+
+    row = _session_row(session_id)
+    if row["status"] not in ACTIVE_STATES:
+        raise HTTPException(409, "practice space restore requires an active demo")
+    if not _session_cache_current(row):
+        raise HTTPException(409, "demo session belongs to an obsolete derived cache")
+    recipe = load_recipe()
+    with db.using_database(row["workspace_path"]):
+        current = db.q1("SELECT * FROM stores WHERE id=1")
+        practice_trace = db.jload(current["map_json"], {}).get("blueprint_trace")
+        comparison = {
+            "practice_width_m": round(float(current["width_m"] or 0), 4),
+            "practice_height_m": round(float(current["height_m"] or 0), 4),
+            "restored_width_m": recipe["store"]["width_m"],
+            "restored_height_m": recipe["store"]["height_m"],
+            "practice_trace_present": bool(practice_trace),
+        }
+        db.ex(
+            "UPDATE stores SET name=?,space_type=?,width_m=?,height_m=?,map_json=? WHERE id=1",
+            (recipe["store"]["name"], recipe["store"]["space_type"], recipe["store"]["width_m"],
+             recipe["store"]["height_m"], json.dumps(recipe["store"]["map"])),
+        )
+        restored: list[dict] = []
+        for camera in recipe["cameras"]:
+            source = db.q1(
+                "SELECT * FROM sources WHERE json_extract(metadata_json,"
+                "'$.demo_fixture_source_key')=?", (camera["key"],),
+            )
+            if not source:
+                continue
+            sources_router.set_placement(source["id"], sources_router.Placement(**camera["placement"]))
+            bundle = _validated_calibration(source["id"])
+            if bundle:
+                rich, validated = bundle
+                _apply_validated_calibration(source, rich, validated)
+            restored.append({"source_id": source["id"], "camera_key": camera["key"],
+                             "calibration_restored": bool(bundle)})
+    return {
+        "session_id": session_id, "comparison": comparison, "restored_sources": restored,
+        "used_for_replay": "validated_nvidia_calibration",
+        "explanation": "The practice trace was measured, then the prepared demo map, camera placements, and imported calibrations were restored.",
     }
 
 

@@ -65,7 +65,8 @@ export function GeneratedDashboardPage({ liveTick = 0, notify, demoReplay }) {
           metadata: { evidence: demoKpi.evidence, source: "guided_demo_derived_cache" },
         } : null;
         return <AnalysisCard key={widget.id} definition={{ ...query, name: widget.title, presentation: widget.presentation }}
-          rangeSeconds={86400} context={state.context} liveTick={liveTick} resultOverride={resultOverride} />;
+          rangeSeconds={86400} context={state.context} liveTick={liveTick} resultOverride={resultOverride}
+          tour={demoKpi ? "dashboard-kpi" : null} />;
       })}
       {!dashboard.widgets.length && <EmptyState title="This dashboard has no widgets">
         Add widgets through MCP after validating their saved queries.

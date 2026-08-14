@@ -144,6 +144,71 @@ the epoch increments, the relative derived timeline starts at zero, and rendered
 IDs are namespaced as `e{epoch}:{fused_id}`. The renderer does not interpolate across a
 loop boundary.
 
+## Guided walkthrough layer
+
+Starting the guided demo adds a walkthrough on top of the real interface. There is no
+separate demo application: the ManySight UI stays visible and interactive underneath a
+small progress card, a slight dimming layer, and a spotlight around the control or area
+the current step is about.
+
+The card lives at the top left of the content area, clear of the sidebar, and survives
+navigation and a browser refresh for as long as its demo session is active. It reports
+what is happening now, what is already complete, what happens next, and whether
+StoreLens is doing something automatically or waiting for a click. States are `pending`,
+`active`, `loading`, `complete`, `error`, and `waiting_for_user`, each shown with an icon
+and text rather than colour alone. Escape releases the dimming, the card can be collapsed
+or hidden, and **Exit demo** always remains reachable.
+
+Two teaching paths are offered once the four demo sources are ready:
+
+- **Set it up automatically** presents the prepared demo plan, placements, and imported
+  calibrations.
+- **Show me how** navigates to the real Setup area and spotlights the actual
+  **Digitize plan** control, then the actual **Calibrate camera** control for Camera 1.
+  The user works in the real digitizer and the real calibration dialog; the tour never
+  substitutes its own controls.
+
+The practice detour writes real data, so it is followed by a restore step. Saving a
+traced plan legitimately clears placements and floor calibrations, and
+`POST /api/v1/demo/sessions/{id}/restore-practice-space` measures the trace and then
+reinstates the prepared recipe map, camera placements, and imported NVIDIA matrices —
+the same "practice, compare, restore" contract as
+`restore-practice-calibration`. Both paths therefore converge on one validated state
+before the walkthrough continues.
+
+The request narration is explanatory only. The card shows the sentence a user might send
+to a coding agent — *"Alert me when there are at least 2 people in Aisle 04."* — and says
+plainly that nothing is running an agent and that the demo reproduces the configuration
+such a request needs. There is no simulated agent chat, terminal, tool call, or reasoning.
+
+Spotlight targets are resolved from stable `data-demo-tour` hooks, never from
+structural CSS selectors, so moving markup around cannot silently break the
+walkthrough. The current registry is:
+
+```text
+try-demo, nav-<route>                      shell navigation
+demo-start-guided, demo-exit               demo entry and exit
+demo-camera-grid, camera-<n>-tile          replay video grid and one camera
+demo-occupancy, demo-alert                 cached KPI and alert panels
+setup-tab-<name>, sources-list             setup areas
+source-row-<n>, camera-calibrate-<n>       one source and its calibration control
+digitize-plan, floor-map                   plan digitizer and the metric map
+live-floor-map, dashboard-kpi              Live scene and the generated KPI widget
+```
+
+A step that cannot find its target waits through the route change and render, then
+reports a readable fallback with **Look again** and **Skip this step**; it never
+advances a required interaction on its own.
+
+Everything the card reports is read from real state: session results and action log,
+demo-workspace sources, zones, zone views, saved query, alert rule and dashboard, and the
+committed replay cache. Progress presentation is sequenced, never invented — the four
+source rows appear one at a time because their real IDs already exist, an uncalibrated
+camera is never shown as calibrated, and the alert step reports the occupancy StoreLens
+derived for the sample that actually fired rather than a fixed number. The walkthrough
+performs no projection, fusion, query, or alert evaluation of its own and takes no part in
+playback timing.
+
 ## Isolation, learning, and promotion
 
 Every session uses a temporary SQLite workspace selected by an opaque browser session

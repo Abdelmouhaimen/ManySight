@@ -3591,3 +3591,243 @@ body {
   .demo-status-strip button + button { margin-left: 0; }
   .topbar-status .button { display: none; }
 }
+
+/* Guided demo walkthrough ------------------------------------------------ */
+/* `position: fixed` always creates a stacking context, so the dimming layer and
+   the progress card are separate fixed layers: dimming sits below StoreLens
+   dialogs (.modal-backdrop, 120) and the card sits above them and the toast. */
+.demo-tour-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 118;
+  pointer-events: none;
+}
+.demo-tour-card-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 158;
+  pointer-events: none;
+}
+.demo-tour-mask {
+  position: absolute;
+  inset: 0;
+  transition: opacity 0.18s ease;
+}
+.demo-tour-mask path {
+  fill: rgba(17, 17, 15, 0.4);
+}
+.demo-tour-ring {
+  position: absolute;
+  border: 2px solid var(--violet);
+  box-shadow: 0 0 0 4px rgba(112, 89, 255, 0.18), 0 18px 40px rgba(24, 18, 60, 0.18);
+  transition: top 0.18s ease, left 0.18s ease, width 0.18s ease, height 0.18s ease;
+  pointer-events: none;
+}
+.demo-tour-blocker {
+  position: absolute;
+  pointer-events: auto;
+}
+.demo-tour-card-anchor {
+  position: fixed;
+  pointer-events: auto;
+  transition: top 0.18s ease, left 0.18s ease;
+}
+.demo-tour-card {
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(72vh, 620px);
+  overflow-y: auto;
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border: 1px solid #d9d5f4;
+  border-radius: var(--radius-md);
+  background: var(--white);
+  box-shadow: 0 22px 54px rgba(30, 22, 70, 0.22);
+}
+.demo-tour-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.demo-tour-card-controls {
+  display: flex;
+  gap: 4px;
+}
+.demo-tour-card-controls .icon-button {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+.demo-tour-step h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+.demo-tour-step p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.demo-tour-quote {
+  margin: 9px 0 0;
+  padding: 8px 11px;
+  border-left: 2px solid var(--violet);
+  border-radius: 0 8px 8px 0;
+  background: #f4f2ff;
+  color: #3d2fa8;
+  font-size: 13px;
+  font-weight: 640;
+  line-height: 1.45;
+}
+.demo-tour-detail,
+.demo-tour-checklist {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.demo-tour-checklist {
+  margin: 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--border-soft);
+}
+.demo-tour-detail li,
+.demo-tour-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted-light);
+  font-size: 12px;
+}
+.demo-tour-detail li > svg,
+.demo-tour-checklist li > svg {
+  flex: none;
+}
+.demo-tour-label {
+  min-width: 0;
+}
+.demo-tour-detail li.is-complete,
+.demo-tour-checklist li.is-complete {
+  color: var(--ink);
+}
+.demo-tour-detail li.is-complete > svg,
+.demo-tour-checklist li.is-complete > svg {
+  color: var(--green);
+}
+.demo-tour-detail li.is-active,
+.demo-tour-detail li.is-loading,
+.demo-tour-checklist li.is-active,
+.demo-tour-checklist li.is-loading,
+.demo-tour-checklist li.is-waiting_for_user {
+  color: var(--ink);
+  font-weight: 700;
+}
+.demo-tour-checklist li.is-error > svg,
+.demo-tour-detail li.is-error > svg {
+  color: var(--red);
+}
+.demo-tour-dot {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--violet);
+  animation: demo-tour-pulse 1.25s ease-in-out infinite;
+}
+@keyframes demo-tour-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(112, 89, 255, 0.45); }
+  50% { box-shadow: 0 0 0 5px rgba(112, 89, 255, 0); }
+}
+.demo-tour-hint {
+  margin: 9px 0 0;
+  color: #6c57ef;
+  font-size: 11px;
+  font-weight: 700;
+}
+.demo-tour-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 13px;
+}
+.demo-tour-actions .button {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+.demo-tour-explore {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 12px;
+}
+.demo-tour-explore .button {
+  padding: 6px 9px;
+  font-size: 11px;
+}
+.demo-tour-problem {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 10px 11px;
+  border: 1px solid #efc8b1;
+  border-radius: 10px;
+  background: #fff6ef;
+}
+.demo-tour-problem > svg {
+  color: var(--orange);
+}
+.demo-tour-problem p {
+  margin: 0;
+  color: #7a4a22;
+  font-size: 11px;
+}
+.demo-tour-card-anchor.beside-dialog .demo-tour-card {
+  width: 236px;
+  gap: 9px;
+  padding: 12px 13px 13px;
+}
+.demo-tour-card-anchor.beside-dialog .demo-tour-step h2 {
+  font-size: 14px;
+}
+.demo-tour-card-anchor.beside-dialog .demo-tour-checklist {
+  display: none;
+}
+.demo-tour-card.minimized {
+  width: min(280px, calc(100vw - 32px));
+  gap: 8px;
+  padding: 11px 13px;
+}
+.demo-tour-card.minimized .demo-tour-step h2 {
+  font-size: 13px;
+}
+.demo-tour-card.finished {
+  width: min(292px, calc(100vw - 32px));
+}
+.demo-tour-card.finished .demo-tour-checklist {
+  display: none;
+}
+.demo-tour-restore {
+  position: fixed;
+  top: 84px;
+  left: 226px;
+  z-index: 158;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1px solid #d9d5f4;
+  border-radius: 999px;
+  background: var(--white);
+  box-shadow: 0 12px 30px rgba(30, 22, 70, 0.16);
+  font-size: 12px;
+  font-weight: 760;
+  cursor: pointer;
+}
+@media (max-width: 720px) {
+  .demo-tour-card-anchor { left: 12px !important; right: 12px; }
+  .demo-tour-card { width: auto; }
+}

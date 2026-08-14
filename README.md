@@ -117,6 +117,11 @@ the camera-authored Aisle 04 footprint.
 It supports discard or explicit setup-only promotion. See the
 [guided-demo architecture, provenance, and asset terms](docs/guided-demo.md).
 
+A guided progress card, slight dimming, and a spotlight explain each step on top of the
+real interface. You can let StoreLens present the prepared space and calibrations, or
+choose **Show me how** and work through the actual plan digitizer and Camera 1
+calibration controls; both paths continue from the same validated demo state.
+
 ## Source connections
 
 A source combines a logical device with non-secret connection configuration.

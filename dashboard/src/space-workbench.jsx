@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { api, assetUrl, demoSessionId } from "./api.js";
 import { Badge, EmptyState, Modal, Panel } from "./components.jsx";
+import { reportTourEvent } from "./demo-tour.jsx";
 import { PlanDigitizer } from "./plan-digitizer.jsx";
 
 const ZONE_TYPES = [
@@ -147,7 +148,7 @@ function MapSurface({
   const width = Math.max(Number(store?.width_m) || 20, 1);
   const height = Math.max(Number(store?.height_m) || 12, 1);
   return (
-    <div className="map-workbench-canvas">
+    <div className="map-workbench-canvas" data-demo-tour="floor-map">
       <svg
         ref={svgRef}
         viewBox={`-.6 -.6 ${width + 1.2} ${height + 1.2}`}
@@ -684,11 +685,12 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
             </button>
           }
         >
-          <div className="data-list">
-            {sources.map((source) => (
+          <div className="data-list" data-demo-tour="sources-list">
+            {sources.map((source, index) => (
               <button
                 key={source.id}
                 className={`camera-list-row ${source.id === selectedSourceId ? "selected" : ""}`}
+                data-demo-tour={`source-row-${index + 1}`}
                 onClick={() => setSelectedSourceId(source.id)}
               >
                 <span
@@ -804,7 +806,14 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
                     </button>
                     <button
                       className="button button-dark"
-                      onClick={() => setCalibrating(selectedSource)}
+                      data-demo-tour={`camera-calibrate-${sources.findIndex((item) => item.id === selectedSource.id) + 1}`}
+                      onClick={() => {
+                        setCalibrating(selectedSource);
+                        reportTourEvent({
+                          kind: "calibration-open",
+                          cameraIndex: sources.findIndex((item) => item.id === selectedSource.id) + 1,
+                        });
+                      }}
                     >
                       <Crosshair size={14} />
                       {selectedSource.calibrated ? "Review calibration" : "Calibrate camera"}
@@ -865,7 +874,10 @@ export function SpaceWorkbench({ store, zones, sources, onRefresh, notify }) {
           store={store}
           zones={zones}
           sources={sources}
-          onClose={() => setCalibrating(null)}
+          onClose={() => {
+            setCalibrating(null);
+            reportTourEvent({ kind: "calibration-closed" });
+          }}
           onSaved={async () => {
             await onRefresh();
             notify("Calibration saved", "Future pixel detections can now be projected onto the floor plan.");
@@ -1238,6 +1250,11 @@ function CalibrationModal({ source, store, zones, sources, onClose, onSaved }) {
     if (frameUrl?.startsWith("blob:")) URL.revokeObjectURL(frameUrl);
   }, [frameUrl]);
 
+  // Real pair count, so a guided walkthrough follows the actual exercise.
+  useEffect(() => {
+    reportTourEvent({ kind: "calibration-progress", pairs: pairs.length });
+  }, [pairs.length]);
+
   const chooseFrame = (file) => {
     const nextUrl = URL.createObjectURL(file);
     setFrameUrl(nextUrl);
@@ -1293,6 +1310,10 @@ function CalibrationModal({ source, store, zones, sources, onClose, onSaved }) {
           source_id: source.id,
         });
         setPracticeResult(result);
+        reportTourEvent({
+          kind: "practice-calibration-restored", at: Date.now(),
+          sourceId: source.id, cameraIndex: sources.findIndex((item) => item.id === source.id) + 1,
+        });
       }
       await onSaved();
       setMode("test");

@@ -32,6 +32,7 @@ import {
   SignalRow,
 } from "./components.jsx";
 import { AnalysisCard } from "./analytics.jsx";
+import { onTourEvent } from "./demo-tour.jsx";
 import { LocalSourcePreview, SourceEditorModal, SpaceWorkbench } from "./space-workbench.jsx";
 import { TechnicalConfig } from "./technical-config.jsx";
 
@@ -790,6 +791,22 @@ export function ConfigurePage({ notify, refreshShell }) {
   useEffect(() => {
     load();
   }, []);
+  useEffect(() => {
+    // The guided demo can ask for the setup area it is teaching in.
+    const onRequestedTab = (event) => {
+      const requested = event.detail?.tab;
+      if (requested) setTabState(requested);
+    };
+    window.addEventListener("storelens-setup-tab", onRequestedTab);
+    return () => window.removeEventListener("storelens-setup-tab", onRequestedTab);
+  }, []);
+  useEffect(() => onTourEvent((detail) => {
+    // Restoring prepared demo geometry changes this workspace behind the view.
+    if (detail.kind === "plan-restored") {
+      load();
+      refreshShell?.();
+    }
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
   if (loading && !store) return <LoadingState label="Loading configuration…" />;
   if (error && !store) return <ErrorState error={error} retry={load} />;
   const readiness = [
@@ -831,6 +848,7 @@ export function ConfigurePage({ notify, refreshShell }) {
             <button
               key={value}
               className={tab === value ? "active" : ""}
+              data-demo-tour={`setup-tab-${value}`}
               onClick={() => setTab(value)}
             >
               <Icon size={16} />

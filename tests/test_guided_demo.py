@@ -260,6 +260,60 @@ def test_learn_calibration_uses_real_homography_then_restores_validated_matrix(
     client.post(f"/api/v1/demo/sessions/{session['id']}/discard")
 
 
+def test_practice_plan_trace_is_restored_to_the_prepared_demo_space(client, tmp_path, monkeypatch):
+    _assets(tmp_path, monkeypatch)
+    session = client.post("/api/v1/demo/sessions", json={"mode": "guided"}).json()
+    headers = {"X-StoreLens-Demo-Session": session["id"]}
+    prepared_store = client.get("/api/v1/store", headers=headers).json()
+    prepared_sources = client.get("/api/v1/sources", headers=headers).json()
+    assert all(source["calibrated"] and source["placement"] for source in prepared_sources)
+
+    traced = client.post("/api/v1/store/blueprint", headers=headers, json={
+        "image_width": 800, "image_height": 600,
+        "polygons_px": [[{"x": 0, "y": 0}, {"x": 400, "y": 0},
+                         {"x": 400, "y": 300}, {"x": 0, "y": 300}]],
+        "scale_points_px": [{"x": 0, "y": 0}, {"x": 100, "y": 0}],
+        "known_distance_m": 5, "origin_px": {"x": 0, "y": 0}, "y_axis_up": True,
+    })
+    assert traced.status_code == 200, traced.text
+    assert traced.json()["invalidated_calibrations"] == 4
+    practising = client.get("/api/v1/sources", headers=headers).json()
+    assert not any(source["calibrated"] or source["placement"] for source in practising)
+
+    restored = client.post(f"/api/v1/demo/sessions/{session['id']}/restore-practice-space")
+    assert restored.status_code == 200, restored.text
+    payload = restored.json()
+    assert payload["comparison"]["practice_trace_present"] is True
+    assert payload["comparison"]["practice_width_m"] == pytest.approx(20.0)
+    assert [item["camera_key"] for item in payload["restored_sources"]] == CAMERAS
+    assert all(item["calibration_restored"] for item in payload["restored_sources"])
+
+    store = client.get("/api/v1/store", headers=headers).json()
+    assert store["width_m"] == pytest.approx(prepared_store["width_m"])
+    assert store["height_m"] == pytest.approx(prepared_store["height_m"])
+    assert store["map"]["floor_polygons"] == prepared_store["map"]["floor_polygons"]
+    sources = client.get("/api/v1/sources", headers=headers).json()
+    assert all(source["calibrated"] and source["placement"] for source in sources)
+    for before, after in zip(prepared_sources, sources):
+        assert after["calibration"]["provider"] == "nvidia_mv3dt"
+        assert after["calibration"]["H"] == before["calibration"]["H"]
+        assert after["placement"]["x"] == pytest.approx(before["placement"]["x"])
+    # The prepared zone, query, alert, dashboard, and replay cache are untouched.
+    assert client.get("/api/v1/zones", headers=headers).json()[0]["name"] == "Aisle 04"
+    assert client.get(f"/api/v1/demo/sessions/{session['id']}/replay-cache").status_code == 200
+    client.post(f"/api/v1/demo/sessions/{session['id']}/discard")
+
+
+def test_practice_space_restore_requires_an_active_session(client, tmp_path, monkeypatch):
+    _assets(tmp_path, monkeypatch)
+    session = client.post("/api/v1/demo/sessions", json={}).json()
+    client.post(f"/api/v1/demo/sessions/{session['id']}/discard")
+    assert client.post(
+        f"/api/v1/demo/sessions/{session['id']}/restore-practice-space"
+    ).status_code == 409
+    assert client.post("/api/v1/demo/sessions/unknown/restore-practice-space").status_code == 404
+
+
 def test_opt_in_observation_promotion_remaps_sources_and_drops_demo_zone_links(
         client, tmp_path, monkeypatch):
     _assets(tmp_path, monkeypatch)
