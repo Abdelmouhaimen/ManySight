@@ -4,17 +4,11 @@ import {
 } from "lucide-react";
 import { api, assetUrl, demoSessionId, setDemoSessionId } from "./api.js";
 import { ErrorState, LoadingState, PageHeader } from "./components.jsx";
+import { fusedRuntimeIdForSourceTrack } from "./demo-replay-state.js";
+import { trackColor } from "./live-colors.js";
 
 const CAMERA_KEYS = [1, 2, 3, 4].map((value) =>
   `Warehouse_Synthetic_Cam${String(value).padStart(3, "0")}`);
-const TRACK_COLORS = ["#49d6ff", "#ffcb45", "#f472b6", "#a3e635", "#c084fc", "#fb7185"];
-
-function trackColor(entityId = "") {
-  let hash = 0;
-  for (let index = 0; index < entityId.length; index += 1) hash = ((hash * 31) + entityId.charCodeAt(index)) | 0;
-  return TRACK_COLORS[Math.abs(hash) % TRACK_COLORS.length];
-}
-
 function pointInPolygon(point, polygon) {
   if (!point || !polygon?.length) return false;
   const [x, y] = point;
@@ -26,7 +20,7 @@ function pointInPolygon(point, polygon) {
   return inside;
 }
 
-function VideoEvidenceOverlay({ definition, frame }) {
+function VideoEvidenceOverlay({ definition, frame, fusedEntities }) {
   if (!definition) return null;
   const width = definition.frame_width || 1920; const height = definition.frame_height || 1080;
   const detections = frame?.detections || [];
@@ -41,7 +35,10 @@ function VideoEvidenceOverlay({ definition, frame }) {
       const widthPx = x1 - x0; const heightPx = y1 - y0;
       if (![x0, y0, widthPx, heightPx].every(Number.isFinite) || widthPx <= 0 || heightPx <= 0) return null;
       const localTrack = detection.local_track_id ?? index + 1;
-      const color = trackColor(`${definition.camera_key}:${localTrack}`);
+      const fusedRuntimeId = fusedRuntimeIdForSourceTrack(
+        fusedEntities, definition.camera_key, localTrack,
+      );
+      const color = fusedRuntimeId ? trackColor(fusedRuntimeId) : "#a8a29e";
       const labelY = Math.max(32, y0); const labelX = Math.min(Math.max(0, x0), width - 245);
       return <g key={`${localTrack}-${index}`} className="demo-detection-trace">
         <rect x={x0} y={y0} width={widthPx} height={heightPx} rx="5" fill="none" stroke={color} vectorEffect="non-scaling-stroke" />
@@ -57,37 +54,13 @@ function VideoEvidenceOverlay({ definition, frame }) {
   </svg>;
 }
 
-function polygonPoints(points, bounds, width = 300, height = 150) {
-  if (!points?.length) return "";
-  const pad = 12; const dx = bounds.maxX - bounds.minX || 1; const dy = bounds.maxY - bounds.minY || 1;
-  return points.map(({ x, y }) => `${pad + ((x - bounds.minX) / dx) * (width - 2 * pad)},${height - pad - ((y - bounds.minY) / dy) * (height - 2 * pad)}`).join(" ");
-}
-
-function GeometryStory({ cache }) {
-  const geometry = cache?.geometry; if (!geometry) return null;
-  const contributions = geometry.camera_contributions || [];
-  const canonical = geometry.canonical_geometry?.coordinates?.[0]?.map(([x, y]) => ({ x, y })) || [];
-  const all = [...contributions.flatMap((item) => item.projected_polygon_m || []), ...canonical];
-  const bounds = {
-    minX: Math.min(...all.map((p) => p.x)), maxX: Math.max(...all.map((p) => p.x)),
-    minY: Math.min(...all.map((p) => p.y)), maxY: Math.max(...all.map((p) => p.y)),
-  };
-  return <section className="panel demo-geometry-story">
-    <div className="panel-heading"><div><span className="tiny-label">Camera pixels → floor plane</span><h2>Two camera traces create one canonical Aisle 04</h2><p>Cameras 1 and 2 have no invented zone polygon. Camera 3 creates the first metric contribution; Camera 4 extends it with full revision provenance.</p></div></div>
-    <div className="demo-geometry-steps">
-      {contributions.map((item, index) => <div key={item.source_key}><strong>Camera {index + 3}</strong><small>trace → calibrated projection</small><svg viewBox="0 0 300 150"><polygon points={polygonPoints(item.projected_polygon_m, bounds)} className={`projection contribution-${index}`} /></svg></div>)}
-      <div className="canonical"><strong>Canonical Aisle 04</strong><small>metric union · revision {geometry.canonical_revision}</small><svg viewBox="0 0 300 150"><polygon points={polygonPoints(canonical, bounds)} className="projection union" /></svg></div>
-    </div>
-  </section>;
-}
-
 export function DemoPage({ refreshShell, demoReplay }) {
   const [assets, setAssets] = useState(null); const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false); const [evidence, setEvidence] = useState({});
   const [exitOpen, setExitOpen] = useState(false); const [includeObservations, setIncludeObservations] = useState(false);
   const [debug, setDebug] = useState(false); const [presented, setPresented] = useState({});
   const videos = useRef({});
-  const session = demoReplay?.session; const cache = demoReplay?.cache; const replay = demoReplay?.replay;
+  const session = demoReplay?.session; const replay = demoReplay?.replay;
 
   useEffect(() => { api.get("/demo/assets").then(setAssets).catch(setError); }, []);
   useEffect(() => {
@@ -149,8 +122,7 @@ export function DemoPage({ refreshShell, demoReplay }) {
       actions={<button className="button button-secondary" onClick={() => setExitOpen(true)}>Exit demo</button>} />
     <div className="demo-status-strip"><span><i className={session.status === "running" ? "active" : ""} /> {session.status}</span><span>Loop {replay.epoch + 1}</span><span>{replay.videoTime.toFixed(3)} / {session.duration_s.toFixed(3)} sec</span><button onClick={() => control(session.status === "running" ? "pause" : "start")} disabled={busy}>{session.status === "running" ? <Pause size={13} /> : <Play size={13} />} {session.status === "running" ? "Pause" : "Play"}</button><button onClick={() => setDebug((value) => !value)}>{debug ? "Hide sync" : "Debug sync"}</button></div>
     {debug && <div className="demo-sync-debug" data-testid="demo-sync-debug"><code>Master: {replay.videoTime.toFixed(3)}s · frame {frameIndex}</code><code>Boxes: frame {frameIndex}</code><code>Derived: {sample?.video_time_s?.toFixed(3) ?? "—"}s · index {replay.derivedIndex}</code><code>Epoch: {replay.epoch}</code>{CAMERA_KEYS.map((key) => <code key={key}>{key.slice(-3)} presented: {presented[key]?.toFixed?.(3) ?? "—"}s</code>)}</div>}
-    <div className="demo-video-grid">{CAMERA_KEYS.map((key, index) => <figure key={key}><div className="demo-video-stage"><video ref={(node) => { videos.current[key] = node; }} data-camera-key={key} src={assetUrl(`/demo/media/${key}.mp4`)} muted playsInline preload="auto" onLoadedMetadata={(event) => { event.currentTarget.currentTime = replay.videoTime; }} onTimeUpdate={(event) => { const mediaTime = event.currentTarget.currentTime; setPresented((current) => ({ ...current, [key]: mediaTime })); }} /><VideoEvidenceOverlay definition={session.result?.camera_overlays?.[key]} frame={evidence[key]?.frames?.[frameIndex]} /></div><figcaption><strong>Camera {index + 1}</strong><span>Native 30 FPS · source-local frame {frameIndex}</span></figcaption></figure>)}</div>
-    <GeometryStory cache={cache} />
+    <div className="demo-video-grid">{CAMERA_KEYS.map((key, index) => <figure key={key}><div className="demo-video-stage"><video ref={(node) => { videos.current[key] = node; }} data-camera-key={key} src={assetUrl(`/demo/media/${key}.mp4`)} muted playsInline preload="auto" onLoadedMetadata={(event) => { event.currentTarget.currentTime = replay.videoTime; }} onTimeUpdate={(event) => { const mediaTime = event.currentTarget.currentTime; setPresented((current) => ({ ...current, [key]: mediaTime })); }} /><VideoEvidenceOverlay definition={session.result?.camera_overlays?.[key]} frame={evidence[key]?.frames?.[frameIndex]} fusedEntities={replay.entities} /></div><figcaption><strong>Camera {index + 1}</strong><span>Native 30 FPS · source-local frame {frameIndex}</span></figcaption></figure>)}</div>
     <div className="demo-outcome-grid"><section className={`panel demo-occupancy ${known && count >= 2 ? "threshold" : ""}`}><span className="tiny-label">Cached real saved-query result</span><strong>{count ?? "—"}</strong><h2>Fused people in Aisle 04</h2><p>Quality: {replay?.kpi?.quality || "unknown"} · evidence from {replay?.kpi?.evidence?.source_count || 0} sources · derived at {sample?.video_time_s?.toFixed(3) ?? "—"}s.</p></section><section className="panel"><span className="tiny-label">Cached real alert evaluation</span><h2>{alerts.length ? "Threshold event recorded" : "Waiting for ≥ 2 people"}</h2><p>{alerts.at(-1)?.message || "Only alert events whose derived time is at or before the master clock are visible."}</p>{alerts.length > 0 && <small>Current count: {count} · threshold event at {alerts.at(-1).video_time_s.toFixed(3)}s</small>}</section></div>
     <section className="panel demo-timeline"><div className="panel-heading"><div><h2>What StoreLens actually configured</h2><p>Each action corresponds to a stored demo-workspace result. The derived timeline was generated separately through the real platform pipeline.</p></div></div><ol>{session.action_log.map((item) => <li key={item.name}><CheckCircle2 size={16} /><div><strong>{item.name}</strong><p>{item.explanation}</p><code>{JSON.stringify(item.result)}</code></div></li>)}</ol></section>
     <section className="panel demo-explore"><div><span className="tiny-label">Inspect the same timeline</span><h2>Move between synchronized views</h2><p>Live 3D and the generated dashboard consume this replay state from the app-level master clock.</p></div><div>{[["live","Live 3D"],["overview","Dashboard"],["setup","Plan & calibration"],["observations","Evidence"],["sources","Sources"]].map(([route, label]) => <a key={route} className="button button-secondary" href={`#${route}`}>{label}<ExternalLink size={12} /></a>)}</div></section>

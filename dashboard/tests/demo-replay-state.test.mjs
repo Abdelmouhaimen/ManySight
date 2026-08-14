@@ -1,12 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  alertsAt, derivedSampleIndexAt, frameIndexAt, interpolateFusedEntities, replayStateAt,
+  alertsAt, derivedSampleIndexAt, frameIndexAt, fusedRuntimeIdForSourceTrack,
+  interpolateFusedEntities, replayStateAt,
 } from "../src/demo-replay-state.js";
 
 const timeline = [
   { index: 0, video_time_s: 0, kpi: { value: 1 }, alert_events: [], fused_entities: [
-    { fused_entity_id: "F1", point_map: { x: 0, y: 2 } },
+    { fused_entity_id: "F1", point_map: { x: 0, y: 2 }, members: [
+      { source_key: "cam3", local_entity_id: "17" },
+      { source_key: "cam4", local_entity_id: "8" },
+    ] },
     { fused_entity_id: "gone", point_map: { x: 5, y: 5 } },
   ] },
   { index: 1, video_time_s: .1, kpi: { value: 3 }, alert_events: [{ title: "threshold" }], fused_entities: [
@@ -30,6 +34,9 @@ test("positions interpolate only for identities confirmed in both samples", () =
   assert.deepEqual(entities.find((item) => item.fused_entity_id === "gone").point_map, { x: 5, y: 5 });
   assert.equal(entities.some((item) => item.fused_entity_id === "new"), false);
   assert.equal(entities[0].runtime_id, "e4:F1");
+  assert.equal(fusedRuntimeIdForSourceTrack(entities, "cam3", 17), "e4:F1");
+  assert.equal(fusedRuntimeIdForSourceTrack(entities, "cam4", "8"), "e4:F1");
+  assert.equal(fusedRuntimeIdForSourceTrack(entities, "cam1", "17"), null);
 });
 
 test("alerts are stepwise and epoch namespaced", () => {

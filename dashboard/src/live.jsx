@@ -11,7 +11,7 @@ import {
   RotateCcw,
   Users,
 } from "lucide-react";
-import { api, formatPreciseDateTime } from "./api.js";
+import { api, assetUrl, formatPreciseDateTime } from "./api.js";
 import {
   frameIsStale,
   latestFrameTracks,
@@ -146,12 +146,15 @@ function zoneRings(zone) {
 function disposeObject(object) {
   object.traverse((child) => {
     child.geometry?.dispose?.();
-    if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose?.());
-    else child.material?.dispose?.();
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of materials) {
+      material?.map?.dispose?.();
+      material?.dispose?.();
+    }
   });
 }
 
-function LiveScene3D({ store, zones, sources, renderedTracks, resetToken }) {
+function LiveScene3D({ store, zones, sources, renderedTracks, resetToken, backgroundImageUrl = null }) {
   const mountRef = useRef(null);
   const sceneRef = useRef(null);
   const cameraRef = useRef(null);
@@ -168,6 +171,7 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken }) {
     walls: store?.map?.walls || [],
     zones: zones.map((zone) => ({ id: zone.id, geometry: zone.geometry, polygon: zone.polygon, color: zone.color })),
     sources: sources.map((source) => ({ id: source.id, placement: source.placement })),
+    backgroundImageUrl,
   });
   // Keep the StoreLens map axes intact in the 3D world: map X -> world X and
   // map Y -> world Z. This lets an elevated view from +Z preserve the exact
@@ -242,6 +246,26 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken }) {
       );
       floor.receiveShadow = true;
       scene.add(floor);
+    }
+
+    if (backgroundImageUrl) {
+      const texture = new THREE.TextureLoader().load(backgroundImageUrl);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      const background = new THREE.Mesh(
+        new THREE.PlaneGeometry(width, height),
+        new THREE.MeshBasicMaterial({
+          map: texture,
+          transparent: true,
+          opacity: .13,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        }),
+      );
+      background.rotation.x = -Math.PI / 2;
+      background.position.y = .012;
+      background.renderOrder = 1;
+      scene.add(background);
     }
 
     const zoneMaterials = new Map();
@@ -753,7 +777,7 @@ function DemoLivePage({ demoReplay }) {
       <button onClick={() => setResetToken((value) => value + 1)}><RotateCcw size={14} /> Reset 3D view</button>
       <time>Media {replay.videoTime.toFixed(3)}s · frame {replay.frameIndex} · derived {replay.derivedSample?.video_time_s?.toFixed(3) ?? "—"}s · epoch {replay.epoch}</time>
     </div>
-    <div className="live-layout"><LiveScene3D store={context.store} zones={context.zones} sources={context.sources} renderedTracks={tracks} resetToken={resetToken} /><aside className="live-rail"><div className="live-summary-grid"><MetricCard label="Fused people" value={tracks.length} note="Interpolated presentation positions" /><MetricCard label="People in Aisle 04" value={kpi?.value ?? "—"} note={`${kpi?.quality || "unknown"} · ${kpi?.evidence?.source_count || 0} contributing sources`} /></div><section className="live-rail-section"><div className="live-rail-heading"><Users size={15} /><div><strong>Anonymous fused tracks</strong><small>One stable color per epoch-namespaced global ID</small></div></div><div className="live-track-list">{tracks.slice(0, 16).map((track) => <div key={track.key}><i style={{ background: track.color }} /><span><strong>{track.key}</strong><small>{track.position.observation.zone_name || "unassigned floor"}</small></span><time>{track.age.toFixed(2)}s</time></div>)}</div></section><div className="live-provenance"><Camera size={14} /><span>Cached state was derived offline through StoreLens from complete four-camera detection samples at {demoReplay.cache?.metadata?.sample_rate_hz} Hz.</span></div></aside></div>
+    <div className="live-layout"><LiveScene3D store={context.store} zones={context.zones} sources={context.sources} renderedTracks={tracks} resetToken={resetToken} backgroundImageUrl={assetUrl("/demo/plan.png")} /><aside className="live-rail"><div className="live-summary-grid"><MetricCard label="Fused people" value={tracks.length} note="Interpolated presentation positions" /><MetricCard label="People in Aisle 04" value={kpi?.value ?? "—"} note={`${kpi?.quality || "unknown"} · ${kpi?.evidence?.source_count || 0} contributing sources`} /></div><section className="live-rail-section"><div className="live-rail-heading"><Users size={15} /><div><strong>Anonymous fused tracks</strong><small>One stable color per epoch-namespaced global ID</small></div></div><div className="live-track-list">{tracks.slice(0, 16).map((track) => <div key={track.key}><i style={{ background: track.color }} /><span><strong>{track.key}</strong><small>{track.position.observation.zone_name || "unassigned floor"}</small></span><time>{track.age.toFixed(2)}s</time></div>)}</div></section><div className="live-provenance"><Camera size={14} /><span>Cached state was derived offline through StoreLens from complete four-camera detection samples at {demoReplay.cache?.metadata?.sample_rate_hz} Hz.</span></div></aside></div>
   </>;
 }
 

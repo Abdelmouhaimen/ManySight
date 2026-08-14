@@ -42,6 +42,17 @@ export function interpolateFusedEntities(timeline = [], index = -1, videoTime = 
   });
 }
 
+export function fusedRuntimeIdForSourceTrack(
+  entities = [], sourceKey = "", localEntityId = "",
+) {
+  const expectedSource = String(sourceKey);
+  const expectedEntity = String(localEntityId);
+  const entity = entities.find((candidate) => (candidate.members || []).some((member) =>
+    String(member.source_key) === expectedSource
+      && String(member.local_entity_id) === expectedEntity));
+  return entity?.runtime_id || null;
+}
+
 export function alertsAt(timeline = [], videoTime = 0, epoch = 0) {
   return timeline.flatMap((sample) => Number(sample.video_time_s) <= Number(videoTime) + 1e-9
     ? (sample.alert_events || []).map((event, index) => ({

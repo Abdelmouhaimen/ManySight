@@ -3579,21 +3579,11 @@ body {
 .maintenance-copy { margin: 0 0 18px; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .demo-sync-debug { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 8px; margin: 10px 0 16px; padding: 12px; border: 1px solid #8b7cf6; border-radius: 12px; background: #18152b; color: #eeebff; }
 .demo-sync-debug code { font-size: 9px; color: inherit; }
-.demo-geometry-story { margin-top: 18px; }
-.demo-geometry-steps { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
-.demo-geometry-steps > div { display: grid; gap: 3px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: #faf8f2; }
-.demo-geometry-steps small { color: var(--muted); }
-.demo-geometry-steps svg { width: 100%; height: 150px; margin-top: 8px; background: #f1efe8; border-radius: 8px; }
-.demo-geometry-steps .projection { stroke-width: 3; vector-effect: non-scaling-stroke; }
-.demo-geometry-steps .contribution-0 { fill: rgba(73,214,255,.28); stroke: #1686a8; }
-.demo-geometry-steps .contribution-1 { fill: rgba(196,132,252,.28); stroke: #8452b8; }
-.demo-geometry-steps .union { fill: rgba(163,230,53,.35); stroke: #4d7d0a; }
 @media (max-width: 900px) {
   .demo-hero { grid-template-columns: 1fr; background: linear-gradient(160deg,#fff 0 65%,#eeebff 65%); }
   .demo-video-grid, .demo-outcome-grid, .demo-timeline ol { grid-template-columns: 1fr; }
   .demo-explore { align-items: flex-start; flex-direction: column; }
   .demo-explore > div:last-child { justify-content: flex-start; }
-  .demo-geometry-steps { grid-template-columns: 1fr; }
 }
 @media (max-width: 620px) {
   .demo-status-strip { align-items: flex-start; flex-wrap: wrap; }
