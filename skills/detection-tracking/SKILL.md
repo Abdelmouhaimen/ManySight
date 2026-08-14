@@ -16,11 +16,11 @@ For each processed frame:
 1. Choose one exact timestamp and one opaque source-local `sample_id`.
 2. Detect and track objects. `entity_id` is an anonymous tracker ID with an honest
    `identity_scope`, not a verified person identity.
-3. Submit every detection with pixel evidence. For floor traffic, feet or bbox
-   bottom-center are normally correct; preserve bbox/keypoints/mask when available.
-4. Submit exactly one `detection_frame_count` measurement with the same timestamp and
-   `sample_id`, including a value of zero.
-5. Flush immediately. Never invent a zero-confidence detection for an empty frame.
+3. Build one `DetectionSample` containing every detection with pixel evidence. For
+   floor traffic, feet or bbox bottom-center are normally correct; preserve
+   bbox/keypoints/mask when available.
+4. Submit the complete envelope once. Use `detections=[]` for a processed empty frame.
+5. Never invent a zero-confidence detection for an empty frame.
 
 Prefer the SDK builder:
 
@@ -35,9 +35,11 @@ for track in tracks:
 sample.submit()
 ```
 
-The builder sends one atomic batch. StoreLens also supports split marker-first or
-detection-first delivery, but incomplete/count-mismatched samples do not advance Live.
-Do not call `time.time()` separately for rows from one sample.
+The builder sends the preferred atomic detection-sample envelope. The SDK also exposes
+`submit_detection_sample(...)`. Legacy split detection rows plus a matching
+`detection_frame_count` measurement remain readable, but new workers should not author
+that internal completion concept. Do not call `time.time()` separately for detections
+from one sample.
 
 ## Workflow
 

@@ -19,10 +19,10 @@ preprocessing. StoreLens owns geometry enrichment and derived analytics.
 A job is metadata. A worker instance is heartbeat-backed runtime state. StoreLens does
 not start or relaunch arbitrary worker scripts.
 
-The guided demo is not a worker. It honestly labels its producer as `replay`, creates no
-worker heartbeat rows, and submits a versioned precomputed detection fixture through the
-same observation boundary. Offline fixture generation uses a real detector/tracker;
-ordinary demo playback performs no inference.
+The guided demo is not a worker. Offline fixture generation submits versioned raw
+`DetectionSample` records through the real platform pipeline and commits the resulting
+derived replay cache. Ordinary playback reads that cache on one media clock, creates no
+worker heartbeat rows, and performs neither inference nor live fusion.
 
 ## Opening a source
 
@@ -56,33 +56,44 @@ timestamp, source ID, and one of these kinds:
 - `state`: the current categorical label for a state name. Send every sample,
   including repeated labels, so StoreLens can derive intervals and staleness.
 
-`sample_id` is an optional opaque source-local sample key. Continuous detection workers
-should use it for every detection and completion marker produced by one inference
-sample. The runtime contract is available at `GET /api/v1/observations/contract`.
+`sample_id` is an opaque source-local frame/sample key. Continuous detection workers
+should prefer the atomic `POST /api/v1/detection-samples` envelope. The lower-level
+observation batch remains available for advanced producers and backward compatibility.
+The runtime contract is available at `GET /api/v1/observations/contract`.
 
 Workers must not send `zone_id` or `zone`, or publish derived kinds such as
 `zone_enter`, `zone_exit`, `zone_dwell`, `state_change`, or `count`. StoreLens rejects
 those values on the schema-v2 endpoint.
 
-## Presence including zero
+## Complete detection samples, including zero
 
-Detections exist only when an entity is observed. For a zero-capable presence series,
-submit one `measurement` named `detection_frame_count` for every processed frame. Set
-its label to the entity type and its gauge value to the number of detections, including
-zero. Give it the same `sample_id` and exact timestamp as that frame's detections. StoreLens does not
-merge neighboring timestamps or synchronize cameras.
+One processed camera frame is one atomic `DetectionSample` containing zero or more
+detections. The envelope carries one source, entity type, exact timestamp, opaque
+`sample_id`, optional source `frame_index`, and shared attributes. Submit an empty list
+for an observed zero; never create a fake zero-confidence detection. A processed frame
+is a frame on which the detector actually ran, not every physical frame skipped by an
+intentional sampler.
 
-Treat the measurement as the completion marker for that processed frame: buffer the
-frame's zero or more detections first, append `detection_frame_count` last, then flush.
-Prefer `begin_detection_sample(...).add_detection(...).submit()`, which sends one
-immediate atomic batch. When building payloads manually, use one `sample_id` and
-`sample_ts`; do not call `time.time()` separately for each detection.
-Do not skip the marker for an empty frame and do not create a fake zero-confidence
-detection. A processed frame is a frame on which the worker actually ran its detector,
-not every physical camera frame skipped by an intentional sampler.
+```python
+client.submit_detection_sample(
+    source_id=source_id,
+    entity_type="person",
+    sample_id=f"camera-{source_id}-frame-{frame_index}",
+    timestamp=timestamp,
+    frame_index=frame_index,
+    detections=detections,  # [] is a complete known-zero sample
+)
+```
+
+The SDK builder offers the same API incrementally in memory before one atomic submit.
+StoreLens internally normalizes the envelope into entity observations and a private
+completion record used by existing materializers. Workers do not author that record.
+Legacy producers may still submit detection rows plus one `detection_frame_count`
+measurement with matching source, entity type, timestamp, and `sample_id`; incomplete
+or count-mismatched legacy samples do not advance current state.
 
 `GET /api/v1/observations/latest-frames?entity_type=person` reconstructs the latest
-completed frame per source from the marker and matching sample detections. The
+complete frame per source. The
 scene persists until a newer marker arrives. Freshness is reported separately, so a
 stopped worker makes the last frame stale without changing its contents.
 

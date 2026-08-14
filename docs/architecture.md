@@ -20,9 +20,10 @@ produced an observation.
    fused/source-debug Live views, generated dashboards, workers, and alerts.
 7. **The MCP server** exposes safe platform operations and agent playbooks. It is not
    a worker runtime and never receives camera credentials through ordinary discovery.
-8. **The optional guided-demo controller** routes an explicit browser session to a
-   temporary SQLite workspace and progressively replays a versioned raw-observation
-   fixture. It does not impersonate workers or alter the normal workspace.
+8. **The optional guided demo** routes an explicit browser session to a temporary
+   SQLite workspace. Its offline generator derives a versioned raw `DetectionSample`
+   fixture through the real platform and commits a provenance-hashed replay cache.
+   Runtime advances one master media clock and performs no live fusion or inference.
 
 ## Data flow
 
@@ -33,22 +34,21 @@ a physical zone, and records the geometry revisions used at ingestion.
 
 StoreLens derives current presence, density, visits, dwell, transitions, measurement
 series, state intervals, fused occupancy, saved-query results, generated dashboards,
-and alerts. Legacy `/api/v1/events` remains accepted for compatibility; new workers
-must use `/api/v1/observations/batch`.
+and alerts. Legacy `/api/v1/events` remains accepted for compatibility. New camera
+workers should use `/api/v1/detection-samples`; other producers use
+`/api/v1/observations/batch`.
 
 ## Complete source samples
 
-Continuous detection workers send zero or more detections followed by one
-`detection_frame_count` measurement. All rows use one opaque source-local `sample_id`
-and one exact timestamp. The marker commits the sample only when its value matches the
-stored detection count. A zero marker commits an observed empty frame without a fake
-detection.
+Continuous detection workers submit one atomic `DetectionSample` with one source-local
+`sample_id`, one exact timestamp, and zero or more detections. `detections=[]` commits
+an observed empty frame without a fake detection. The SDK builder accumulates detections
+in memory and submits that same public envelope.
 
-The SDK's `begin_detection_sample(...).submit()` sends the sample as one immediate
-batch. Marker-first and detection-first delivery across batches are also supported,
-but partial or count-mismatched samples never replace current state. Duplicate markers
-and timestamp disagreements within an explicit sample are rejected. Older observations
-without `sample_id` retain exact source/timestamp fallback semantics.
+StoreLens internally normalizes the envelope for its existing event/materialization
+model. Legacy detection rows plus one matching `detection_frame_count` measurement are
+still supported, but partial or count-mismatched legacy samples never replace current
+state. Older rows without `sample_id` retain exact source/timestamp fallback semantics.
 
 Scene contents and freshness are independent. If a worker stops, StoreLens retains the
 last complete sample and marks it stale; elapsed wall time never fabricates an empty

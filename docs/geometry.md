@@ -53,5 +53,7 @@ or bbox bottom-center for standing people and named planes for elevated surfaces
 
 The guided demo exercises this same path: it imports the NVIDIA 3x4 matrices with an
 explicit provider-world-to-map transform, projects a predetermined camera polygon to
-create Aisle 04, and stores clipped per-camera decision views. Those pixels are evidence
+trace Aisle 04 in cameras 3 and 4, project both views onto the floor, explicitly union
+their overlapping contributions into one canonical metric footprint, and store per-camera decision
+views. Those pixels are evidence
 for a plane projection; they are not a 3D reconstruction.

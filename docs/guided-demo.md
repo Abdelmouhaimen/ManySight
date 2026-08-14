@@ -1,147 +1,176 @@
 # Guided four-camera demo
 
-The bundled **Try Demo** workflow is a playable, isolated StoreLens walkthrough. It
-uses NVIDIA's four-camera synthetic warehouse sample and answers one fixed question:
+The **Try Demo** workflow is a deterministic, isolated StoreLens walkthrough using
+cameras 1–4 from NVIDIA's synthetic `mtmc_12cam` warehouse dataset. It answers one
+fixed question:
 
 > Alert when at least two anonymous fused person tracks are in Aisle 04.
 
-The demo is evidence-backed. A numerical fixture was precomputed once with YOLO11n
-and ByteTrack on CUDA. At runtime StoreLens progressively submits those source-local
-results through the normal schema-v2 ingestion path, performs floor projection, assigns
-the canonical metric zone, associates anonymous active tracks centrally, executes a
-saved query, renders its dashboard widget, and evaluates a query-backed alert. Runtime
-replay does not import Torch, Ultralytics, model weights, or CUDA.
+The demonstration has three deliberately separate stages:
 
-## Install the optional media
+```text
+fixture generation:  NVIDIA video → YOLO11n + ByteTrack → raw DetectionSample fixture
+cache generation:    raw fixture → real StoreLens derivation → derived replay cache
+playable runtime:    one master clock → video + boxes + cached StoreLens state
+```
 
-StoreLens does not redistribute NVIDIA videos or model weights. Download the archive
-from NVIDIA on demand:
+Playable runtime is not live fusion and is not a worker. It does no inference, ongoing
+projection, multiview optimization, query recomputation, or alert evaluation.
+
+## Install optional NVIDIA media
+
+StoreLens does not redistribute NVIDIA videos or model weights:
 
 ```powershell
 python demo/fetch_nvidia_mv3dt.py
 ```
 
-The script downloads the NVIDIA-hosted `datasets.zip`, prints the downloaded archive's
-SHA-256 for an audit trail, checks archive paths before extracting, and installs the files
-below ignored `data/demo-assets/`. NVIDIA does not publish a pinned digest at this URL,
-so the printed value is not an authenticity guarantee. A different local
-location can be selected with `--destination`; set `STORELENS_DEMO_ASSET_DIR` to the
-extracted `datasets/mtmc_4cam` directory.
+The fetcher downloads NVIDIA's archive, prints its SHA-256, rejects unsafe archive
+paths, and installs the dataset below ignored `data/demo-assets/`. Use
+`STORELENS_DEMO_ASSET_DIR` for another extracted `datasets/mtmc_12cam` path. Review the
+applicable NVIDIA terms; StoreLens's repository license does not grant rights to that
+media.
 
-The sample is described in NVIDIA's
-[Multi-View 3D Tracking documentation](https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_MV3DT.html)
-and hosted by the [NVIDIA DeepStream repository](https://github.com/NVIDIA/DeepStream).
-Review the applicable NVIDIA terms before downloading or using the assets. StoreLens's
-repository license, when one is added, does not grant rights to NVIDIA media.
+## Raw detection fixture
 
-## Fixture provenance and regeneration
+`demo/fixtures/nvidia_mv3dt_yolo11n_bytetrack.jsonl` contains one metadata record and
+2,408 camera-frame records: 602 source frames for each of four cameras at 30 FPS. Each
+frame is a public schema-v2 `DetectionSample` with:
 
-`demo/fixtures/nvidia_mv3dt_yolo11n_bytetrack.jsonl` contains:
+- source key, media-relative time, source frame index, and opaque sample ID;
+- zero or more source-local tracker detections;
+- YOLO confidence, corner-form bounding box, and bottom-center point;
+- detector/tracker, model-file hash, library, and CUDA provenance in metadata;
+- no map point, zone assignment, fused ID, KPI, or alert.
 
-- one versioned metadata record with video timing, producer configuration, Ultralytics
-  version, and the exact model SHA-256;
-- one record for every processed source/timestamp, including an explicit detection list
-  and matching `detection_frame_count`;
-- source-local track IDs, confidence, corner-form bounding boxes, and representative
-  bottom points;
-- no source images, canonical zones, map points, fused identities, or analytics.
+An empty `detections` list is a complete known-zero sample. Fixture authors do not
+create a generic `detection_frame_count` measurement; StoreLens retains that record only
+as an internal/legacy normalization detail.
 
-Validate it without model dependencies:
+Validate the fixture without model dependencies:
 
 ```powershell
 python demo/validate_mv3dt_fixture.py demo/fixtures/nvidia_mv3dt_yolo11n_bytetrack.jsonl
 ```
 
-Regeneration is an offline maintainer operation and requires a local YOLO11n weight,
-Ultralytics, OpenCV, CUDA-enabled PyTorch, and the downloaded dataset:
+Regenerating detections is an offline maintainer operation requiring the downloaded
+dataset, YOLO weights, Ultralytics, OpenCV, and PyTorch:
 
 ```powershell
 python demo/generate_mv3dt_fixture.py `
-  --dataset C:\path\to\datasets\mtmc_4cam `
+  --dataset C:\path\to\datasets\mtmc_12cam `
   --model C:\path\to\yolo11n.pt
 ```
 
-Fixture changes must be reviewed as evidence changes, not reformatted casually. The
-validator ensures synchronized camera timestamps, monotonic per-camera order, stable
-fields, and absence of StoreLens-owned derived values.
+## StoreLens-derived replay cache
 
-## Isolation and playback
+`demo/build_mv3dt_demo_fixture.py` configures an isolated real StoreLens workspace,
+imports the four validated NVIDIA projection matrices, constructs Aisle 04, and sends
+synchronized raw samples through normal observation enrichment, complete-sample
+materialization, multiview association, saved-query execution, and query-alert
+evaluation at 10 Hz. It writes
+`demo/fixtures/nvidia_mv3dt_derived_replay.json`.
 
-Each demo session gets a temporary SQLite workspace selected by an explicit browser
-session header. Normal API requests continue to use `data/storelens.db`; demo requests
-cannot see or mutate normal rows. The public session response never contains the local
-temporary path.
+```powershell
+python demo/build_mv3dt_demo_fixture.py `
+  --asset-root C:\path\to\datasets\mtmc_12cam
+```
 
-The browser persists only the opaque session ID. After a local server restart, a running
-session reconnects to its persisted clock and workspace instead of creating another one;
-paused sessions remain paused. Sessions expire after 24 hours and are cleaned up.
+The artifact records raw-fixture, recipe, media, geometry, fusion configuration,
+derivation-code, and canonical payload hashes. The builder uses a deterministic
+simulated evidence clock and deterministic anonymous fused IDs, so identical inputs
+produce identical geometry and timeline payloads. Runtime refuses a cache whose recipe,
+raw fixture, or payload hash does not match.
 
-Four browser MP4 elements read the original local files directly and follow one
-server-owned position. Observations are not preloaded. The replay controller posts only
-frames whose media time has elapsed. Every source frame uses one exact timestamp and
-sample ID, zero or more detections, and exactly one `detection_frame_count` completion
-marker. Worker/job rows are not fabricated because replay is not a live worker.
+Each of the 201 derived samples contains:
 
-The controller advances at real time between fixture samples but freezes its logical
-clock while StoreLens derives a sample. This prevents slower machines from exposing
-future video before the corresponding evidence or starving API reads with a catch-up
-burst. All four videos may therefore play slightly slower than wall time under load, but
-they remain aligned with one another and with StoreLens state.
+- media time and source frame index;
+- four complete source-sample references;
+- StoreLens fused entities with member provenance;
+- the real saved-query value, quality, `as_of`, and evidence window;
+- real edge-triggered alert events produced at that sample.
 
-The demo multiview group uses a 15-second freshness horizon because its committed
-fixture is sampled at 1 Hz and synchronous derivation can be slower on modest CPUs. This
-is recipe configuration, not a production default; operational groups should use a
-horizon appropriate to their actual camera rate and latency budget.
+Tests also run a small fixture slice through the real pipeline rather than trusting only
+the committed cache.
 
-The first real threshold event is held on screen for two seconds so a polling browser can
-render the successful query and quality. Playback then continues and loops normally; the
-controller does not fabricate or manually fire the alert.
+## Aisle 04 geometry
 
-At each loop boundary StoreLens starts a new monotonic epoch, resets source/fused current
-identity state, and gives source-local IDs an epoch prefix. Raw and derived replay history
-is pruned to a bounded number of epochs. Missing evidence remains unknown; replay does
-not invent empty frames.
+Only Cameras 3 and 4 show Aisle 04. Cameras 1 and 2 intentionally have no zone view.
+The image polygons use the 1920×1080 source coordinate system:
 
-## Guided and learn paths
+```text
+Camera 3: (945,1080), (1720,1080), (1235,0), (960,0)
+Camera 4: (0,980), (735,1080), (881,0), (617,0)
+```
 
-The automatic path creates the mapped space, imports all four 3x4 camera matrices,
-projects predetermined camera pixels into the real Aisle 04 metric zone, creates the
-camera-specific views and multiview group, then creates one saved occupancy query,
-dashboard widget, and alert rule. The timeline displays returned IDs and verification
-results from these real operations.
+The validated floor calibration projects Camera 3 to approximately:
 
-The learn path links to the same Setup, plan-digitizer, calibration, Live 3D, Evidence,
-Dashboard, Sources, and Review pages used by a normal workspace. It guides the user to
-inspect the supplied map and practice one real homography with Camera 1's recorded video.
-StoreLens computes the practice calibration, compares it with the validated matrix at
-known reference pixels, displays the metric difference, and then restores the validated
-matrix. Cameras 2–4 remain on their validated matrices. Exploratory input therefore
-teaches the actual interaction without silently breaking fixture fusion. Changes remain
-isolated.
+```text
+(17.260,22.967), (20.552,22.967), (21.057,4.708), (17.323,4.708) metres
+```
 
-## Exit and promotion
+Camera 4 projects to approximately:
 
-Exit offers two explicit choices:
+```text
+(20.873,6.899), (17.071,6.311), (17.213,24.336), (20.851,24.310) metres
+```
 
-- **Discard demo** permanently removes the temporary database.
-- **Keep camera & space setup** transactionally copies the map, four sources, camera
-  placements, calibrations, and multiview group into the normal workspace.
+Camera 3 creates the first canonical polygon. Camera 4 is an explicit
+`extend_zone_from_view` operation. StoreLens unions the overlapping physical
+contributions into one metric Polygon at zone revision 2 and records original pixels,
+projected points, calibration revision, view revision, operation, and resulting zone
+revision. Coordinates are never moved merely to improve appearance.
 
-Promotion deliberately excludes Aisle 04, its camera views, the saved query, dashboard,
-alert rule, and fired alerts. Raw replay observations are excluded by default and require
-an explicit checkbox. When selected they are remapped to promoted source IDs, detached
-from non-promoted zone/view IDs, and tagged with demo provenance.
+## One authoritative playback clock
 
-Only after a successful promotion does StoreLens start the tightly scoped local
-four-camera MJPEG supervisor. It serves exactly the allowlisted sample videos on one
-shared clock and is not a general process runner or production camera gateway. StoreLens
-restarts that known supervisor on a later platform launch while the promoted sources
-still reference the promoted demo session. It never starts CV inference automatically.
+The server persists a lightweight absolute clock anchor. The browser maintains one
+app-level `requestAnimationFrame` clock derived from that anchor. At master time `T`:
 
-## Production validation
+- all four MP4 elements seek/play against `T`;
+- the camera overlay uses source frame `floor(T × 30)`;
+- the analytical state is the latest cache sample whose time is `<= T`;
+- fused positions interpolate only when the same fused ID exists in both adjacent
+  derived samples;
+- occupancy, quality, evidence, and alerts remain stepwise and are never interpolated;
+- dashboard widgets use the cached StoreLens saved-query result, not frontend box or
+  polygon counting.
 
-The demo proves platform wiring, not model or deployment quality. Before operational use,
-validate camera authorization, source reachability, timestamp synchronization,
-calibration error, detector/tracker behavior, fusion gates, zone geometry, freshness,
-alert thresholds, authentication, TLS, retention, and privacy requirements using the
-actual deployment environment.
+The optional **Debug sync** display reports master time, video frame, box frame, derived
+sample time/index, replay epoch, and each video's presented media time. There is no
+“Restart evidence” control and no runtime processing queue for video to wait on.
+
+At the media boundary all four videos rewind together. The absolute clock continues,
+the epoch increments, the relative derived timeline starts at zero, and rendered fused
+IDs are namespaced as `e{epoch}:{fused_id}`. The renderer does not interpolate across a
+loop boundary.
+
+## Isolation, learning, and promotion
+
+Every session uses a temporary SQLite workspace selected by an opaque browser session
+header. Normal requests continue to use `data/storelens.db`. Running sessions recover
+their persisted clock after a server restart; paused sessions remain paused; sessions
+expire after 24 hours.
+
+The guided action log contains identifiers returned by real setup operations: workspace
+inspection, source/capture creation, calibration imports, Camera 3 and Camera 4 traces
+and projections, canonical union, multiview group, saved query, dashboard, and alert.
+The learn path links to the normal plan, calibration, Live, Evidence, Dashboard,
+Sources, and Review interfaces.
+
+**Discard demo** removes the isolated workspace. **Keep camera & space setup** copies
+only the map, four sources, placements, calibrations, and multiview group. Aisle 04 and
+its views, query, dashboard, alert rule, and review events remain demo-only. Raw samples
+are opt-in; when selected, samples up to the current master time are materialized through
+the real ingestion path, remapped to promoted source IDs, detached from demo-only zone
+links, and tagged with promotion provenance.
+
+After promotion, the allowlisted local MJPEG supervisor loops the four source videos on
+one clock. That simulated camera service is separate from browser-native guided playback
+and is not a general process runner or production camera gateway.
+
+## Scope
+
+The demo proves deterministic platform wiring, not operational accuracy or production
+readiness. Validate source authorization and reachability, timestamps, calibration,
+model/tracker behavior, fusion gates, geometry, freshness, privacy, retention, alert
+thresholds, authentication, and TLS in the intended deployment.

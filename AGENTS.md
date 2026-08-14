@@ -40,11 +40,12 @@ Common fields are `schema_version: 2`, idempotent `observation_id`, `kind`, `tim
 - `measurement`: name, numeric value, `gauge|delta|cumulative`, optional unit and label.
 - `state`: name and observed label on every reading, including repeats.
 
-For every processed detection frame, send zero or more detections and exactly one
-`detection_frame_count` marker including zero. All rows share one opaque source-local
-`sample_id` and exact timestamp. Prefer the SDK atomic sample builder. Partial or
-count-mismatched samples do not replace current state. Legacy rows without `sample_id`
-retain exact source/timestamp fallback. Missing data changes freshness, never scene value.
+For every processed detection frame, prefer one atomic `DetectionSample` containing
+zero or more detections. `detections=[]` is a complete observed zero. The envelope uses
+one opaque source-local `sample_id` and exact timestamp; prefer the SDK sample builder.
+StoreLens internally normalizes completion. Legacy detection rows plus a matching
+`detection_frame_count` marker remain compatible; partial/count-mismatched samples do
+not replace current state. Missing data changes freshness, never scene value.
 
 ## Geometry and multiview
 

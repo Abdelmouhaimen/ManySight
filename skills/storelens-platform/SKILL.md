@@ -35,22 +35,23 @@ authorized local worker, keep it in memory, and never place credentials in obser
 fusion records, queries, dashboards, logs, code, or job metadata. StoreLens does not
 proxy a feed or execute worker scripts.
 
-The optional guided demo is explicitly different from a worker: it serves only a known
-local sample-media allowlist and progressively replays a committed raw detection fixture.
-It creates no worker row, uses `producer_kind=replay`, and must never be presented as
-runtime inference. Its SQLite workspace is isolated until explicit setup promotion.
+The optional guided demo is explicitly different from a worker. Its offline builder
+sends a committed raw `DetectionSample` fixture through the real platform and writes a
+provenance-hashed derived cache. Runtime serves allowlisted local media and cached state
+on one replay clock; it creates no worker row and must never be presented as live fusion
+or runtime inference. Its SQLite workspace is isolated until explicit setup promotion.
 
 ## Complete detection samples
 
-For every processed detection frame, send zero or more detections plus exactly one
-`detection_frame_count` measurement. All rows share source, entity type, one exact
-timestamp, and one opaque `sample_id`. The count includes zero. Prefer the SDK sample
-builder, which sends one immediate atomic batch.
+For every processed detection frame, prefer one atomic `DetectionSample` containing
+zero or more detections under one source, entity type, exact timestamp, and opaque
+`sample_id`. `detections=[]` is an explicit observed zero. Use the SDK sample builder or
+`submit_detection_sample`; workers do not create a completion measurement.
 
-StoreLens advances current state only after the marker count matches detections. Partial
-samples, count mismatches, and duplicate markers do not replace current state. Legacy
-rows without `sample_id` use exact source/timestamp fallback. Missing data affects
-freshness; it never creates an observed zero.
+StoreLens normalizes that envelope into its existing materialization model. Legacy
+detection rows plus a matching `detection_frame_count` measurement remain compatible,
+but incomplete/count-mismatched samples do not replace current state. Missing data
+affects freshness; it never creates an observed zero.
 
 ## Geometry and multiview
 

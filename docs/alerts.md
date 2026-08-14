@@ -7,9 +7,11 @@ Legacy rule kinds remain available for dwell, occupancy, state, and event compat
 New generated workflows can use `query_condition`, which references a saved query and a
 condition such as `{operator: ">=", value: 2, for_seconds: 0}`.
 
-The guided demo uses this same path for its Aisle 04 threshold. Replay submits raw
-source-local observations; the normal saved-query evaluator fires the Review record.
-Demo rules and fired alerts remain isolated and are never included in setup promotion.
+The guided demo uses this same path for its Aisle 04 threshold during offline cache
+generation. Raw source-local samples pass through the real saved-query evaluator and
+alert engine; playable runtime reveals the resulting event only when the master media
+clock reaches its derived time. Demo rules and events remain isolated and are never
+included in setup promotion.
 
 Query-backed alerts use the same deterministic engine as dashboard widgets. The evaluator:
 

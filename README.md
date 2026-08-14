@@ -97,11 +97,13 @@ sources, and calibrate cameras.
 
 ## Try the guided four-camera demo
 
-The dashboard's **Try Demo** entry replays precomputed YOLO11n + ByteTrack observations
-from NVIDIA's synthetic four-camera warehouse sample through the real StoreLens
-ingestion, calibration, multiview, saved-query, dashboard, and alert paths. Runtime
-replay does not require a GPU or model weights and runs in an isolated temporary
-workspace.
+The dashboard's **Try Demo** entry uses cameras 1-4 of NVIDIA's synthetic `mtmc_12cam`
+warehouse sample. A versioned raw YOLO11n + ByteTrack `DetectionSample` fixture is
+derived offline through the real StoreLens geometry, multiview, saved-query, and alert
+pipeline. Playable runtime uses one lightweight master clock to present the four native
+videos, exact frame boxes, interpolated fused positions, stepwise KPI, and alert events
+from that committed derived cache. Runtime needs neither a GPU nor model weights and
+runs in an isolated temporary workspace.
 
 StoreLens does not redistribute the NVIDIA media. Install it locally on demand, start
 StoreLens, then select **Try Demo**:
@@ -110,7 +112,8 @@ StoreLens, then select **Try Demo**:
 python demo/fetch_nvidia_mv3dt.py
 ```
 
-The fixed walkthrough alerts when at least two anonymous fused tracks are in Aisle 04.
+The fixed walkthrough alerts when at least two anonymous fused tracks are in either of
+the camera-authored Aisle 04 footprint.
 It supports discard or explicit setup-only promotion. See the
 [guided-demo architecture, provenance, and asset terms](docs/guided-demo.md).
 
@@ -150,18 +153,24 @@ client.register_job(
     "Person detections",
     "Tracked person observations from source 1",
     source_ids=[source["id"]],
-    event_types=["detection", "measurement"],
+    event_types=["detection"],
 )
 client.register_worker("person-detector", version="1")
 
 ok, frame = capture.read()
 if ok:
-    sample = client.begin_detection_sample(
-        source["id"], entity_type="person", ts=time.time()
+    client.submit_detection_sample(
+        source_id=source["id"],
+        entity_type="person",
+        sample_id="camera-1-frame-42",
+        timestamp=time.time(),
+        frame_index=42,
+        detections=[{
+            "entity_id": "track-1",
+            "point_px": [320, 470],
+            "identity_scope": "source",
+        }],
     )
-    # Replace these coordinates with output from your detector/tracker.
-    sample.add_detection(entity_id="track-1", point_px=(320, 470))
-    sample.submit()  # atomic batch with one sample_id and one count marker
 ```
 
 Run a real worker as a long-lived process, heartbeat every 5–15 seconds, and obey
@@ -170,10 +179,11 @@ cooperative stop/restart requests. The SDK lives at
 [`examples/`](examples/). See [Workers and observations](docs/workers.md) before
 writing a new integration.
 
-The Live view represents the latest completed processed frame for each source.
-It changes only when a complete newer `detection_frame_count` sample arrives. If processing
+The Live view represents the latest complete processed sample for each source. Submit
+`detections=[]` to record a successfully processed zero-detection frame. If processing
 stops, the last scene remains visible with stale-source status; StoreLens does not
-reinterpret missing observations as an empty scene.
+reinterpret missing observations as an empty scene. Legacy detection rows completed by
+a `detection_frame_count` measurement remain readable for backward compatibility.
 
 For overlapping cameras, import compatible world calibrations and create a
 multiview group. Live defaults to anonymous fused tracks and retains a source-local

@@ -92,6 +92,10 @@ what the system verifies.
 
 ## How replayability is preserved
 
+> Update: new camera workers should use the first-class atomic `DetectionSample`
+> endpoint documented in [Workers](../workers.md). The marker representation below is
+> retained as the normalized storage and backward-compatible legacy contract.
+
 Every observation records the zone/calibration/surface/zone-view **revision** in
 effect at ingestion. Editing a zone's polygon, recalibrating a camera, or
 changing a zone-view's membership rule only affects observations ingested after
@@ -104,9 +108,10 @@ only `events` table. Current-value read models
 (`GET /observations/latest`) are the same: computed live from the same table,
 not a second write path that could drift from it.
 The Live-specific latest-frame read model (`GET /observations/latest-frames`) likewise
-selects each source's newest `detection_frame_count` marker and the detections sharing
-its exact timestamp. It persists scene contents while reporting ingestion freshness
-separately.
+selects each source's newest completed source sample. A preferred `DetectionSample`
+envelope is complete by construction; legacy row batches become complete only when their
+matching internal `detection_frame_count` marker arrives. The read model persists scene
+contents while reporting ingestion freshness separately.
 
 ## Consequences
 
