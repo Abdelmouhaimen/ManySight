@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .platform_config import resolve as resolve_platform_config
-from .routers import alerts, analytics, analytics_query, analyses, calibrations, dashboards, demo, events, geometry, jobs, multiview, observations, queries, sources, store, workspace, zones
+from .routers import agent_ops, alerts, analytics, analytics_query, analyses, calibrations, dashboards, demo, events, geometry, jobs, multiview, observations, queries, sources, store, workspace, zones
 from .services import alert_engine, current_state, demo_media, demo_runtime, multiview as multiview_service
 from .services.sse import broker
 
@@ -177,33 +177,51 @@ raw observations over HTTPS.
 - Health: `{endpoints["health_url"]}`
 - Runtime endpoint registry: `{endpoints["platform_config_url"]}`
 
+## Start here
+
+1. `GET {endpoints["rest_url"]}/agent/workspace` — one snapshot of sources, calibration,
+   zones, perception freshness, multiview groups, saved queries, dashboards, alert rules,
+   and readiness. Over MCP this is `inspect_workspace()`. It never contains credentials.
+2. `GET {endpoints["rest_url"]}/agent/workflows` then `.../agent/workflows/{{name}}` — route
+   the job you were asked to do to its prerequisites, sequence, invariants, and tools.
+3. Load the named skill (`get_skill` over MCP), starting with `storelens-core`.
+4. Verify with real reads before reporting success.
+
+The MCP endpoint advertises a curated set of semantic tools. REST and the SDK remain the
+complete low-level interface; `/openapi.json` is authoritative.
+
 ## Default workflow
 
-1. Connect to the MCP endpoint and load the `storelens-platform` skill.
-2. Call `list_sources`. Reuse the requested logical source or call `create_source`.
-   Choose either `storelens_managed` structured connection details or an
-   `external_secret` locator with `local_secret_ref`.
-3. Resolve camera access in the worker with the privileged source-connection endpoint or
-   an external environment/keychain reference. Normal source reads never reveal secrets.
-4. Register a job, then register a worker and heartbeat every 5-15 seconds.
-5. Submit only three observation kinds to `POST {endpoints["rest_url"]}/observations/batch`:
-   `detection` (an observed entity with spatial evidence), `measurement` (an observed
-   numeric value — e.g. one `value` per sampling interval, never a precomputed average
-   or cumulative total), or `state` (an observed current categorical value, sent on
-   every sample including repeats). Never resolve a zone or send zone_id/zone, and
-   never compute zone entry/exit, dwell, occupancy, movement, or a state change —
-   StoreLens derives all of those itself. See `GET {endpoints["rest_url"]}/observations/contract`.
-6. For every processed person-detection frame, prefer one atomic
+1. Reuse the requested logical source, or create one with either `storelens_managed`
+   structured connection details or an `external_secret` locator with `local_secret_ref`.
+2. Place and calibrate the source before any geometry or fusion work. When a named region
+   has no canonical zone, inspect the calibrated cameras first
+   (`GET {endpoints["rest_url"]}/agent/sources/{{id}}/frame-capture-plan`, run locally),
+   then `POST {endpoints["rest_url"]}/agent/zone-preview`, get the user's approval, and
+   only then `POST {endpoints["rest_url"]}/agent/zone-commit`.
+3. `GET {endpoints["rest_url"]}/agent/perception` before starting any worker — reuse healthy
+   perception instead of starting a duplicate. A stale or missing source is unknown, not zero.
+4. `GET {endpoints["rest_url"]}/agent/worker-recipe` for the CURRENT submission contract.
+   Never infer it from an example, demo, or older worker script found in a repository.
+5. Resolve camera access in the worker with the privileged source-connection endpoint or an
+   external environment/keychain reference. Normal source reads never reveal secrets.
+6. Register a job, then register a worker and heartbeat every 5-15 seconds, reporting
+   `local_fps` and `submission_hz` in metrics.
+7. For every processed detection frame, submit one atomic
    `POST {endpoints["rest_url"]}/detection-samples` envelope with one exact timestamp,
-   opaque `sample_id`, and zero or more detections. `detections=[]` is a known empty
-   frame. Prefer the SDK sample builder; never create a fake detection for an empty
-   frame. Legacy detection rows completed by `detection_frame_count` remain compatible.
-   Live changes only after a newer complete sample arrives; freshness is separate.
-7. Verify with `GET {endpoints["rest_url"]}/observations/latest`,
+   opaque `sample_id`, and zero or more detections. `detections=[]` is a known empty frame.
+   Prefer the SDK sample builder; never create a fake detection for an empty frame. Local
+   detection may run at full camera FPS while central submission runs slower. Legacy
+   detection rows completed by `detection_frame_count` remain compatible. Only three
+   observation kinds exist — `detection`, `measurement`, `state`; never send zone_id/zone or
+   compute zone entry/exit, dwell, occupancy, movement, or a state change. See
+   `GET {endpoints["rest_url"]}/observations/contract`.
+8. Verify with `GET {endpoints["rest_url"]}/agent/perception`,
    `GET {endpoints["rest_url"]}/observations/latest-frames`, and
    `GET {endpoints["rest_url"]}/multiview/current`. Preview a deterministic query, save it
    with `POST {endpoints["rest_url"]}/queries`, and reference it from a generated dashboard
-   only when requested. Agents never receive SQL access.
+   only when requested. Agents never receive SQL access. Threshold words are exact: "more
+   than 2" is `> 2` and "at least 2" is `>= 2`.
 
 Managed credentials are encrypted at rest with `STORELENS_CREDENTIAL_KEY` and are returned
 only by the header-authenticated connection endpoint. External-secret mode remains available.
@@ -218,6 +236,9 @@ def llms_index(request: Request):
 > Spatial and temporal analytics from observations produced by local workers.
 
 - Agent instructions: {endpoints["agent_guide_url"]}
+- First call for an agent task: {endpoints["rest_url"]}/agent/workspace
+- Workflow index: {endpoints["rest_url"]}/agent/workflows
+- Current worker contract: {endpoints["rest_url"]}/agent/worker-recipe
 - Runtime endpoint registry: {endpoints["platform_config_url"]}
 - Remote MCP: {endpoints["mcp_url"]}
 - OpenAPI schema: {endpoints["openapi_url"]}
@@ -232,6 +253,8 @@ def storelens_discovery(request: Request):
         "name": "StoreLens",
         "version": app.version,
         "agent_instructions": endpoints["agent_guide_url"],
+        "agent_workspace": endpoints["rest_url"] + "/agent/workspace",
+        "agent_workflows": endpoints["rest_url"] + "/agent/workflows",
         "mcp": {"transport": "streamable-http", "url": endpoints["mcp_url"]},
         "openapi": endpoints["openapi_url"],
         "docs": endpoints["docs_url"],
@@ -244,7 +267,7 @@ def storelens_discovery(request: Request):
 
 for r in (sources, store, zones, geometry, calibrations, multiview, jobs, events,
          observations, analytics, analytics_query, queries, dashboards, analyses, alerts,
-         workspace, demo):
+         workspace, demo, agent_ops):
     app.include_router(r.router, prefix="/api/v1")
 
 _server_dir = os.path.dirname(__file__)
