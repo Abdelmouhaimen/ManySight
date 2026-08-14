@@ -1,21 +1,15 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  BellRing,
-  Camera,
-  Gauge,
-  Menu,
-  PlayCircle,
-  Radio,
-  ScanSearch,
-  Settings2,
-  X,
-} from "lucide-react";
+import { BellRing, Camera, Gauge, Menu, PlayCircle, Radio, ScanSearch, Settings2, X } from "lucide-react";
 import { api, apiKey, demoSessionId } from "./api.js";
-import { BrandMark, EnvironmentBadge, Toast } from "./components.jsx";
+import { DEFAULT_ROUTE, resolveRoute, routeHref } from "./routes.js";
+import { dataHealth, isOpenAlert } from "./status.js";
+import { BrandMark, LoadingState, Toast } from "./ui.jsx";
 import { ObservationsPage } from "./observations.jsx";
-import { ConfigurePage, ReviewPage, SourcesPage } from "./pages.jsx";
-import { GeneratedDashboardPage } from "./dashboard-page.jsx";
+import { ReviewPage } from "./review.jsx";
+import { SetupPage } from "./setup.jsx";
+import { SourcesPage } from "./sources.jsx";
+import { DashboardPage } from "./dashboard-page.jsx";
 import { DemoPage } from "./demo.jsx";
 import { useDemoReplay } from "./demo-replay.js";
 import { DemoTourLayer, useDemoTour } from "./demo-tour.jsx";
@@ -25,42 +19,35 @@ const LivePage = lazy(() =>
   import("./live.jsx").then((module) => ({ default: module.LivePage })),
 );
 
+/* The permanent navigation. The guided demo is deliberately absent: Try Demo in
+ * the top bar is the single entry point, so the product does not advertise two
+ * doors into the same thing. */
 const NAV = [
-  ["demo", "Guided demo", PlayCircle],
-  ["overview", "Dashboard", Gauge],
+  ["dashboard", "Dashboard", Gauge],
+  ["live", "Live", Radio],
   ["review", "Review", BellRing],
   ["observations", "Observations", ScanSearch],
-  ["live", "Live", Radio],
   ["sources", "Sources", Camera],
   ["setup", "Setup", Settings2],
 ];
 
-const SPACE_LABELS = {
-  store: "Retail operations",
-  school: "School operations",
-  office: "Workplace operations",
-  warehouse: "Warehouse operations",
-  public_space: "Public-space operations",
-  custom: "Physical-space intelligence",
+const PAGES = {
+  dashboard: DashboardPage,
+  live: LivePage,
+  review: ReviewPage,
+  observations: ObservationsPage,
+  sources: SourcesPage,
+  setup: SetupPage,
+  demo: DemoPage,
 };
 
-function currentRoute() {
-  const route = window.location.hash.replace("#", "");
-  if (route === "events") return "review"; // legacy bookmarks
-  if (route === "streams") return "sources"; // legacy bookmarks
-  if (route === "insights" || route === "analytics") return "overview";
-  if (route === "detections") return "observations"; // legacy bookmarks — renamed area
-  if (route === "configure") return "setup"; // legacy bookmarks — renamed area
-  return NAV.some(([value]) => value === route) ? route : "overview";
-}
-
 function App() {
-  const [route, setRoute] = useState(currentRoute());
+  const [location, setLocation] = useState(() => resolveRoute(window.location.hash));
   const [mobileOpen, setMobileOpen] = useState(false);
   const [shell, setShell] = useState({ store: null, sources: [], alerts: [] });
-  const [liveStatus, setLiveStatus] = useState("connecting");
+  const [streamConnected, setStreamConnected] = useState(false);
   const [liveTick, setLiveTick] = useState(0);
-  const [initialSignal, setInitialSignal] = useState(null);
+  const [initialAlert, setInitialAlert] = useState(null);
   const [toast, setToast] = useState(null);
   const [demoId, setDemoId] = useState(demoSessionId());
   const demoReplay = useDemoReplay(demoId);
@@ -81,14 +68,20 @@ function App() {
       ]);
       setShell({ store, sources, alerts });
     } catch (error) {
-      notify("Dashboard connection failed", error.message, "error");
+      notify("Couldn't reach StoreLens", error.message, "error");
     }
   };
+
+  // An alias or a typo rewrites the address bar instead of quietly rendering
+  // something else, so a stale bookmark heals the first time it is used.
+  useEffect(() => {
+    if (location.redirected) window.location.replace(`#${location.canonical}`);
+  }, [location.canonical, location.redirected]);
 
   useEffect(() => {
     refreshShell();
     const onHash = () => {
-      setRoute(currentRoute());
+      setLocation(resolveRoute(window.location.hash));
       setMobileOpen(false);
     };
     window.addEventListener("hashchange", onHash);
@@ -106,20 +99,16 @@ function App() {
     if (demoId) parameters.push(`demo_session=${encodeURIComponent(demoId)}`);
     const suffix = parameters.length ? `?${parameters.join("&")}` : "";
     const stream = new EventSource(`/api/v1/stream${suffix}`);
-    stream.onopen = () => setLiveStatus("live");
-    stream.onerror = () => setLiveStatus("offline");
+    stream.onopen = () => setStreamConnected(true);
+    stream.onerror = () => setStreamConnected(false);
     const onData = () => setLiveTick((value) => value + 1);
     stream.addEventListener("batch_summary", onData);
     stream.addEventListener("cv_event", onData);
     stream.addEventListener("alert", (event) => {
       onData();
       try {
-        const signal = JSON.parse(event.data);
-        notify(
-          signal.title,
-          "A new signal is ready for human review.",
-          "warning",
-        );
+        const alert = JSON.parse(event.data);
+        notify(alert.title, "A new alert is waiting for review.", "warning");
         refreshShell();
       } catch {
         /* malformed optional notification */
@@ -132,32 +121,15 @@ function App() {
     if (liveTick && liveTick % 5 === 0) refreshShell();
   }, [liveTick]);
 
-  const openSignal = (signal) => {
-    setInitialSignal(signal);
-    window.location.hash = "review";
+  const openAlert = (alert) => {
+    setInitialAlert(alert);
+    window.location.hash = routeHref("review", "alerts").slice(1);
   };
-  const openSignals = shell.alerts.filter((alert) =>
-    ["new", "in_review"].includes(
-      alert.status || (alert.acknowledged ? "resolved" : "new"),
-    ),
+  const openAlertCount = shell.alerts.filter(isOpenAlert).length;
+  const liveSources = shell.sources.filter(
+    (source) => dataHealth(source).label === "Live",
   ).length;
-  const activeSources = shell.sources.filter(
-    (source) => source.observation_status === "active",
-  ).length;
-  const Page =
-    route === "demo"
-      ? DemoPage
-      : route === "overview"
-      ? GeneratedDashboardPage
-      : route === "review"
-          ? ReviewPage
-          : route === "observations"
-            ? ObservationsPage
-            : route === "live"
-              ? LivePage
-            : route === "sources"
-              ? SourcesPage
-              : ConfigurePage;
+  const Page = PAGES[location.route] || PAGES[DEFAULT_ROUTE];
 
   return (
     <div className="app-shell">
@@ -166,73 +138,67 @@ function App() {
           className="mobile-menu-button"
           onClick={() => setMobileOpen((value) => !value)}
           aria-label="Toggle navigation"
+          aria-expanded={mobileOpen}
         >
           {mobileOpen ? <X /> : <Menu />}
         </button>
-        <a className="app-logo" href="#overview">
+        <a className="app-logo" href={routeHref(DEFAULT_ROUTE)}>
           <BrandMark />
           <span>ManySight</span>
         </a>
-        <div className="workspace-identity">
-          <strong>{shell.store?.name || "Loading workspace"}</strong>
-          <small>
-            {SPACE_LABELS[shell.store?.space_type] ||
-              "Physical-space analytics"}{" "}
-            · StoreLens
-          </small>
-        </div>
+        <span className="workspace-name">{shell.store?.name || "Workspace"}</span>
         <div className="topbar-status">
+          {shell.sources.length > 0 && (
+            <span
+              className="source-counter"
+              title={`${liveSources} of ${shell.sources.length} sources are sending data.`}
+            >
+              <i className={liveSources ? "is-live" : ""} />
+              {liveSources}/{shell.sources.length} live
+            </span>
+          )}
+          {/* Truthful and subtle: this reports the update channel, not data health. */}
+          {!streamConnected && (
+            <span className="stream-offline" title="Updates will resume automatically.">
+              Reconnecting…
+            </span>
+          )}
           <a
-            className={`button ${demoId ? "button-demo-active" : "button-dark"}`}
-            href="#demo"
+            className={`button ${demoId ? "button-demo-active" : "button-secondary"}`}
+            href={routeHref("demo")}
             data-demo-tour="try-demo"
           >
-            <PlayCircle size={14} /> {demoId ? "Demo workspace" : "Try Demo"}
+            <PlayCircle size={14} /> {demoId ? "In demo" : "Try Demo"}
           </a>
-          <EnvironmentBadge value={shell.store?.environment || "setup"} />
-          <span className={`live-indicator live-${liveStatus}`}>
-            <i />
-            {liveStatus === "live"
-              ? "Observation updates live"
-              : liveStatus === "offline"
-                ? "Observation updates offline"
-                : "Connecting"}
-          </span>
-          <span className="stream-count">
-            {activeSources}/{shell.sources.length} sources active
-          </span>
         </div>
       </header>
       <aside className={`app-sidebar ${mobileOpen ? "mobile-open" : ""}`}>
-        <nav aria-label="Dashboard sections">
+        <nav aria-label="Sections">
           {NAV.map(([value, label, Icon]) => (
             <a
               key={value}
-              href={`#${value}`}
-              className={route === value ? "active" : ""}
+              href={routeHref(value)}
+              className={location.route === value ? "active" : ""}
+              aria-current={location.route === value ? "page" : undefined}
               data-demo-tour={`nav-${value}`}
             >
-              <Icon size={17} />
+              <Icon size={17} aria-hidden="true" />
               <span>{label}</span>
-              {value === "review" && openSignals > 0 && <b>{openSignals}</b>}
+              {value === "review" && openAlertCount > 0 && (
+                <b aria-label={`${openAlertCount} open`}>{openAlertCount}</b>
+              )}
             </a>
           ))}
         </nav>
-        <div className="sidebar-note">
-          <span>{demoId ? "Isolated demo" : "Validation"}</span>
-          <p>
-            {demoId ? "Normal workspace data is untouched until you explicitly keep setup."
-              : "Validate model output, calibration, and alert thresholds before operational use."}
-          </p>
-        </div>
       </aside>
       <main className="app-main">
-        <Suspense fallback={<div className="loading-state"><span className="spinner" />Loading 3D workspace…</div>}>
+        <Suspense fallback={<LoadingState label="Loading…" />}>
           <Page
             liveTick={liveTick}
-            openSignal={openSignal}
-            initialSignal={initialSignal}
-            clearInitial={() => setInitialSignal(null)}
+            subview={location.subview}
+            openAlert={openAlert}
+            initialAlert={initialAlert}
+            clearInitial={() => setInitialAlert(null)}
             notify={notify}
             refreshShell={refreshShell}
             demoReplay={demoReplay}

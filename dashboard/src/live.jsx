@@ -18,14 +18,9 @@ import {
   reconcileCompletedFrames,
 } from "./live-state.js";
 import { trackColor } from "./live-colors.js";
-import {
-  Badge,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  MetricCard,
-  PageHeader,
-} from "./components.jsx";
+import { Badge, MetricCard } from "./components.jsx";
+import { resultQuality } from "./status.js";
+import { EmptyState, ErrorState, LoadingState, PageHeader, ResultValue, StatusPill } from "./ui.jsx";
 
 const ACTIVE_SECONDS = .85;
 const FADE_START_SECONDS = .2;
@@ -488,6 +483,7 @@ function OperationalLivePage({ liveTick = 0 }) {
   const [state, setState] = useState({ loading: true, error: null, data: null });
   const [sourceId, setSourceId] = useState("all");
   const [identityMode, setIdentityMode] = useState("fused");
+  const [replayOpen, setReplayOpen] = useState(false);
   const [playhead, setPlayhead] = useState(null);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
@@ -630,6 +626,17 @@ function OperationalLivePage({ liveTick = 0 }) {
   });
   const active = mode === "live" ? (identityMode === "fused" ? fusedTracks : latestTracks) : replayTracks;
   const staleFrames = data.latestFrames.filter((frame) => frameIsStale(frame, liveNow));
+  /* The confidence StoreLens itself reports. Combined mode takes the group's
+   * own quality; per-camera mode has no cross-camera claim to make, so it is
+   * only as good as the freshness of the cameras being shown. */
+  const groupQuality = data.fused?.groups?.length
+    ? (data.fused.groups.every((group) => group.quality === "known") ? "known"
+      : data.fused.groups.some((group) => group.quality !== "unknown") ? "partial" : "unknown")
+    : "unknown";
+  const liveQuality = mode === "replay" ? "known"
+    : identityMode === "fused" ? groupQuality
+      : data.latestFrames.length === 0 ? "unknown"
+        : staleFrames.length ? "partial" : "known";
   const recentEvents = data.observations
     .filter((row) => row.ts <= currentPlayhead)
     .slice(-12)
@@ -638,18 +645,14 @@ function OperationalLivePage({ liveTick = 0 }) {
   return (
     <>
       <PageHeader
-        eyebrow="Live spatial view"
-        title="Latest processed scene"
-        description={identityMode === "fused"
-          ? "Calibrated camera-local tracks are associated centrally in shared world coordinates. Fused IDs remain anonymous tracking estimates."
-          : "Each camera shows its latest completed processed frame. Colors represent anonymous source-local tracks."}
+        title="Live"
         actions={
           <>
             <label className="select-control">
               <span className="sr-only">Identity view</span>
               <select value={identityMode} onChange={(event) => setIdentityMode(event.target.value)} disabled={mode === "replay"}>
-                <option value="fused">Fused view</option>
-                <option value="source">Source debug view</option>
+                <option value="fused">Combined</option>
+                <option value="source">Per camera</option>
               </select>
             </label>
             <label className="select-control">
@@ -665,34 +668,54 @@ function OperationalLivePage({ liveTick = 0 }) {
           </>
         }
       />
-      {state.error && <div className="inline-warning">Live refresh failed: {state.error.message}</div>}
+      {state.error && <div className="inline-warning">Couldn't refresh: {state.error.message}</div>}
       {mode === "live" && identityMode === "source" && staleFrames.length > 0 && (
         <div className="inline-warning">
-          Latest scene retained; {staleFrames.length} {staleFrames.length === 1 ? "source is" : "sources are"} stale because no newer processed sample has arrived.
+          {staleFrames.length} {staleFrames.length === 1 ? "camera has" : "cameras have"} stopped sending. The last thing they saw is still shown.
         </div>
       )}
       {mode === "live" && identityMode === "fused" && data.fused?.groups?.some((group) => group.quality !== "known") && (
-        <div className="inline-warning">Fused coverage is partial or unknown. StoreLens keeps last source scenes for debugging but excludes stale members from current fusion.</div>
+        <div className="inline-warning">
+          Not every camera is reporting, so the count below may be low.
+        </div>
       )}
-      <div className="live-toolbar" role="toolbar" aria-label="Live playback controls">
-        <button className={mode === "live" ? "active" : ""} onClick={goLive}><Radio size={14} /> Live</button>
-        <button onClick={() => setPlaying((value) => !value)} disabled={mode === "live"}>
-          {playing ? <Pause size={14} /> : <Play size={14} />} {playing ? "Pause" : "Play"}
-        </button>
-        <button onClick={replay} disabled={!data.observations.length}><RotateCcw size={14} /> Replay 60s</button>
-        <button onClick={() => setResetToken((value) => value + 1)}><RotateCcw size={14} /> Reset 3D view</button>
-        <label>
-          Speed
-          <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} disabled={mode === "live"}>
-            <option value="1">1×</option><option value="2">2×</option><option value="4">4×</option>
-          </select>
-        </label>
-        <time>{formatPreciseDateTime(currentPlayhead)}</time>
+      <div className="live-toolbar" role="toolbar" aria-label="Playback">
+        {mode === "live" ? (
+          <>
+            <button onClick={() => { replay(); setReplayOpen(true); }}
+                    disabled={!data.observations.length}>
+              <RotateCcw size={14} aria-hidden="true" /> Replay the last minute
+            </button>
+            <button onClick={() => setResetToken((value) => value + 1)}>
+              <RotateCcw size={14} aria-hidden="true" /> Reset view
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="active" onClick={() => { goLive(); setReplayOpen(false); }}>
+              <Radio size={14} aria-hidden="true" /> Back to live
+            </button>
+            <button onClick={() => setPlaying((value) => !value)}>
+              {playing ? <Pause size={14} aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
+              {playing ? "Pause" : "Play"}
+            </button>
+            <label>
+              Speed
+              <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))}>
+                <option value="1">1x</option><option value="2">2x</option><option value="4">4x</option>
+              </select>
+            </label>
+            <button onClick={() => setResetToken((value) => value + 1)}>
+              <RotateCcw size={14} aria-hidden="true" /> Reset view
+            </button>
+            <time>{formatPreciseDateTime(currentPlayhead)}</time>
+          </>
+        )}
       </div>
 
       {!data.observations.length && !data.latestFrames.length ? (
-        <EmptyState title="No completed person-detection frames yet">
-          Start a person-detection worker that submits one atomic DetectionSample for every processed frame. An empty detections list is a confirmed zero-person frame.
+        <EmptyState tone="no-data" title="No live people data yet">
+          Person tracking isn't producing data for this workspace yet. Check Sources or Setup.
         </EmptyState>
       ) : (
         <div className="live-layout">
@@ -705,11 +728,15 @@ function OperationalLivePage({ liveTick = 0 }) {
           />
           <aside className="live-rail">
             <div className="live-summary-grid">
-              <MetricCard label={identityMode === "fused" && mode === "live" ? "Fused people" : "Latest-frame people"} value={active.length} note={mode === "live" ? "Updated by complete processed samples" : "Replay sample"} />
-              <MetricCard label={mode === "live" ? (identityMode === "fused" ? "Fusion groups" : "Sources sampled") : "Tracks loaded"} value={mode === "live" ? (identityMode === "fused" ? data.fused?.groups?.length || 0 : data.latestFrames.length) : tracks.size} note={mode === "live" ? (identityMode === "fused" ? "Geometry-first association" : `${staleFrames.length} stale`) : "Last 10 minutes"} />
+              <div className="live-headline">
+                <span>People now</span>
+                {/* The scene is drawn from whatever evidence exists; the number
+                    carries the platform's own confidence in it. */}
+                <ResultValue value={active.length} quality={liveQuality} />
+              </div>
             </div>
             <section className="live-rail-section">
-              <div className="live-rail-heading"><Users size={15} /><div><strong>{mode === "live" ? (identityMode === "fused" ? "Fused current tracks" : "Latest source tracks") : "Replay tracks"}</strong><small>{identityMode === "fused" && mode === "live" ? "One color per anonymous fused ID" : "Stable color per source-local ID"}</small></div></div>
+              <div className="live-rail-heading"><Users size={15} aria-hidden="true" /><div><strong>Current tracks</strong></div></div>
               <div className="live-track-list">
                 {active.slice(0, 12).map((track) => {
                   const latest = track.position.observation;
@@ -722,11 +749,11 @@ function OperationalLivePage({ liveTick = 0 }) {
                     </div>
                   );
                 })}
-                {!active.length && <p className="live-rail-empty">The latest completed frame is explicitly empty.</p>}
+                {!active.length && <p className="live-rail-empty">No people in the latest frame.</p>}
               </div>
             </section>
             <section className="live-rail-section">
-              <div className="live-rail-heading"><Clock3 size={15} /><div><strong>Detection timeline</strong><small>Most recent observations</small></div></div>
+              <div className="live-rail-heading"><Clock3 size={15} aria-hidden="true" /><div><strong>Recent activity</strong></div></div>
               <div className="live-event-list">
                 {recentEvents.map((row) => {
                   const key = scopedTrackKey(row);
@@ -734,7 +761,7 @@ function OperationalLivePage({ liveTick = 0 }) {
                 })}
               </div>
             </section>
-            <div className="live-provenance"><Camera size={14} /><span>Positions use each observation’s stored floor projection and calibration revision.</span></div>
+
           </aside>
         </div>
       )}

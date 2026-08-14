@@ -1,46 +1,10 @@
-import { useEffect, useId, useRef } from "react";
-import { AlertTriangle, ArrowRight, Check, X } from "lucide-react";
+/* Chart and table primitives. Layout, status and dialog primitives live in
+ * ui.jsx; this file is only about drawing a result. */
 import { formatDuration, formatTime } from "./api.js";
-
-export function BrandMark() {
-  return (
-    <span className="brand-mark" aria-hidden="true">
-      <i className="orbit orbit-a" />
-      <i className="orbit orbit-b" />
-      <i className="brand-core" />
-    </span>
-  );
-}
+import { EmptyState } from "./ui.jsx";
 
 export function Badge({ tone = "neutral", children }) {
   return <span className={`badge badge-${tone}`}>{children}</span>;
-}
-
-export function EnvironmentBadge({ value }) {
-  const config = {
-    demo: ["Example data", "violet"],
-    live: ["Live pilot", "positive"],
-    setup: ["Setup incomplete", "warning"],
-  }[value] || ["Setup incomplete", "warning"];
-  return (
-    <Badge tone={config[1]}>
-      <span className="badge-dot" />
-      {config[0]}
-    </Badge>
-  );
-}
-
-export function PageHeader({ eyebrow, title, description, actions }) {
-  return (
-    <div className="page-header">
-      <div>
-        <span className="tiny-label">{eyebrow}</span>
-        <h1>{title}</h1>
-        {description && <p>{description}</p>}
-      </div>
-      {actions && <div className="page-actions">{actions}</div>}
-    </div>
-  );
 }
 
 export function MetricCard({ label, value, note, primary = false, tone = "" }) {
@@ -52,159 +16,6 @@ export function MetricCard({ label, value, note, primary = false, tone = "" }) {
       <strong>{value}</strong>
       <small>{note}</small>
     </article>
-  );
-}
-
-export function Panel({ title, subtitle, action, className = "", tour = null, children }) {
-  return (
-    <article className={`panel ${className}`} data-demo-tour={tour || undefined}>
-      <div className="panel-heading">
-        <div>
-          <h2>{title}</h2>
-          {subtitle && <p>{subtitle}</p>}
-        </div>
-        {action}
-      </div>
-      {children}
-    </article>
-  );
-}
-
-export function EmptyState({ title, children, action }) {
-  return (
-    <div className="empty-state">
-      <span>
-        <AlertTriangle size={18} />
-      </span>
-      <h3>{title}</h3>
-      <p>{children}</p>
-      {action}
-    </div>
-  );
-}
-
-export function LoadingState({ label = "Loading workspace…" }) {
-  return (
-    <div className="loading-state">
-      <span className="spinner" />
-      {label}
-    </div>
-  );
-}
-
-export function ErrorState({ error, retry }) {
-  return (
-    <div className="error-state" role="alert">
-      <AlertTriangle size={20} />
-      <div>
-        <strong>Unable to load this view</strong>
-        <p>{error?.message || String(error)}</p>
-      </div>
-      {retry && (
-        <button className="button button-secondary" onClick={retry}>
-          Try again
-        </button>
-      )}
-    </div>
-  );
-}
-
-export function Modal({ title, children, onClose, footer, wide = false }) {
-  const titleId = useId();
-  const closeRef = useRef(null);
-  const dialogRef = useRef(null);
-  const closeAction = useRef(onClose);
-  closeAction.current = onClose;
-  useEffect(() => {
-    const previousFocus = document.activeElement;
-    closeRef.current?.focus();
-    const onKeyDown = (event) => {
-      if (event.key === "Escape") closeAction.current();
-      if (event.key === "Tab") {
-        const focusable = [
-          ...(dialogRef.current?.querySelectorAll(
-            'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-          ) || []),
-        ];
-        if (!focusable.length) return;
-        const first = focusable[0],
-          last = focusable.at(-1);
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        }
-        if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      previousFocus?.focus?.();
-    };
-  }, []);
-  return (
-    <div
-      className="modal-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        ref={dialogRef}
-        className={`modal ${wide ? "modal-wide" : ""}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-      >
-        <header>
-          <h2 id={titleId}>{title}</h2>
-          <button
-            ref={closeRef}
-            className="icon-button"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <X size={18} />
-          </button>
-        </header>
-        <div className="modal-body">{children}</div>
-        {footer && <footer>{footer}</footer>}
-      </section>
-    </div>
-  );
-}
-
-export function Toast({ toast, dismiss }) {
-  if (!toast) return null;
-  return (
-    <div
-      className={`toast toast-${toast.tone || "neutral"}`}
-      role={toast.tone === "error" ? "alert" : "status"}
-      aria-live={toast.tone === "error" ? "assertive" : "polite"}
-    >
-      <span>
-        {toast.tone === "error" ? (
-          <AlertTriangle size={16} />
-        ) : (
-          <Check size={16} />
-        )}
-      </span>
-      <div>
-        <strong>{toast.title}</strong>
-        {toast.message && <small>{toast.message}</small>}
-      </div>
-      <button
-        className="icon-button"
-        onClick={dismiss}
-        aria-label="Dismiss notification"
-      >
-        <X size={14} />
-      </button>
-    </div>
   );
 }
 
@@ -728,28 +539,5 @@ export function DataTable({ columns, rows, empty = "No rows to display" }) {
         </tbody>
       </table>
     </div>
-  );
-}
-
-export function SignalRow({ signal, onClick }) {
-  const tone =
-    signal.status === "new"
-      ? "warning"
-      : signal.status === "in_review"
-        ? "violet"
-        : "positive";
-  return (
-    <button className="signal-row" onClick={onClick}>
-      <span className={`signal-icon signal-${tone}`}>
-        <span />
-      </span>
-      <time>{formatTime(signal.ts)}</time>
-      <span className="signal-copy">
-        <strong>{signal.title}</strong>
-        <small>{signal.message}</small>
-      </span>
-      <Badge tone={tone}>{(signal.status || "new").replace("_", " ")}</Badge>
-      <ArrowRight size={15} />
-    </button>
   );
 }

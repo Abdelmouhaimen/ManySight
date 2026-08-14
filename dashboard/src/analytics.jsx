@@ -1,25 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "./api.js";
 import {
-  ActivityMap,
-  BarChart,
-  DataTable,
-  EmptyState,
-  ErrorState,
-  FlowTable,
-  LoadingState,
-  MetricCard,
-  MultiLineChart,
-  Panel,
-  StateSummary,
+  ActivityMap, BarChart, DataTable, FlowTable, MetricCard, MultiLineChart, StateSummary,
 } from "./components.jsx";
-
-const SUBJECT_LABELS = {
-  detection: "Detections",
-  measurement: "Measurements",
-  state: "States",
-  fused_entity: "Anonymous fused tracks",
-};
+import { EmptyState, ErrorState, LoadingState, Panel, ResultValue } from "./ui.jsx";
 
 function useQueryResult(definition, rangeSeconds, liveTick, enabled = true) {
   const [state, setState] = useState({ loading: true, data: null, error: null });
@@ -56,7 +40,7 @@ function scalarValue(row, measure) {
 function QueryBody({ definition, context, result, loading, error }) {
   if (loading && !result) return <LoadingState label="Loading query…" />;
   if (error) return <ErrorState error={error} />;
-  if (!result) return <EmptyState title="No data">The saved query returned no result.</EmptyState>;
+  if (!result) return <EmptyState tone="no-data" title="No data yet" />;
   const { shape, rows, dimensions, measures } = result;
   if (shape === "heatmap") {
     return <ActivityMap store={context.store} zones={context.zones} sources={context.sources} points={rows} />;
@@ -77,8 +61,11 @@ function QueryBody({ definition, context, result, loading, error }) {
   }
   if (shape === "scalar") {
     if (measures.length === 1) {
-      return <MetricCard primary label={definition.name} value={scalarValue(rows[0], measures[0])}
-        note={rows[0]?.quality ? `Quality: ${rows[0].quality}` : ""} />;
+      const value = rows[0]?.[measures[0]];
+      // Quality is part of the answer, not a footnote: an unknown result must
+      // not be shown as the zero the row happens to carry.
+      return <ResultValue value={typeof value === "object" ? scalarValue(rows[0], measures[0]) : value}
+        quality={rows[0]?.quality} />;
     }
     return <div className="metric-grid">{measures.map((measure) =>
       <MetricCard key={measure} label={measure.replaceAll("_", " ")} value={scalarValue(rows[0], measure)} />,
@@ -101,7 +88,7 @@ function QueryBody({ definition, context, result, loading, error }) {
   if (dimensionKey === "zone_id" && measures.length === 1) {
     return <BarChart rows={rows.map((row) => ({
       label: row.zone_name || `zone ${row.zone_id}`, value: row[measures[0]] || 0,
-      detail: row.quality ? `Quality: ${row.quality}` : undefined,
+      detail: row.quality && row.quality !== "known" ? row.quality : undefined,
     }))} empty="No data for this grouping." />;
   }
   const columns = [
@@ -114,8 +101,9 @@ function QueryBody({ definition, context, result, loading, error }) {
 
 export function AnalysisCard({ definition, rangeSeconds, context, liveTick, resultOverride = null, tour = null }) {
   const { loading, data, error } = useQueryResult(definition, rangeSeconds, liveTick, !resultOverride);
-  return <Panel tour={tour} title={definition.name} subtitle={definition.question || SUBJECT_LABELS[definition.subject]}>
-    <QueryBody definition={definition} context={context} result={resultOverride || data} loading={resultOverride ? false : loading} error={resultOverride ? null : error} />
-    {definition.migration_note && <p className="definition-note">Migrated definition: {definition.migration_note}</p>}
+  // The saved question is the useful subtitle; the internal subject is not.
+  return <Panel tour={tour} title={definition.name} subtitle={definition.question || ""}>
+    <QueryBody definition={definition} context={context} result={resultOverride || data}
+      loading={resultOverride ? false : loading} error={resultOverride ? null : error} />
   </Panel>;
 }

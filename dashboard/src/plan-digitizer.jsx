@@ -10,7 +10,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { api, assetUrl, demoSessionId } from "./api.js";
-import { Modal, Panel } from "./components.jsx";
+import { Modal, Panel } from "./ui.jsx";
 import { reportTourEvent } from "./demo-tour.jsx";
 
 const EMPTY_DRAWING = {
@@ -389,10 +389,13 @@ export function PlanDigitizer({ onRefresh, notify }) {
   return <>
     <Panel
       title="Floor plan"
-      subtitle="Trace a photographed plan and calibrate it directly in metres"
       action={<button className="button button-dark" data-demo-tour="digitize-plan" onClick={() => { setOpen(true); reportTourEvent({ kind: "digitizer-open" }); }}><ImagePlus size={14} /> Digitize plan</button>}
     >
-      <p className="form-note">{demoBackground ? "The demo keeps the real warehouse bird's-eye plan behind both the tracing canvas and the floor map workbench. You can replace it while digitizing." : "The source image is processed locally in your browser. StoreLens receives only the traced polygons, metric scale, and coordinate metadata."}</p>
+      <p className="form-note">
+        {demoBackground
+          ? "The demo's warehouse plan is already loaded behind the tracing canvas."
+          : "Trace a photo or scan of your plan. The picture stays in your browser."}
+      </p>
     </Panel>
     {open && <PlanDigitizerModal backgroundUrl={demoBackground} onClose={() => { setOpen(false); reportTourEvent({ kind: "digitizer-closed" }); }} onSaved={async (result) => {
       setOpen(false);

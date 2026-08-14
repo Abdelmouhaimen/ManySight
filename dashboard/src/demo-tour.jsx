@@ -149,7 +149,9 @@ export function useDemoTour({ session, cache, replay, refreshSession } = {}) {
   useEffect(() => {
     if (!step || dismissed || !step.route) return;
     if (step.setupTab) requestSetupTab(step.setupTab);
-    if (window.location.hash.replace("#", "") !== step.route) window.location.hash = step.route;
+    // Routes are now `page` or `page/sub`; compare the page only.
+    const currentPage = window.location.hash.replace("#", "").split("/")[0];
+    if (currentPage !== step.route) window.location.hash = step.route;
   }, [step?.id, dismissed]);
 
   const restorePracticeSpace = useCallback(async () => {

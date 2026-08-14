@@ -353,7 +353,7 @@ const STEPS = [
     id: "dashboard",
     group: "dashboard",
     type: "automatic",
-    route: "overview",
+    route: "dashboard",
     target: "dashboard-kpi",
     effect: "applyRequest:dashboard",
     minMs: 2400,

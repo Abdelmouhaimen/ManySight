@@ -1,48 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { Activity, RefreshCw } from "lucide-react";
 import { api, formatPreciseDateTime } from "./api.js";
-import {
-  Badge,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  PageHeader,
-  Panel,
-  RangeSelect,
-} from "./components.jsx";
+import { Badge, RangeSelect } from "./components.jsx";
+import { CURRENT_KINDS, LEGACY_KINDS, OTHER_KINDS, isLegacyKind, kindLabel } from "./status.js";
+import { EmptyState, ErrorState, LoadingState, PageHeader, Panel, TechnicalDetails } from "./ui.jsx";
 
-const KINDS = [
-  ["all", "all kinds"],
-  ["detection", "detection"],
-  ["measurement", "measurement"],
-  ["state", "state"],
-  ["zone_enter", "zone enter (legacy)"],
-  ["zone_exit", "zone exit (legacy)"],
-  ["zone_dwell", "zone dwell (deprecated)"],
-  ["state_change", "state change (legacy)"],
-  ["count", "count (legacy)"],
-  ["transition", "transition"],
-  ["custom", "custom"],
+/* Retired kinds are still stored and still readable, but the ingestion path
+ * rejects them, so they are not offered until someone asks for them. */
+const KIND_GROUPS = [
+  ["all", "All kinds"],
+  ...CURRENT_KINDS.map((kind) => [kind, kindLabel(kind)]),
+  ...OTHER_KINDS.map((kind) => [kind, kindLabel(kind)]),
 ];
+const LEGACY_KIND_OPTIONS = LEGACY_KINDS.map((kind) => [kind, `${kindLabel(kind)} (retired)`]);
 
-const COLUMN_DOCS = [
-  ["Time", "When the worker observed it (`ts`), displayed through milliseconds. Expand the row for the exact epoch value."],
-  ["Kind", "detection | measurement | state, or a legacy kind kept for historical audit — see the glossary below."],
-  ["Source", "The camera or sensor the observation came from (`source_id`)."],
-  ["Zone", "Assigned by the platform from geometry when the observation carries spatial evidence — never sent by the worker."],
-  ["Entity / name", "`entity_id` (opaque per-track id) for detections, or `name` (the metric/state key) for measurements and states."],
-  ["Value / label", "The numeric sample for a measurement, or the categorical value for a state/detection label."],
-  ["Job", "The registered analysis job that posted the observation."],
-  ["Details (expand)", "The complete observation evidence: pixel/map point, bbox, keypoints or mask, point meaning, projection plane, zone-assignment method, geometry revisions, and worker attributes."],
-];
-
-const TYPE_DOCS = [
-  ["detection", "One observed entity at one moment, with spatial evidence (point/bbox/keypoints/mask). ~1–2 per second per entity powers the heatmap, presence, visits, and dwell — all derived by the platform, never sent by the worker."],
-  ["measurement", "A directly observed numeric sample (name, value, value_kind: gauge/delta/cumulative). Never post a time-aggregated or precomputed total."],
-  ["state", "A directly observed current categorical value (name, label). Send it on every sample, including repeats — the platform coalesces repeats into intervals and derives transitions/durations itself."],
-  ["zone_enter / zone_exit / zone_dwell / state_change / count", "Legacy, platform-derived kinds from the previous contract. Still stored for historical audit; POST /observations/batch rejects a client that tries to send these now (error: legacy_derived_observation)."],
-  ["transition / custom", "Free-form observations for special analyses."],
-];
 
 export function ObservationsPage({ liveTick = 0 }) {
   const [range, setRange] = useState(86400);
@@ -57,7 +28,8 @@ export function ObservationsPage({ liveTick = 0 }) {
     [loadingMore, setLoadingMore] = useState(false),
     [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(null),
-    [follow, setFollow] = useState(true);
+    [follow, setFollow] = useState(true),
+    [showLegacy, setShowLegacy] = useState(false);
   const requestIdRef = useRef(0);
   const windowSinceRef = useRef(Date.now() / 1000 - range);
 
@@ -125,31 +97,42 @@ export function ObservationsPage({ liveTick = 0 }) {
   return (
     <>
       <PageHeader
-        eyebrow="Raw observations"
-        title="Every observation workers submitted"
-        description="Detection, measurement, and state rows — the evidence behind every analysis, not conclusions. The platform derives zones, visits, dwell, transitions, and state intervals from these rows."
-        actions={<RangeSelect value={range} onChange={setRange} />}
+        title="Observations"
+        actions={
+          <>
+            <RangeSelect value={range} onChange={setRange} />
+            <button className="icon-button" onClick={() => load()} aria-label="Refresh observations">
+              <RefreshCw size={16} />
+            </button>
+          </>
+        }
       />
       <Panel
-        title="Observations"
-        subtitle={`${observations.length.toLocaleString()} of ${total.toLocaleString()} matching rows loaded`}
+        subtitle={`${observations.length.toLocaleString()} of ${total.toLocaleString()} rows`}
         action={
-          <div className="event-refresh">
-            <label>
-              <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />{" "}
-              Follow live observations
-            </label>
-            <button className="icon-button" onClick={() => load()} aria-label="Refresh observations">
-              <RefreshCw size={15} />
-            </button>
-          </div>
+          <label className="check-field">
+            <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
+            Follow new rows
+          </label>
         }
       >
         <div className="event-filters">
           <label className="field">
             <span>Kind</span>
-            <select value={filters.kind} onChange={(e) => change("kind", e.target.value)}>
-              {KINDS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            <select
+              value={filters.kind}
+              onChange={(e) => {
+                if (e.target.value === "__legacy__") { setShowLegacy(true); return; }
+                change("kind", e.target.value);
+              }}
+            >
+              {KIND_GROUPS.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+              {showLegacy
+                ? LEGACY_KIND_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>))
+                : <option value="__legacy__">Show retired kinds…</option>}
             </select>
           </label>
           <label className="field">
@@ -167,9 +150,9 @@ export function ObservationsPage({ liveTick = 0 }) {
             </select>
           </label>
           <label className="field">
-            <span>Analysis job</span>
+            <span>Worker</span>
             <select value={filters.job_id} onChange={(e) => change("job_id", e.target.value)}>
-              <option value="all">All jobs</option>
+              <option value="all">All workers</option>
               {context.jobs.map((j) => <option key={j.id} value={j.id}>{j.name}</option>)}
             </select>
           </label>
@@ -186,9 +169,7 @@ export function ObservationsPage({ liveTick = 0 }) {
         {loading ? (
           <LoadingState label="Loading observations…" />
         ) : !observations.length ? (
-          <EmptyState title="No matching observations">
-            Change the filters or time range, or run a worker that submits observation batches.
-          </EmptyState>
+          <EmptyState tone="no-data" title="No observations match these filters" />
         ) : (
           <>
             <div className="raw-event-table table-scroll">
@@ -223,52 +204,16 @@ export function ObservationsPage({ liveTick = 0 }) {
             )}
           </>
         )}
-        <p className="definition-note">
-          Rows are raw worker submissions after server-side projection and zone assignment.
-          Following live observations resets pagination — pause it to page through history.
-        </p>
-      </Panel>
-      <Panel title="How to read this table" subtitle="The observation contract between workers and the platform">
-        <details className="docs-toggle">
-          <summary>Column glossary, kinds, and enrichment pipeline</summary>
-          <div className="docs-glossary">
-            <h3>Enrichment pipeline</h3>
-            <p>
-              Workers submit only detection, measurement, or state observations —
-              never a zone ID, a zone name, or a derived event. On ingestion the
-              platform preserves the original evidence (bbox, keypoints, or mask),
-              then projects a representative point through the floor or a named
-              plane, matches it against camera-specific zone views, and tests it
-              against the global zone polygons. The row records which method and
-              geometry revisions were used, so a later geometry edit never rewrites
-              history. Every analysis is derived from these rows.
-            </p>
-            <h3>Columns</h3>
-            <div className="table-scroll">
-              <table><tbody>
-                {COLUMN_DOCS.map(([name, doc]) => <tr key={name}><th>{name}</th><td>{doc}</td></tr>)}
-              </tbody></table>
-            </div>
-            <h3>Kinds</h3>
-            <div className="table-scroll">
-              <table><tbody>
-                {TYPE_DOCS.map(([name, doc]) => <tr key={name}><th>{name}</th><td>{doc}</td></tr>)}
-              </tbody></table>
-            </div>
-            <p>
-              Observations in → queries and dashboards out. Generated dashboards are shown on the{" "}
-              <a href="#dashboard">Dashboard page</a>; see the full contract in the{" "}
-              <a href="/docs" target="_blank" rel="noreferrer">interactive API documentation</a>.
-            </p>
-          </div>
-        </details>
+        {follow && nextCursor && (
+          <p className="table-note">Turn off “Follow new rows” to page back through history.</p>
+        )}
       </Panel>
     </>
   );
 }
 
 function ObservationRows({ observation: o, source, job, expanded, toggle }) {
-  const isLegacy = !["detection", "measurement", "state"].includes(o.kind);
+  const isLegacy = isLegacyKind(o.kind);
   return (
     <>
       <tr>
@@ -277,7 +222,7 @@ function ObservationRows({ observation: o, source, job, expanded, toggle }) {
             {formatPreciseDateTime(o.ts)}
           </time>
         </td>
-        <td><Badge tone={isLegacy ? "warning" : "violet"}>{o.kind.replaceAll("_", " ")}</Badge></td>
+        <td><Badge tone={isLegacy ? "warning" : "violet"}>{kindLabel(o.kind)}</Badge></td>
         <td>{source?.name || (o.source_id ? `#${o.source_id}` : "—")}</td>
         <td>{o.zone_name || "—"}</td>
         <td>{o.entity_id || o.name || "—"}</td>
