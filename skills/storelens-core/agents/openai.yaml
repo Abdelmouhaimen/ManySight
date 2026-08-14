@@ -1,0 +1,4 @@
+interface:
+  display_name: "StoreLens Core"
+  short_description: "Operate StoreLens sources, geometry, perception, fusion, queries, and alerts"
+  default_prompt: "Use $storelens-core, then inspect_workspace, to understand my configured space and carry out the requested camera analysis."

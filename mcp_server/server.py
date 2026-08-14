@@ -1,4 +1,17 @@
-"""StoreLens MCP server — an agent-facing adapter for the StoreLens REST API.
+"""StoreLens MCP server — the curated semantic surface coding agents operate.
+
+Three interfaces, three jobs:
+
+  REST / SDK  complete low-level platform interface (see /openapi.json)
+  MCP         a small semantic interface shaped for an agent's context window
+  skills      the authoritative workflow knowledge behind these tools
+
+This module advertises a deliberately small public tool set. The low-level
+handlers are still implemented below as plain module functions — importable,
+testable, and re-registerable with STORELENS_MCP_LEGACY_TOOLS=1 — they are just
+not part of the normal advertised surface, because an agent that has to choose
+between sixty tools rediscovers the architecture by trial and error instead of
+following it.
 
 Run standalone:            python mcp_server/server.py
 Register with Codex CLI:   see codex.config.example.toml at the repo root.
@@ -11,6 +24,7 @@ Env:
   STORELENS_MCP_TRANSPORT  stdio (default) | streamable-http
   STORELENS_MCP_HOST / STORELENS_MCP_PORT  remote transport bind settings
   STORELENS_MCP_ALLOWED_HOSTS / STORELENS_MCP_ALLOWED_ORIGINS  comma-separated
+  STORELENS_MCP_LEGACY_TOOLS  1 to also advertise the deprecated low-level tools
 """
 import json
 import os
@@ -39,6 +53,7 @@ SKILLS_DIR = os.environ.get(
 )
 MCP_HOST = os.environ.get("STORELENS_MCP_HOST", "127.0.0.1")
 MCP_PORT = int(os.environ.get("STORELENS_MCP_PORT", "8001"))
+LEGACY_TOOL_MODE = os.environ.get("STORELENS_MCP_LEGACY_TOOLS", "").lower() in {"1", "true", "yes"}
 MCP_DNS_REBINDING_PROTECTION = os.environ.get(
     "STORELENS_MCP_DNS_REBINDING_PROTECTION", "true"
 ).lower() in {"1", "true", "yes"}
@@ -53,39 +68,56 @@ MCP_ALLOWED_ORIGINS = [
     ).split(",") if value.strip()
 ]
 
+COMPARISON_OPERATORS = (">", ">=", "<", "<=", "==", "!=")
+
 mcp = build_server(
     "storelens",
     instructions=(
-        "StoreLens is an agent-operated computer-vision platform for physical spaces. "
-        "On the first StoreLens request, always call get_skill('storelens-platform') and "
-        "follow that general operating guide before planning or changing the platform. "
-        "Then call list_skills() and load the closest task-specific playbook when one applies. "
-        "Discover the logical sources, map, zones, jobs, and data instead of assuming "
-        "prior conversation or demo state. Camera access is worker-local: StoreLens never opens "
-        "or proxies a feed. Managed credentials require explicit privileged resolution through "
-        "get_source_connection; ordinary source tools never return them. Use MCP for agent operations; workers "
-        "use the REST endpoint returned by get_platform_config(). "
-        "\n\nObserve locally, derive centrally: a worker submits ONLY three observation kinds — "
-        "detection (an observed entity with spatial evidence), measurement (an observed numeric "
-        "value), and state (an observed current categorical value). Call get_observation_contract() "
-        "for the exact field-level contract. Workers must NEVER resolve zones, send zone_id/zone, "
-        "or calculate zone entry/exit, dwell, occupancy, movement between zones, state changes, or "
-        "state durations — StoreLens derives every one of those from raw detection/state rows. "
-        "submit_observations() rejects any of those legacy derived kinds with a "
-        "legacy_derived_observation error. "
-        "For every processed person-detection frame, workers submit all detections and then one "
-        "detection_frame_count measurement, including zero, using exactly the same timestamp and sample_id. "
-        "Never create a fake detection for an empty frame or use wall-clock expiry as scene state. "
-        "\n\nAfter posting observations, inspect source/fused current state and quality, then "
-        "preview a deterministic query with query_data. Save one canonical question with "
-        "create_saved_query and reference it from a generated dashboard only when requested. "
-        "Agents never receive raw SQL access or generate dashboard React code. "
-        "\n\nA zone Polygon/MultiPolygon is its global map footprint. Use zone views for camera-specific visible "
-        "and inset decision polygons, and named projection surfaces for mattresses, tables, or "
-        "other elevated planes; never compensate for height by subtracting map Y. Preserve bbox, "
-        "keypoints, masks, point meaning, and geometry provenance in submitted observations — "
-        "StoreLens uses them for zone assignment and review evidence. Multiview groups may "
-        "associate anonymous active tracks from compatible calibrated sources; this is not identity."
+        "StoreLens turns observations produced by LOCAL workers into spatial and temporal state "
+        "for a physical space: geometry, zones, cross-camera fusion, deterministic queries, "
+        "dashboards, and alerts.\n"
+        "\n"
+        "START HERE. Call inspect_workspace() first on almost every task — it returns the "
+        "sources, calibration, zones, perception freshness, multiview groups, saved queries, "
+        "dashboards, alert rules, and readiness in one response. Then call list_workflows() and "
+        "get_workflow(name) for the job you were asked to do, and get_skill(name) for the full "
+        "playbook. Do not rediscover the architecture by trying tools.\n"
+        "\n"
+        "OBSERVE LOCALLY, DERIVE CENTRALLY. Workers submit only raw perception evidence: "
+        "detection (an observed entity with pixel evidence), measurement (an observed number), "
+        "state (an observed categorical value). StoreLens derives projection, canonical zone "
+        "assignment, visits, dwell, occupancy, transitions, state durations, multiview fusion, "
+        "queries, and alerts. Workers must never submit zone_id/zone, zone_enter, zone_exit, "
+        "zone_dwell, state_change, count, occupancy, visits, transitions, or fused identity.\n"
+        "\n"
+        "ONE ATOMIC SAMPLE PER PROCESSED FRAME. A person-detection worker posts one "
+        "DetectionSample per processed frame to POST /api/v1/detection-samples. detections=[] is "
+        "an explicit KNOWN ZERO and must be submitted; never fake a detection for an empty frame. "
+        "No fresh complete sample means UNKNOWN or STALE, never zero. Call get_worker_recipe() "
+        "for the current contract — never infer it from an example, demo, or older worker script "
+        "you find in a repository; those may predate the current API.\n"
+        "\n"
+        "IDENTITY. entity_id is an opaque source-local tracker ID, not a person. Fused multiview "
+        "IDs are anonymous physical-track estimates from geometry, time, and topology — not "
+        "identity, not appearance ReID. Never join tracker IDs across cameras yourself; "
+        "cross-camera occupancy uses fused entities, never a count of raw local track IDs.\n"
+        "\n"
+        "GEOMETRY. A ZoneView is one camera's pixel polygon; the canonical Zone is the single "
+        "physical footprint in map metres. One physical region is ONE canonical zone, never one "
+        "per camera. When a named region has no geometry yet, inspect the calibrated cameras "
+        "first (plan_frame_capture) instead of asking the user for coordinates, then "
+        "preview_zone, get approval, and commit_zone.\n"
+        "\n"
+        "ANALYTICS. The saved query computes; a dashboard only presents. Threshold words are "
+        "exact: 'more than 2' is > 2 and 'at least 2' is >= 2 — StoreLens never converts one into "
+        "the other. Quality known/partial/unknown are different: a stale camera does not mean "
+        "zero. Agents never receive raw SQL and never generate dashboard code.\n"
+        "\n"
+        "BOUNDARIES. StoreLens never opens or proxies a camera feed, runs a model, or executes "
+        "your scripts; camera access and inference are yours, locally. Credentials come only from "
+        "get_source_connection inside an authorized worker and never appear in observations, "
+        "queries, dashboards, logs, or job metadata. Space and observation reinitialization are "
+        "destructive and require an explicit user request."
     ),
 )
 
@@ -107,42 +139,494 @@ def _req(method: str, path: str, body: dict | None = None, raw: bool = False,
         return payload if raw else json.loads(payload)
 
 
+def _qs(params: dict) -> str:
+    clean = {k: v for k, v in params.items() if v is not None}
+    return "?" + urllib.parse.urlencode(clean) if clean else ""
+
+
+def _ids(source_ids: list[int] | None) -> str | None:
+    return ",".join(str(int(value)) for value in source_ids) if source_ids else None
+
+
+# ===========================================================================
+# CURATED PUBLIC SURFACE
+# ===========================================================================
+
+# --- context and workflows -------------------------------------------------
+
 @mcp.tool()
-def list_sources() -> list[dict]:
-    """List logical observation sources, safe connection metadata, capabilities,
-    latest worker runtime, observation freshness, placement, and calibration."""
-    return _req("GET", "/sources")
+def inspect_workspace(entity_type: str = "person") -> dict:
+    """FIRST CALL for almost every StoreLens task. One read-only snapshot of the
+    whole workspace: space and current space revision, map readiness, every source
+    with configuration/placement/calibration/freshness, canonical zones and their
+    per-camera view coverage, perception freshness for `entity_type`, multiview
+    groups with per-source calibration and quality, saved queries, dashboards,
+    alert rules, query capabilities, plus a readiness summary and next steps.
+
+    Use it before planning, before creating anything, and to verify afterwards.
+    Do not reconstruct this from a dozen low-level reads, and do not assume state
+    from an earlier conversation or a demo. Never contains credentials."""
+    return _req("GET", "/agent/workspace" + _qs({"entity_type": entity_type}))
 
 
 @mcp.tool()
+def list_workflows() -> dict:
+    """The index of StoreLens jobs an agent can be asked to do (define a zone from
+    cameras, create a zone occupancy alert, run person tracking, configure
+    multiview, generate a dashboard, onboard or inspect a camera).
+
+    Use it when you know the user's goal but not the StoreLens path to it. Cheap;
+    returns names, when-to-use, and the skills behind each. Then call
+    get_workflow(name)."""
+    return _req("GET", "/agent/workflows")
+
+
+@mcp.tool()
+def get_workflow(name: str) -> dict:
+    """One workflow's prerequisites, ordered sequence, non-negotiable invariants,
+    the MCP tools that implement it, and what 'done' means.
+
+    Use it right after list_workflows() and before acting. It is the routing
+    record, not the full playbook — load the named skill with get_skill() when you
+    need the detail behind a step."""
+    return _req("GET", f"/agent/workflows/{urllib.parse.quote(name)}")
+
+
+@mcp.tool()
+def get_skill(name: str) -> str:
+    """Return one complete StoreLens playbook: storelens-core (load first),
+    sources-and-cameras, geometry-and-zones, perception-workers, multiview-fusion,
+    queries-dashboards-alerts, guided-demo.
+
+    Use it when a workflow step needs the reasoning behind it, or on any StoreLens
+    task where you are unsure of an invariant. get_workflow() names the right
+    skill. The response is prefixed with this deployment's resolved endpoints."""
+    path = os.path.join(SKILLS_DIR, name, "SKILL.md")
+    if not os.path.isfile(path):
+        available = sorted(
+            entry for entry in os.listdir(SKILLS_DIR)
+            if os.path.isfile(os.path.join(SKILLS_DIR, entry, "SKILL.md"))
+        ) if os.path.isdir(SKILLS_DIR) else []
+        raise ValueError(f"unknown skill '{name}' — available: {available}")
+    with open(path, encoding="utf-8") as f:
+        content = f.read()
+    endpoints = get_platform_config()
+    runtime = (
+        "## Runtime endpoints (authoritative for this connection)\n\n"
+        f"- Dashboard: `{endpoints['dashboard_url']}`\n"
+        f"- REST base: `{endpoints['rest_url']}`\n"
+        f"- OpenAPI: `{endpoints['openapi_url']}`\n"
+        f"- Interactive docs: `{endpoints['docs_url']}`\n"
+        f"- Remote MCP: `{endpoints['mcp_url']}`\n"
+        f"- Agent guide: `{endpoints['agent_guide_url']}`\n\n"
+        "Use these resolved values instead of hard-coded hosts.\n\n"
+    )
+    return runtime + content
+
+
+# --- sources and cameras ---------------------------------------------------
+
+@mcp.tool()
+def inspect_source(source_id: int, entity_type: str = "person") -> dict:
+    """Everything about ONE source: connection readiness and credential status
+    (never the credentials), placement, floor homography and any rich calibration
+    import, projection surfaces, its zone views, current complete-sample
+    freshness, observed submission rate, what spatial evidence its detections
+    carry, and its latest worker heartbeat.
+
+    Use it before calibrating, before drawing zone geometry on that camera, and
+    when diagnosing why a source contributes nothing. Use inspect_workspace()
+    instead when you need the whole picture."""
+    return _req("GET", f"/agent/sources/{source_id}" + _qs({"entity_type": entity_type}))
+
+
+@mcp.tool()
+def configure_source(name: str = "", source_id: int | None = None, kind: str | None = None,
+                     connection_mode: str | None = None,
+                     connection_management: str | None = None,
+                     connection: dict | None = None, credentials: dict | None = None,
+                     locator: dict | None = None, capabilities: list[str] | None = None,
+                     metadata: dict | None = None) -> dict:
+    """Create a logical source, or update it when `source_id` is given.
+
+    Choose `storelens_managed` with a structured `connection` (plus optional
+    `credentials`, encrypted at rest) or `external_secret` with
+    `locator.local_secret_ref` naming a worker-local secret. A camera URL,
+    username, password, or token in `locator` is rejected — that is by design.
+
+    Use it when onboarding a camera, stream, file, or sensor. On update, only the
+    arguments you pass are changed; omitted ones keep their stored values, so
+    renaming a source never silently resets its connection. It does not place or
+    calibrate the source; do that next, before any geometry or fusion work."""
+    supplied = {"name": name or None, "kind": kind, "connection_mode": connection_mode,
+                "connection_management": connection_management, "connection": connection,
+                "credentials": credentials, "locator": locator,
+                "capabilities": capabilities, "metadata": metadata}
+    if source_id is not None:
+        return _req("PUT", f"/sources/{source_id}",
+                    {key: value for key, value in supplied.items() if value is not None})
+    if not name:
+        raise ValueError("a new source needs a name")
+    return _req("POST", "/sources", {
+        "name": name, "kind": kind or "webcam",
+        "connection_mode": connection_mode or "agent_local",
+        "connection_management": connection_management or "external_secret",
+        "connection": connection or {}, "credentials": credentials,
+        "locator": locator or {}, "capabilities": capabilities or [],
+        "metadata": metadata or {},
+    })
+
+
+@mcp.tool()
+def get_source_connection(source_id: int) -> dict:
+    """Explicitly resolve a source's connection material for a local worker that is
+    about to open it. Requires STORELENS_CREDENTIAL_ACCESS_KEY and may return
+    secrets.
+
+    Use it ONLY inside the authorized local process that opens the feed, and pass
+    the result straight into capture code in memory. Never log, print, display,
+    persist, or copy it into observations, zone metadata, job metadata, generated
+    code, or your reply. Ordinary source reads (inspect_source, inspect_workspace)
+    are redacted and are what you should use for everything else."""
+    return _req("GET", f"/sources/{source_id}/connection", privileged=True)
+
+
+@mcp.tool()
+def plan_frame_capture(source_id: int) -> dict:
+    """Get a runnable plan for capturing one frame from a source IN YOUR OWN SHELL,
+    plus the pixel-coordinate and calibration context needed to turn that image
+    into zone polygons.
+
+    Use it whenever a task needs to SEE a camera — above all before proposing zone
+    geometry, so you inspect the real view instead of asking the user for polygon
+    coordinates. It returns a plan and geometry context, never image bytes:
+    StoreLens does not proxy media and this adapter does not process video, so the
+    capture runs in your process. Run it, then open the saved image."""
+    return _req("GET", f"/agent/sources/{source_id}/frame-capture-plan")
+
+
+# --- geometry and zones ----------------------------------------------------
+
+@mcp.tool()
+def preview_zone(views: list[dict], zone_name: str = "", zone_id: int | None = None,
+                 ztype: str = "area") -> dict:
+    """Project proposed camera-space polygons onto the shared map and return the
+    resulting physical zone preview WITHOUT persisting anything.
+
+    Use it when a physical zone is not yet defined and calibrated cameras provide
+    the visual evidence, and use it again after every user correction. Each view is
+    {source_id, polygon_px:[{x,y},...], detection_polygon_px?,
+    projection_surface_id?, membership_rule?}; pass `zone_id` to preview extending
+    an existing zone. Returns each projected polygon with validity, area, and
+    calibration revision, the unioned canonical preview, provenance, and warnings.
+
+    Zone geometry is subjective, so show this to the user and get approval before
+    commit_zone. Do NOT use it to create per-camera analytical zones — one physical
+    region is one canonical zone."""
+    return _req("POST", "/agent/zone-preview",
+                {"views": views, "zone_name": zone_name, "zone_id": zone_id, "ztype": ztype})
+
+
+@mcp.tool()
+def commit_zone(views: list[dict], approved: bool = False, zone_name: str = "",
+                zone_id: int | None = None, ztype: str = "area") -> dict:
+    """Persist an approved preview: ONE canonical zone in map metres plus one
+    ZoneView per contributing camera, unioning each projected contribution with
+    full projection provenance. Pass `zone_id` to extend an existing zone.
+
+    Use it only after the user has approved the geometry preview_zone returned,
+    and pass the same views you last previewed. approved=true means the user
+    approved — not that you are confident. Cameras that cannot see the region must
+    not be included; never invent a polygon to make coverage look complete."""
+    return _req("POST", "/agent/zone-commit",
+                {"views": views, "approved": approved, "zone_name": zone_name,
+                 "zone_id": zone_id, "ztype": ztype})
+
+
+# --- perception ------------------------------------------------------------
+
+@mcp.tool()
+def inspect_perception(entity_type: str = "person", source_ids: list[int] | None = None,
+                       require_tracking: bool = True, require_spatial: bool = True) -> dict:
+    """Can StoreLens already answer a question about `entity_type` on these
+    sources? Returns per-source availability, healthy/stale/unavailable state,
+    observed central submission rate, worker heartbeat, tracking and spatial
+    output, multiview readiness, any compatible existing job, and an `action` of
+    reuse | extend_coverage | restart_or_repair | perception_missing.
+
+    Call it BEFORE starting any worker so you reuse healthy perception instead of
+    starting a duplicate, and again afterwards to verify the worker is really
+    producing complete fresh samples. Do not inspect OS processes or repository
+    files to answer this. A stale or missing source means unknown, never zero."""
+    return _req("GET", "/agent/perception" + _qs({
+        "entity_type": entity_type, "source_ids": _ids(source_ids),
+        "require_tracking": str(require_tracking).lower(),
+        "require_spatial": str(require_spatial).lower(),
+    }))
+
+
+@mcp.tool()
+def get_worker_recipe(entity_type: str = "person", tracking: bool = True,
+                      source_ids: list[int] | None = None) -> dict:
+    """The CURRENT worker integration contract, generated from the running
+    platform: preferred submission endpoint and envelope, empty-frame semantics,
+    source-local identity rules, spatial point meaning, forbidden worker output,
+    sampling guidance, registration/heartbeat/stop behaviour, managed-connection
+    workflow, multiview prerequisites, the SDK helper, and how to verify.
+
+    Call it before writing or adapting any worker. It is authoritative — do NOT
+    infer the contract from an example script, a demo worker, or an older file
+    found in a repository. It describes the protocol, not a model implementation:
+    the detector, tracker, and local environment are yours."""
+    return _req("GET", "/agent/worker-recipe" + _qs({
+        "entity_type": entity_type, "tracking": str(tracking).lower(),
+        "source_ids": _ids(source_ids),
+    }))
+
+
+@mcp.tool()
+def request_worker_state(worker_id: int, desired_state: str) -> dict:
+    """Ask a registered worker to move to running, stopped, or restart. The worker
+    reads this from its next heartbeat and must obey it cooperatively.
+
+    Use it to stop or restart perception you or a supervisor started. StoreLens
+    never launches, kills, or relaunches a process, so `restart` does nothing
+    without a supervisor. Registration and heartbeating are the worker's own job
+    through the SDK — do not register a worker you did not start."""
+    return _req("PUT", f"/workers/{worker_id}/desired-state",
+                {"desired_state": desired_state})
+
+
+# --- multiview -------------------------------------------------------------
+
+@mcp.tool()
+def configure_multiview_group(name: str = "", source_ids: list[int] | None = None,
+                              group_id: int | None = None, enabled: bool | None = None,
+                              time_tolerance_s: float | None = None,
+                              spatial_gate_m: float | None = None,
+                              track_age_s: float | None = None,
+                              topology: dict | None = None,
+                              configuration: dict | None = None) -> dict:
+    """Create, or update when `group_id` is given, an explicit group of cameras
+    whose active tracks may be associated into anonymous fused physical tracks.
+
+    Use it when overlapping cameras would otherwise double-count the same person,
+    which is a prerequisite for any cross-camera occupancy question. Every member
+    must be calibrated into the same metric world frame. Choose gates from
+    calibration error, sampling rate, and walking speed rather than guessing a
+    large one; on update, omitted gates keep their stored values. Fusion is
+    geometric association, never identity or appearance ReID; read its readiness
+    back from inspect_workspace() or inspect_perception()."""
+    supplied = {"name": name or None, "source_ids": source_ids, "enabled": enabled,
+                "time_tolerance_s": time_tolerance_s, "spatial_gate_m": spatial_gate_m,
+                "track_age_s": track_age_s, "topology": topology,
+                "configuration": configuration}
+    if group_id is not None:
+        return _req("PATCH", f"/multiview/groups/{group_id}",
+                    {key: value for key, value in supplied.items() if value is not None})
+    if not name or not source_ids:
+        raise ValueError("a new multiview group needs a name and source_ids")
+    return _req("POST", "/multiview/groups", {
+        "name": name, "source_ids": source_ids,
+        "enabled": True if enabled is None else enabled,
+        "time_tolerance_s": 0.75 if time_tolerance_s is None else time_tolerance_s,
+        "spatial_gate_m": 1.5 if spatial_gate_m is None else spatial_gate_m,
+        "track_age_s": 2.0 if track_age_s is None else track_age_s,
+        "topology": topology or {}, "configuration": configuration or {},
+    })
+
+
+# --- analytics -------------------------------------------------------------
+
+@mcp.tool()
+def run_query(subject: str = "", measures: list[str] | None = None, filters: dict | None = None,
+              grouping: dict | None = None, range: dict | None = None,
+              comparison: dict | None = None, query_id: int | None = None) -> dict:
+    """Execute a deterministic question and return its result — a preview of a
+    definition, or a saved query when `query_id` is given.
+
+    subject: detection | measurement | state | fused_entity. Current fused people
+    in a zone is subject='fused_entity', measures=['current_occupancy'],
+    filters={'group_ids':[g],'zone_ids':[z],'entity_types':['person']} — that is
+    fresh fused entities inside the canonical zone, NOT camera bounding boxes and
+    NOT distinct raw local tracker IDs. See inspect_workspace()'s
+    query_capabilities for the valid subject/measure combinations.
+
+    Use it to validate a definition before saving it, and to read a saved query's
+    current value and quality. Returns {shape, dimensions, measures, rows,
+    metadata}; `shape` says how to read rows, never which chart to draw. Raw SQL is
+    never exposed."""
+    if query_id is not None:
+        return _req("POST", f"/queries/{query_id}/execute")
+    if not subject or not measures:
+        raise ValueError("provide query_id, or subject and measures")
+    return _req("POST", "/analytics/query", {
+        "subject": subject, "measures": measures, "filters": filters or {},
+        "grouping": grouping or {}, "range": range or {}, "comparison": comparison or {},
+    })
+
+
+@mcp.tool()
+def configure_saved_query(name: str, subject: str = "", measures: list[str] | None = None,
+                          filters: dict | None = None, grouping: dict | None = None,
+                          question: str = "", default_range: dict | None = None,
+                          comparison: dict | None = None, query_id: int | None = None) -> dict:
+    """Save one canonical analytical question, or update it when `query_id` is
+    given. Dashboards and alert rules reference the saved query by id.
+
+    Use it once a run_query() preview answers the user's question and that
+    question needs to persist — because a dashboard or an alert will reference it.
+    A saved query is a QUESTION (subject, measures, filters, grouping), not a
+    chart. Presentation lives on a dashboard widget, so wanting a different
+    rendering never justifies a second saved query — and neither does a rewording.
+    Check inspect_workspace()'s saved_queries first and reuse an equivalent
+    definition."""
+    body = {"name": name, "subject": subject, "measures": measures or [],
+            "filters": filters or {}, "grouping": grouping or {}, "question": question,
+            "default_range": default_range or {}, "comparison": comparison or {},
+            "created_by": "agent"}
+    if query_id is None:
+        if not subject or not measures:
+            raise ValueError("a new saved query needs subject and measures")
+        return _req("POST", "/queries", body)
+    patch = {k: v for k, v in body.items()
+             if k != "created_by" and v not in (None, "", {}, [])}
+    return _req("PATCH", f"/queries/{query_id}", patch)
+
+
+@mcp.tool()
+def configure_dashboard(name: str, widgets: list[dict] | None = None,
+                        dashboard_id: int | None = None, description: str = "") -> dict:
+    """Create or update a generated dashboard and its query-backed widgets in one
+    call. Each widget is {query_id, title, presentation, configuration?,
+    sort_order?} with presentation number | timeseries | bar | table | heatmap,
+    matched to the query's result shape.
+
+    Use it only when the user asked to see, pin, or display something — a saved
+    query needs no dashboard to be useful. Widgets are declarative and always
+    computed by their saved query: a widget never calculates occupancy or any
+    other metric itself, and agents do not generate React or SQL. A widget with
+    the same query_id and title is updated rather than duplicated, so re-running
+    this is safe."""
+    if dashboard_id is None:
+        dashboard = _req("POST", "/dashboards",
+                         {"name": name, "description": description, "created_by": "agent"})
+        dashboard_id = dashboard["id"]
+        existing = []
+    else:
+        _req("PATCH", f"/dashboards/{dashboard_id}", {"name": name, "description": description})
+        dashboard = _req("GET", f"/dashboards/{dashboard_id}")
+        existing = dashboard.get("widgets", [])
+    for index, widget in enumerate(widgets or []):
+        match = next((item for item in existing
+                      if item.get("query_id") == widget.get("query_id")
+                      and item.get("title") == widget.get("title")), None)
+        payload = {
+            "query_id": widget["query_id"], "title": widget["title"],
+            "presentation": widget.get("presentation", "number"),
+            "configuration": widget.get("configuration") or {},
+            "sort_order": widget.get("sort_order", index),
+        }
+        if match:
+            _req("PATCH", f"/dashboard-widgets/{match['id']}", payload)
+        else:
+            _req("POST", f"/dashboards/{dashboard_id}/widgets", payload)
+    return _req("GET", f"/dashboards/{dashboard_id}")
+
+
+@mcp.tool()
+def configure_alert(name: str, query_id: int | None = None, operator: str = "",
+                    value: float | None = None, for_seconds: float = 0,
+                    window_s: float | None = None, allow_partial: bool = False,
+                    cooldown_s: float = 60, webhook_url: str = "", enabled: bool = True,
+                    rule_id: int | None = None, kind: str = "query_condition",
+                    params: dict | None = None) -> dict:
+    """Create, or update when `rule_id` is given, an edge-triggered alert rule.
+    Use it when the user wants to be told about a condition rather than to look at
+    a value. Prefer kind='query_condition' with a `query_id` so the alert evaluates
+    exactly the saved query a dashboard shows.
+
+    THE OPERATOR IS EXACT AND IS NEVER NORMALIZED. Map the user's own words:
+    'more than 2' -> operator='>' value=2; 'at least 2' -> '>='; 'fewer than 3' ->
+    '<'; 'at most 3' -> '<='; 'exactly 3' -> '=='. If the phrasing is not clearly
+    one of these, ask the user instead of guessing.
+
+    `for_seconds` requires the condition to hold that long before firing.
+    Evaluation is periodic, so a quiet zone still fires. Quality is respected: by
+    default only `known` evidence can fire or clear an edge, so a stale camera
+    never implies zero — set allow_partial=true only if the user accepts partial
+    camera coverage. Compatibility kinds (dwell_exceeds, occupancy_exceeds,
+    state_alert, event_match, analysis_condition) take `params` instead."""
+    condition = None
+    if kind == "query_condition":
+        if query_id is None or value is None:
+            raise ValueError("query_condition needs query_id and value")
+        if operator not in COMPARISON_OPERATORS:
+            raise ValueError(
+                f"operator must be one of {list(COMPARISON_OPERATORS)} and must match the user's "
+                "words exactly ('more than N' is '>', 'at least N' is '>=')")
+        params = {"query_id": query_id}
+        condition = {"operator": operator, "value": value, "for_seconds": for_seconds,
+                     "allow_partial": allow_partial}
+        if window_s is not None:
+            condition["window_s"] = window_s
+    body = {"name": name, "kind": kind, "params": params or {}, "condition": condition,
+            "webhook_url": webhook_url, "cooldown_s": cooldown_s, "enabled": enabled}
+    if rule_id is None:
+        return _req("POST", "/alert-rules", body)
+    return _req("PUT", f"/alert-rules/{rule_id}", body)
+
+
+# ===========================================================================
+# LEGACY / INTERNAL HANDLERS
+#
+# Still implemented, still importable, still exercised by tests, and still
+# re-registerable with STORELENS_MCP_LEGACY_TOOLS=1. Not advertised by default:
+# the curated tools above supersede them, and a sixty-tool list is the problem
+# this module exists to solve. REST/SDK remain the complete interface.
+# ===========================================================================
+
 def get_platform_config() -> dict:
     """Return the authoritative dashboard, REST, OpenAPI, agent-guide, discovery,
     and MCP endpoints resolved for this StoreLens deployment."""
     return _req("GET", "/platform-config")
 
 
-@mcp.tool()
+def list_skills() -> list[dict]:
+    """Superseded by list_workflows(). The skill index; get_skill() still serves
+    the files themselves."""
+    out = []
+    if os.path.isdir(SKILLS_DIR):
+        for entry in sorted(os.listdir(SKILLS_DIR)):
+            path = os.path.join(SKILLS_DIR, entry, "SKILL.md")
+            if os.path.isfile(path):
+                with open(path, encoding="utf-8") as f:
+                    content = f.read()
+                title = next(
+                    (line[2:].strip() for line in content.splitlines() if line.startswith("# ")),
+                    entry,
+                )
+                out.append({"name": entry, "title": title})
+    return out
+
+
+def list_sources() -> list[dict]:
+    """Superseded by inspect_workspace(). Raw source list with safe connection
+    metadata, capabilities, latest worker runtime, freshness, placement, calibration."""
+    return _req("GET", "/sources")
+
+
 def get_source(source_id: int) -> dict:
-    """Get one logical source. Normal metadata never contains credentials."""
+    """Superseded by inspect_source(). Raw single-source metadata; never credentials."""
     return _req("GET", f"/sources/{source_id}")
 
 
-@mcp.tool()
-def get_source_connection(source_id: int) -> dict:
-    """Explicitly resolve a source connection for a local worker. Requires
-    STORELENS_CREDENTIAL_ACCESS_KEY and may return sensitive credentials. Never log,
-    display, or persist the result; pass it directly to worker connection code."""
-    return _req("GET", f"/sources/{source_id}/connection", privileged=True)
-
-
-@mcp.tool()
 def create_source(name: str, kind: str = "webcam", connection_mode: str = "agent_local",
                   locator: dict | None = None, capabilities: list[str] | None = None,
                   metadata: dict | None = None,
                   connection_management: str = "external_secret",
                   connection: dict | None = None, credentials: dict | None = None) -> dict:
-    """Register a logical source. Use storelens_managed with a structured connection
-    and optional credentials, or external_secret with locator.local_secret_ref."""
+    """Superseded by configure_source()."""
     return _req("POST", "/sources", {
         "name": name,
         "kind": kind,
@@ -156,24 +640,20 @@ def create_source(name: str, kind: str = "webcam", connection_mode: str = "agent
     })
 
 
-@mcp.tool()
 def update_source(source_id: int, patch: dict) -> dict:
-    """Update a source. Omitted credentials are preserved; provide credentials to
-    replace them or clear_credentials=true to explicitly remove them."""
+    """Superseded by configure_source(source_id=...). Omitted credentials are
+    preserved; clear_credentials=true removes them."""
     return _req("PUT", f"/sources/{source_id}", patch)
 
 
-@mcp.tool()
 def delete_source(source_id: int) -> dict:
-    """Delete a logical source and its geometry. Historical observations remain queryable."""
+    """Delete a logical source and its geometry. Historical observations remain
+    queryable. Destructive; not part of the curated surface."""
     return _req("DELETE", f"/sources/{source_id}")
 
 
-@mcp.tool()
 def get_store_map() -> dict:
-    """The store floor plan: name, dimensions in meters, wall polylines, text labels, all zones
-    (named polygons with a semantic type: checkout/entrance/fridge/aisle/...), and every placed
-    camera with its position, rotation, FOV and calibration state."""
+    """Superseded by inspect_workspace(). Floor plan, zones, surfaces, views, cameras."""
     store = _req("GET", "/store")
     store["zones"] = _req("GET", "/zones")
     store["projection_surfaces"] = _req("GET", "/projection-surfaces")
@@ -185,49 +665,34 @@ def get_store_map() -> dict:
     return store
 
 
-@mcp.tool()
 def list_zones() -> list[dict]:
-    """All named zones as polygons in map meters. Zone ids are what events reference."""
+    """Superseded by inspect_workspace(). All canonical zones in map metres."""
     return _req("GET", "/zones")
 
 
-@mcp.tool()
 def get_zone(zone_id: int) -> dict:
-    """Get canonical Polygon/MultiPolygon geometry and camera-extension provenance."""
+    """Canonical Polygon/MultiPolygon geometry with camera-extension provenance."""
     return _req("GET", f"/zones/{zone_id}")
 
 
-@mcp.tool()
 def update_zone(zone_id: int, patch: dict) -> dict:
-    """Update a global map zone. Its polygon is a physical footprint in metres;
-    camera-specific visible/inset polygons belong in a zone view."""
+    """Update a canonical zone's metadata or metric footprint. Camera-specific
+    polygons belong in a zone view."""
     return _req("PUT", f"/zones/{zone_id}", patch)
 
 
-@mcp.tool()
 def create_zone(name: str, ztype: str = "area",
                 polygon_map: list[dict] | None = None,
                 polygon_px: list[dict] | None = None,
                 source_id: int | None = None) -> dict:
-    """Create a named global physical footprint. When starting from a local frame, use
-    polygon_px only for points on the calibrated floor plane; then create a zone view
-    for the camera-specific visible boundary and inset detection ROI.
-    Pass EITHER polygon_map ([{x,y}, ...] in floor meters) OR polygon_px ([{x,y}, ...]
-    in that camera's pixels) + source_id — the platform projects pixels to the map
-    through the source's calibrated homography (409 if uncalibrated: ask the user to
-    calibrate, or compute map points yourself). ztype is a semantic label (restricted,
-    checkout, entrance, queue, aisle, stockroom, equipment, hall, classroom,
-    playground, meeting_room, area, custom) — it carries NO behavior: what happens
-    when someone enters (alerts, review signals) is configured separately with
-    create_alert_rule; your worker just posts tracked detections with coordinates
-    and never needs to know what the zone means or resolve it itself — StoreLens
-    assigns the zone from geometry at ingestion. Confirm the polygon with the
-    user before creating it."""
+    """Superseded by preview_zone()/commit_zone(), which preview projection before
+    persisting and create the camera zone views too. Direct creation from an
+    explicit map-metre polygon (polygon_map) or one camera polygon
+    (polygon_px + source_id)."""
     return _req("POST", "/zones", {"name": name, "ztype": ztype, "polygon": polygon_map,
                                    "polygon_px": polygon_px, "source_id": source_id})
 
 
-@mcp.tool()
 def project_points(source_id: int, points: list[dict], surface_id: int | None = None) -> dict:
     """Project camera pixels to map metres on the floor (surface_id omitted) or a named
     elevated plane. Never compensate for physical height by subtracting map Y."""
@@ -235,21 +700,17 @@ def project_points(source_id: int, points: list[dict], surface_id: int | None = 
                 {"points": points, "surface_id": surface_id})
 
 
-@mcp.tool()
 def unproject_points(source_id: int, points: list[dict], surface_id: int | None = None) -> dict:
     """Project map-metre points into a camera frame on the selected plane."""
     return _req("POST", f"/sources/{source_id}/unproject",
                 {"points": points, "surface_id": surface_id})
 
 
-@mcp.tool()
 def list_projection_surfaces(source_id: int | None = None) -> list[dict]:
     """List named source-specific planes such as mattress, table, shelf, or conveyor."""
-    suffix = "" if source_id is None else "?" + urllib.parse.urlencode({"source_id": source_id})
-    return _req("GET", "/projection-surfaces" + suffix)
+    return _req("GET", "/projection-surfaces" + _qs({"source_id": source_id}))
 
 
-@mcp.tool()
 def create_projection_surface(source_id: int, name: str, points: list[dict],
                               kind: str = "custom", height_m: float | None = None,
                               frame_w: int | None = None,
@@ -262,36 +723,28 @@ def create_projection_surface(source_id: int, name: str, points: list[dict],
     })
 
 
-@mcp.tool()
 def update_projection_surface(surface_id: int, patch: dict) -> dict:
     """Update a named plane and recompute its homography. Its revision increments;
     existing observations keep the surface revision used when they were ingested."""
     return _req("PUT", f"/projection-surfaces/{surface_id}", patch)
 
 
-@mcp.tool()
 def delete_projection_surface(surface_id: int) -> dict:
     """Delete an unused named plane. Remove or repoint dependent zone views first."""
     return _req("DELETE", f"/projection-surfaces/{surface_id}")
 
 
-@mcp.tool()
 def list_zone_views(source_id: int | None = None, zone_id: int | None = None) -> list[dict]:
-    """List per-camera zone geometry: visible outer polygon, inset detection ROI,
-    projection surface, and membership rule."""
-    params = {k: v for k, v in {"source_id": source_id, "zone_id": zone_id}.items()
-              if v is not None}
-    return _req("GET", "/zone-views" + ("?" + urllib.parse.urlencode(params) if params else ""))
+    """Superseded by inspect_source()/inspect_workspace(). Per-camera zone geometry."""
+    return _req("GET", "/zone-views" + _qs({"source_id": source_id, "zone_id": zone_id}))
 
 
-@mcp.tool()
 def create_zone_view(zone_id: int, source_id: int, outer_polygon_px: list[dict],
                      detection_polygon_px: list[dict] | None = None,
                      projection_surface_id: int | None = None,
                      membership_rule: str = "point", threshold: float = 0.5,
                      min_keypoints: int = 1) -> dict:
-    """Create a camera view of a global zone after user confirmation. Membership rules:
-    point, bbox_overlap, or keypoints_inside."""
+    """Superseded by commit_zone(). One camera's view of a canonical zone."""
     return _req("POST", "/zone-views", {
         "zone_id": zone_id, "source_id": source_id,
         "outer_polygon_px": outer_polygon_px,
@@ -302,33 +755,27 @@ def create_zone_view(zone_id: int, source_id: int, outer_polygon_px: list[dict],
     })
 
 
-@mcp.tool()
 def update_zone_view(view_id: int, patch: dict) -> dict:
     """Update a camera ROI, decision rule, or plane. The view revision increments."""
     return _req("PUT", f"/zone-views/{view_id}", patch)
 
 
-@mcp.tool()
 def delete_zone_view(view_id: int) -> dict:
-    """Delete one camera-specific view without deleting the global map zone."""
+    """Delete one camera-specific view without deleting the canonical map zone."""
     return _req("DELETE", f"/zone-views/{view_id}")
 
 
-@mcp.tool()
 def extend_zone_from_view(view_id: int, polygon: str = "outer") -> dict:
-    """Explicitly project and union one zone-view polygon into the canonical zone.
-    Creating or editing a view never expands canonical geometry automatically."""
+    """Superseded by commit_zone(). Explicitly union one projected zone-view
+    polygon into the canonical zone; creating a view never does this implicitly."""
     return _req("POST", f"/zone-views/{view_id}/extend-zone", {"polygon": polygon})
 
 
-@mcp.tool()
 def list_calibrations(source_id: int | None = None) -> list[dict]:
     """List provider-neutral rich calibrations and their derived floor homographies."""
-    suffix = "" if source_id is None else "?" + urllib.parse.urlencode({"source_id": source_id})
-    return _req("GET", "/calibrations" + suffix)
+    return _req("GET", "/calibrations" + _qs({"source_id": source_id}))
 
 
-@mcp.tool()
 def import_calibration(source_id: int, projection_matrix: list, world_frame: dict,
                        units: str = "m", provider: str = "generic",
                        world_to_map_transform: list | None = None,
@@ -349,18 +796,16 @@ def import_calibration(source_id: int, projection_matrix: list, world_frame: dic
     })
 
 
-@mcp.tool()
 def list_multiview_groups() -> list[dict]:
-    """List explicit groups of calibrated cameras eligible for fusion."""
+    """Superseded by inspect_workspace(). Explicit calibrated fusion groups."""
     return _req("GET", "/multiview/groups")
 
 
-@mcp.tool()
 def create_multiview_group(name: str, source_ids: list[int], enabled: bool = True,
                            time_tolerance_s: float = 0.75, spatial_gate_m: float = 1.5,
                            track_age_s: float = 2.0, topology: dict | None = None,
                            configuration: dict | None = None) -> dict:
-    """Create an explicit same-world-frame camera fusion group."""
+    """Superseded by configure_multiview_group()."""
     return _req("POST", "/multiview/groups", {
         "name": name, "source_ids": source_ids, "enabled": enabled,
         "time_tolerance_s": time_tolerance_s, "spatial_gate_m": spatial_gate_m,
@@ -369,216 +814,150 @@ def create_multiview_group(name: str, source_ids: list[int], enabled: bool = Tru
     })
 
 
-@mcp.tool()
 def update_multiview_group(group_id: int, patch: dict) -> dict:
-    """Update fusion membership, topology, gates, age, or enabled state."""
+    """Superseded by configure_multiview_group(group_id=...)."""
     return _req("PATCH", f"/multiview/groups/{group_id}", patch)
 
 
-@mcp.tool()
 def get_multiview_status(group_id: int | None = None) -> dict:
-    """Return fused current entities plus per-group source freshness and quality."""
-    suffix = "" if group_id is None else "?" + urllib.parse.urlencode({"group_id": group_id})
-    return _req("GET", "/multiview/current" + suffix)
+    """Superseded by inspect_perception(). Fused current entities plus per-group
+    source freshness and quality."""
+    return _req("GET", "/multiview/current" + _qs({"group_id": group_id}))
 
 
-@mcp.tool()
 def register_job(name: str, description: str = "", source_ids: list[int] | None = None,
                  event_types: list[str] | None = None) -> dict:
-    """Register an analysis job before posting observations. Returns the job with its id;
-    pass that job_id to schema-v2 observations so the platform can attribute and monitor
-    the work."""
+    """Register an analysis job. A worker normally does this itself through the
+    SDK; see get_worker_recipe()."""
     return _req("POST", "/jobs", {
         "name": name, "description": description,
         "source_ids": source_ids or [], "event_types": event_types or [],
     })
 
 
-@mcp.tool()
 def list_jobs() -> list[dict]:
-    """List analysis registrations and their latest heartbeat-backed worker instance."""
+    """Superseded by inspect_perception(). Jobs with their latest worker instance."""
     return _req("GET", "/jobs")
 
 
-@mcp.tool()
 def list_workers(job_id: int | None = None) -> list[dict]:
-    """List concrete worker instances. effective_status becomes stale without heartbeats;
-    job status alone is not proof that a process is alive."""
-    suffix = "" if job_id is None else "?" + urllib.parse.urlencode({"job_id": job_id})
-    return _req("GET", "/workers" + suffix)
+    """Superseded by inspect_perception(). Worker instances; effective_status
+    becomes stale without heartbeats."""
+    return _req("GET", "/workers" + _qs({"job_id": job_id}))
 
 
-@mcp.tool()
 def register_worker(job_id: int, name: str = "", version: str = "",
                     worker_id: str | None = None, config: dict | None = None) -> dict:
-    """Register a concrete worker instance when launching it. Persistent workers should
-    normally call this REST endpoint through the SDK themselves, then heartbeat every
-    5–15 seconds. Do not register a worker that was not actually started."""
+    """Register a concrete worker instance. The worker process should do this
+    itself through the SDK; never register a worker you did not start."""
     return _req("POST", "/workers", {
         "job_id": job_id, "name": name, "version": version,
         "worker_id": worker_id, "config": config or {},
     })
 
 
-@mcp.tool()
 def heartbeat_worker(worker_id: int, status: str = "running",
                      metrics: dict | None = None, last_error: str = "") -> dict:
-    """Send one lifecycle heartbeat. The response includes should_stop and
-    restart_requested. A worker must obey those flags and exit cleanly; a supervisor
-    is responsible for relaunch after restart."""
+    """One lifecycle heartbeat. The worker process owns this; report local_fps and
+    submission_hz in metrics so inspect_perception can show them."""
     return _req("POST", f"/workers/{worker_id}/heartbeat", {
         "status": status, "metrics": metrics or {}, "last_error": last_error,
     })
 
 
-@mcp.tool()
-def request_worker_state(worker_id: int, desired_state: str) -> dict:
-    """Request running, stopped, or restart. The worker/supervisor must obey the command.
-    `restart` cannot create a process if no supervisor exists; StoreLens never executes
-    arbitrary user scripts inside the web process."""
-    return _req("PUT", f"/workers/{worker_id}/desired-state",
-                {"desired_state": desired_state})
-
-
-@mcp.tool()
 def get_observation_contract() -> dict:
-    """Machine-readable summary of the current worker contract: the three
-    observation kinds (detection|measurement|state), required/optional fields
-    per kind, and what is forbidden (zone_id/zone, and the legacy derived kinds
-    zone_enter/zone_exit/zone_dwell/state_change/count). Call this before
-    writing a new worker."""
+    """Superseded by get_worker_recipe(). The machine-readable observation kinds,
+    required fields, and forbidden kinds."""
     return _req("GET", "/observations/contract")
 
 
-@mcp.tool()
+def submit_detection_sample(source_id: int, sample_id: str, timestamp: float,
+                            detections: list[dict] | None = None,
+                            entity_type: str = "person", frame_index: int | None = None,
+                            worker_id: int | None = None, job_id: int | None = None) -> dict:
+    """Submit one atomic processed frame. Workers should post this themselves from
+    their own process (see get_worker_recipe()); routing high-rate perception
+    through an MCP client is not the intended path. detections=[] is a known zero."""
+    return _req("POST", "/detection-samples", {
+        "schema_version": 2, "source_id": source_id, "sample_id": sample_id,
+        "timestamp": timestamp, "entity_type": entity_type,
+        "detections": detections or [], "frame_index": frame_index,
+        "worker_id": worker_id, "job_id": job_id,
+    })
+
+
 def submit_observations(observations: list[dict], job_id: int | None = None) -> dict:
-    """Post a batch of raw observations (max 5000) — THE primary ingestion tool.
-    Each observation is exactly one kind: detection (an observed entity with
-    spatial evidence), measurement (an observed numeric value), or state (an
-    observed current categorical value). Common fields: schema_version (2),
-    observation_id (a worker-generated idempotency key — retries are safe),
-    kind, timestamp (epoch seconds or ISO-8601), source_id, and optionally
-    worker_id, confidence, label, attributes, entity_id (opaque per-track id;
-    never a verified human identity), identity_scope (worker_run|source|
-    workspace, default worker_run), identity_model_version.
-    Kind-specific: detection adds entity_type and geometry {point_px:[x,y],
-    bbox_px:[x0,y0,x1,y1], keypoints_px:{name:[x,y]}, mask}; measurement adds
-    name, value, value_kind (gauge|delta|cumulative, default gauge), unit;
-    state adds name, label (the observed value), info.
-    Never send zone_id/zone (StoreLens assigns zones from geometry) or the
-    legacy kinds zone_enter/zone_exit/zone_dwell/state_change/count — those are
-    rejected per-item with error 'legacy_derived_observation'. A worker sends
-    what a model directly observed; StoreLens derives visits, dwell, occupancy,
-    movement, state transitions/durations, and every analysis from these rows.
-    For every processed person-detection frame, order its detections first and its
-    detection_frame_count marker last; all rows use the exact same timestamp and the
-    marker is required even when its value is zero. Never submit a fake empty detection.
-    Returns {accepted, duplicates, rejected: [{index, observation_id, error,
-    message}], alerts} — duplicates (same observation_id already stored) are
-    not errors, they're a safe no-op retry."""
+    """Raw schema-v2 ingestion (max 5000). Workers submit from their own process;
+    see get_worker_recipe() for the current contract and detection-samples for the
+    preferred detection path. Never send zone_id/zone or the legacy derived kinds
+    zone_enter/zone_exit/zone_dwell/state_change/count — they are rejected."""
     return _req("POST", "/observations/batch", {"job_id": job_id, "observations": observations})
 
 
-@mcp.tool()
 def list_observations(since: float | None = None, until: float | None = None,
                       kind: str | None = None, source_id: int | None = None,
                       entity_id: str | None = None, name: str | None = None,
                       label: str | None = None, zone_id: int | None = None,
                       cursor: str | None = None, limit: int = 100) -> dict:
-    """Query stored observations (current + legacy kinds), newest first — use it
-    to sanity-check what your worker posted, including the zone/projection it was
-    assigned and the geometry revisions in effect at ingestion. Page with the
-    returned next_cursor; `total` counts all matching rows."""
-    params = {k: v for k, v in {"since": since, "until": until, "kind": kind, "source_id": source_id,
-                                "entity_id": entity_id, "name": name, "label": label, "zone_id": zone_id,
-                                "cursor": cursor, "limit": limit}.items() if v is not None}
-    return _req("GET", "/observations?" + urllib.parse.urlencode(params))
+    """Query stored observations, newest first, including the zone/projection
+    assigned at ingestion. Page with next_cursor."""
+    return _req("GET", "/observations" + _qs({
+        "since": since, "until": until, "kind": kind, "source_id": source_id,
+        "entity_id": entity_id, "name": name, "label": label, "zone_id": zone_id,
+        "cursor": cursor, "limit": limit,
+    }))
 
 
-@mcp.tool()
 def get_latest_observations(kind: str | None = None, source_id: int | None = None,
                             zone_id: int | None = None, name: str | None = None) -> dict:
-    """Current-value read models, derived live from raw observations (never a
-    separate stored copy): detection -> active/latest entities with staleness;
-    measurement -> latest sample per (source, name, label, entity); state ->
-    current label and duration per (source, name, entity), marked stale once a
-    worker stops reporting. Omit `kind` to get all three."""
-    params = {k: v for k, v in {"kind": kind, "source_id": source_id, "zone_id": zone_id,
-                                "name": name}.items() if v is not None}
-    return _req("GET", "/observations/latest" + ("?" + urllib.parse.urlencode(params) if params else ""))
+    """Current-value read models derived from raw observations: latest entities,
+    latest measurement per key, current state label and duration."""
+    return _req("GET", "/observations/latest" + _qs({
+        "kind": kind, "source_id": source_id, "zone_id": zone_id, "name": name}))
 
 
-@mcp.tool()
 def get_latest_detection_frames(entity_type: str = "person", source_id: int | None = None) -> dict:
-    """Get each source's latest completed processed frame for an entity type.
-
-    A detection_frame_count measurement is the frame completion marker. The
-    returned detections share its exact source/timestamp and retain StoreLens's
-    geometry enrichment. Scene contents persist until a newer marker arrives;
-    `stale` describes source freshness without changing those contents.
-    """
-    params = {"entity_type": entity_type}
-    if source_id is not None:
-        params["source_id"] = source_id
-    return _req("GET", "/observations/latest-frames?" + urllib.parse.urlencode(params))
+    """Each source's latest complete processed frame. Scene contents persist until a
+    newer complete sample arrives; `stale` describes freshness without changing them."""
+    return _req("GET", "/observations/latest-frames" + _qs({
+        "entity_type": entity_type, "source_id": source_id}))
 
 
-@mcp.tool()
 def list_current_entities(entity_type: str = "person", source_id: int | None = None) -> dict:
-    """Return source-local entities from each latest complete sample. This is the
-    debug/current-source view, not deduplicated cross-camera state."""
+    """Source-local entities from each latest complete sample — the per-camera debug
+    view, NOT deduplicated cross-camera state."""
     return get_latest_detection_frames(entity_type=entity_type, source_id=source_id)
 
 
-@mcp.tool()
 def list_current_fused_entities(group_id: int | None = None,
                                 entity_type: str = "person",
                                 zone_id: int | None = None) -> dict:
-    """Return anonymous fused entities and member evidence for the active multiview group."""
-    params = {"entity_type": entity_type}
-    if group_id is not None:
-        params["group_id"] = group_id
-    if zone_id is not None:
-        params["zone_id"] = zone_id
-    return _req("GET", "/multiview/current?" + urllib.parse.urlencode(params))
+    """Anonymous fused entities and their member evidence for a multiview group."""
+    return _req("GET", "/multiview/current" + _qs({
+        "entity_type": entity_type, "group_id": group_id, "zone_id": zone_id}))
 
 
-@mcp.tool()
 def submit_events(events: list[dict], job_id: int | None = None) -> dict:
-    """LEGACY. Prefer submit_observations for all new work. Post a batch of raw
-    events (max 5000) using the older per-event-type contract (event_type:
-    detection|zone_enter|zone_exit|transition|state_change|count|custom).
-    Still accepted for backward compatibility, but zone_enter/zone_exit/
-    zone_dwell/state_change/count are worker-calculated derived events that the
-    current contract does not want new workers to send — see
-    get_observation_contract() for what to send instead."""
+    """LEGACY event contract, retained for historical compatibility only. New work
+    uses detection samples; see get_worker_recipe()."""
     return _req("POST", "/events", {"job_id": job_id, "events": events})
 
 
-@mcp.tool()
 def get_events(since: float | None = None, until: float | None = None,
                event_type: str | None = None, zone_id: int | None = None,
                source_id: int | None = None, job_id: int | None = None,
                track_id: str | None = None, label: str | None = None,
                cursor: str | None = None, limit: int = 100) -> dict:
-    """Query stored events (newest first) — use it to sanity-check what your job posted.
-    Pass the returned next_cursor back as `cursor` to page through large result sets;
-    `total` counts all rows matching the filters."""
-    params = {k: v for k, v in {"since": since, "until": until, "event_type": event_type,
-                                "zone_id": zone_id, "source_id": source_id, "job_id": job_id,
-                                "track_id": track_id, "label": label, "cursor": cursor,
-                                "limit": limit}.items() if v is not None}
-    return _req("GET", "/events?" + urllib.parse.urlencode(params))
+    """Query stored legacy events, newest first. Page with next_cursor."""
+    return _req("GET", "/events" + _qs({
+        "since": since, "until": until, "event_type": event_type, "zone_id": zone_id,
+        "source_id": source_id, "job_id": job_id, "track_id": track_id, "label": label,
+        "cursor": cursor, "limit": limit,
+    }))
 
 
-@mcp.tool()
 def get_analytics(kind: str, params: dict | None = None) -> dict:
-    """LEGACY. Prefer query_analytics for new work. Read the platform's per-kind
-    analytics. kind: summary | heatmap | dwell | occupancy | counts | transitions |
-    states. params are the endpoint's query params (since/until epoch seconds,
-    group_by, zone_id, ...). All analytics are derived from raw observations —
-    dwell/occupancy/transitions now come from tracked detections (or legacy
-    zone_enter/zone_exit pairs), state durations from state/state_change samples."""
+    """LEGACY per-kind analytics endpoints. Prefer run_query()."""
     allowed = {"summary", "heatmap", "dwell", "occupancy", "counts", "transitions", "states"}
     if kind not in allowed:
         raise ValueError(f"kind must be one of {sorted(allowed)}")
@@ -586,106 +965,32 @@ def get_analytics(kind: str, params: dict | None = None) -> dict:
     return _req("GET", f"/analytics/{kind}" + (f"?{qs}" if qs else ""))
 
 
-def list_analysis_capabilities() -> dict:
-    """What query_analytics()/create_analysis() can build a question from right
-    now: subjects (detection|measurement|state), their valid measures, grouping
-    options, split dimensions, and the labels/sources/zones/measurement-names/
-    state-names/attribute-keys actually present in the data. Call this before
-    query_analytics/create_analysis so you never guess an invalid combination."""
-    return _req("GET", "/analytics/capabilities")
-
-
-def query_analytics(subject: str, measures: list[str], filters: dict | None = None,
-                    grouping: dict | None = None, range: dict | None = None,
-                    comparison: dict | None = None) -> dict:
-    """Answer one analytical question directly, without saving it. subject:
-    detection|measurement|state. measures: e.g. ["active_entities"],
-    ["visits","average_dwell","total_dwell"], ["latest","rate"],
-    ["current","duration"] — see list_analysis_capabilities() for the valid set
-    per subject. filters: {source_ids, zone_ids, labels, entity_types,
-    entity_ids, attributes:{key:value}, measurement_names, state_names,
-    state_labels}. grouping: {primary: null|"time"|"zone", bucket: "5m",
-    split_by: ["label", "attribute:gender", ...]}. range: {since, until} (epoch
-    seconds or ISO-8601; defaults to the last 24h). comparison:
-    {mode: "previous_period"} to also return the prior equal-length window.
-    Returns {shape, dimensions, measures, rows, metadata} — shape tells the
-    caller how to read rows (scalar|timeseries|categorical|heatmap), never
-    which chart to draw; that is a frontend rendering choice, not part of the
-    question's identity."""
-    body = {"subject": subject, "measures": measures, "filters": filters or {},
-            "grouping": grouping or {}, "range": range or {}, "comparison": comparison or {}}
-    return _req("POST", "/analytics/query", body)
-
-
-def create_analysis(name: str, subject: str, measures: list[str], filters: dict | None = None,
-                    grouping: dict | None = None, question: str = "", default_range: dict | None = None,
-                    comparison: dict | None = None, presentation: str = "", pinned: bool = False) -> dict:
-    """Save a data question so it appears on the dashboard's Analytics page (and
-    Dashboard, if pinned). This is a QUESTION, not a chart — subject/measures/
-    filters/grouping, exactly like query_analytics(). `presentation` is only an
-    optional renderer hint (e.g. "heatmap_map", "flow_matrix", "state_timeline");
-    changing how a saved analysis is displayed later never needs a new record —
-    patch presentation on the same analysis with update_analysis instead of
-    creating a second one for the same question. Call list_analysis_capabilities()
-    first, and list_analyses() to avoid registering a duplicate. `question` is
-    shown to the user (e.g. "How long do customers stay near checkout?")."""
-    return _req("POST", "/analyses", {
-        "name": name, "subject": subject, "measures": measures, "filters": filters or {},
-        "grouping": grouping or {}, "question": question, "default_range": default_range or {},
-        "comparison": comparison or {}, "presentation": presentation, "pinned": pinned,
-        "created_by": "agent",
-    })
-
-
-def list_analyses() -> list[dict]:
-    """List every saved analysis (including hidden ones) — check this before
-    create_analysis to avoid a duplicate; identical (subject, measures, filters,
-    grouping) is flagged via `duplicate_of` on creation regardless."""
-    return _req("GET", "/analyses?include_hidden=true")
-
-
-def update_analysis(analysis_id: int, patch: dict) -> dict:
-    """Patch a saved analysis (name, question, measures, filters, grouping,
-    presentation, pinned, sort_order, visibility, status...). Use
-    status='degraded'/'retired' instead of deleting when its worker stops."""
-    return _req("PATCH", f"/analyses/{analysis_id}", patch)
-
-
-def delete_analysis(analysis_id: int) -> dict:
-    """Delete a saved analysis. Prefer update_analysis(status='retired') if it
-    may still be useful as history."""
-    return _req("DELETE", f"/analyses/{analysis_id}")
-
-
-@mcp.tool()
 def list_query_capabilities() -> dict:
-    """Return deterministic subjects, measures, filters, groupings, and available dimensions."""
+    """Superseded by inspect_workspace().analytics.query_capabilities. The full
+    subject/measure/filter/grouping capability document."""
     return _req("GET", "/queries/capabilities")
 
 
-@mcp.tool()
 def query_data(subject: str, measures: list[str], filters: dict | None = None,
                grouping: dict | None = None, range: dict | None = None,
                comparison: dict | None = None) -> dict:
-    """Execute a deterministic query definition without saving it. Raw SQL is never exposed."""
+    """Superseded by run_query()."""
     return _req("POST", "/analytics/query", {
         "subject": subject, "measures": measures, "filters": filters or {},
         "grouping": grouping or {}, "range": range or {}, "comparison": comparison or {},
     })
 
 
-@mcp.tool()
 def list_saved_queries() -> list[dict]:
-    """List canonical saved query definitions used by dashboards and alerts."""
+    """Superseded by inspect_workspace(). Canonical saved query definitions."""
     return _req("GET", "/queries?include_hidden=true")
 
 
-@mcp.tool()
 def create_saved_query(name: str, subject: str, measures: list[str],
                        filters: dict | None = None, grouping: dict | None = None,
                        question: str = "", default_range: dict | None = None,
                        comparison: dict | None = None) -> dict:
-    """Save one deterministic analytical question; presentation belongs to dashboard widgets."""
+    """Superseded by configure_saved_query()."""
     return _req("POST", "/queries", {
         "name": name, "subject": subject, "measures": measures,
         "filters": filters or {}, "grouping": grouping or {}, "question": question,
@@ -694,85 +999,62 @@ def create_saved_query(name: str, subject: str, measures: list[str],
     })
 
 
-@mcp.tool()
 def update_saved_query(query_id: int, patch: dict) -> dict:
-    """Update a saved query definition. Referenced widgets continue using the same query id."""
+    """Superseded by configure_saved_query(query_id=...)."""
     return _req("PATCH", f"/queries/{query_id}", patch)
 
 
-@mcp.tool()
 def delete_saved_query(query_id: int) -> dict:
-    """Delete an unreferenced saved query. Referenced queries are protected with HTTP 409."""
+    """Delete an unreferenced saved query. Referenced queries return HTTP 409."""
     return _req("DELETE", f"/queries/{query_id}")
 
 
-@mcp.tool()
+def execute_saved_query(query_id: int) -> dict:
+    """Superseded by run_query(query_id=...)."""
+    return _req("POST", f"/queries/{query_id}/execute")
+
+
 def list_dashboards() -> list[dict]:
-    """List generated dashboards and their safe, query-backed widgets."""
+    """Superseded by inspect_workspace(). Generated dashboards and their widgets."""
     return _req("GET", "/dashboards")
 
 
-@mcp.tool()
 def create_dashboard(name: str, description: str = "") -> dict:
-    """Create an empty agent-generated dashboard."""
+    """Superseded by configure_dashboard()."""
     return _req("POST", "/dashboards", {
         "name": name, "description": description, "created_by": "agent",
     })
 
 
-@mcp.tool()
 def update_dashboard(dashboard_id: int, patch: dict) -> dict:
-    """Update dashboard metadata without changing its saved queries."""
+    """Superseded by configure_dashboard(dashboard_id=...)."""
     return _req("PATCH", f"/dashboards/{dashboard_id}", patch)
 
 
-@mcp.tool()
 def add_dashboard_widget(dashboard_id: int, query_id: int, title: str,
                          presentation: str, configuration: dict | None = None,
                          sort_order: int = 0) -> dict:
-    """Attach a saved query using a validated presentation: number, timeseries,
-    bar, table, or heatmap."""
+    """Superseded by configure_dashboard(widgets=[...])."""
     return _req("POST", f"/dashboards/{dashboard_id}/widgets", {
         "query_id": query_id, "title": title, "presentation": presentation,
         "configuration": configuration or {}, "sort_order": sort_order,
     })
 
 
-@mcp.tool()
 def update_dashboard_widget(widget_id: int, patch: dict) -> dict:
-    """Update a dashboard widget while preserving its referenced query by default."""
+    """Superseded by configure_dashboard(widgets=[...])."""
     return _req("PATCH", f"/dashboard-widgets/{widget_id}", patch)
 
 
-@mcp.tool()
 def delete_dashboard(dashboard_id: int) -> dict:
     """Delete a dashboard and its widgets; saved queries and observations are preserved."""
     return _req("DELETE", f"/dashboards/{dashboard_id}")
 
 
-@mcp.tool()
 def create_alert_rule(name: str, kind: str, params: dict | None = None, analysis: dict | None = None,
                       condition: dict | None = None, webhook_url: str = "", cooldown_s: float = 60) -> dict:
-    """Create an alert rule. Prefer query_condition with params {query_id} and
-    condition {operator,value,for_seconds?,allow_partial?}; it evaluates the same saved
-    query used by a dashboard and is edge-triggered. Compatibility kinds:
-      dwell_exceeds {zone_id?, seconds} (params) — a track's platform-derived dwell
-        (tracked detections, or legacy enter/exit pairing) reaches `seconds` ·
-      occupancy_exceeds {zone_id?, count, window_s} (params) ·
-      state_alert {label, source_id, name?, entity_id?, min_seconds?} (params) — duration
-        derived from consecutive state samples (repeated identical samples never reset it) ·
-      event_match {event_type, zone_id?, attr_key?, attr_value?} (params) ·
-      analysis_condition (analysis + condition) — the general case: analysis is
-        {subject, measures, filters} exactly like query_analytics(); condition is
-        {operator: ">"|">="|"<"|"<="|"=="|"!=", value, for_seconds?, window_s?}. Fires once
-        the measure has satisfied the condition continuously for `for_seconds`
-        (default 0 = immediately), e.g. a measurement staying over a threshold or
-        active_entities staying above a crowd limit.
-    Ongoing/time-based conditions (dwell_exceeds, occupancy_exceeds, state_alert with
-    min_seconds, and every analysis_condition) are evaluated on a periodic timer
-    independent of ingestion (every ~15s), so a quiet zone or a stale source still
-    gets caught — they do not require another observation to arrive.
-    Fired alerts appear in the UI and POST to webhook_url (n8n etc.)."""
+    """Superseded by configure_alert(). Compatibility kinds: dwell_exceeds,
+    occupancy_exceeds, state_alert, event_match, analysis_condition, query_condition."""
     return _req("POST", "/alert-rules", {"name": name, "kind": kind, "params": params or {},
                                          "analysis": analysis, "condition": condition,
                                          "webhook_url": webhook_url, "cooldown_s": cooldown_s})
@@ -789,12 +1071,8 @@ _INSIGHT_DATASET_TO_SUBJECT = {
 def register_insight(title: str, block: str, dataset: str, params: dict | None = None,
                      question: str = "", unit: str = "", limitations: str = "",
                      pinned: bool = False) -> dict:
-    """DEPRECATED — compatibility adapter only. Use create_analysis for new work;
-    the block+dataset+params model this tool used is retired. This translates
-    your call into the closest create_analysis() equivalent on a best-effort
-    basis (see server/db.py's legacy insight mapping for the exact rules) and
-    saves it there, so old agent prompts don't hard-fail, but the mapping is
-    approximate — always prefer calling create_analysis directly."""
+    """RETIRED compatibility adapter. Use configure_saved_query. Translates the old
+    block+dataset+params model into the closest saved-query equivalent."""
     subject, measures = _INSIGHT_DATASET_TO_SUBJECT.get(dataset, ("detection", ["observations"]))
     params = params or {}
     filters = {"zone_ids": [params["zone_id"]]} if params.get("zone_id") is not None else {}
@@ -810,59 +1088,49 @@ def register_insight(title: str, block: str, dataset: str, params: dict | None =
 
 
 def list_insights() -> list[dict]:
-    """LEGACY, READ-ONLY — historical insight_definitions rows only; there is no
-    create/update path anymore (the block+dataset+params model is retired). Use
-    list_analyses() for current work; every insight has already been
-    best-effort migrated to an analysis (see analyses[].migrated_from_insight_id)."""
+    """RETIRED, read-only. Historical insight_definitions rows only."""
     return _req("GET", "/insights?include_hidden=true")
 
 
 def delete_insight(insight_id: int) -> dict:
-    """LEGACY. Delete a historical insight_definitions row (cleanup only). Prefer
-    delete_analysis/update_analysis(status='retired') on its migrated analysis."""
+    """RETIRED. Delete a historical insight_definitions row (cleanup only)."""
     return _req("DELETE", f"/insights/{insight_id}")
 
 
-@mcp.tool()
-def list_skills() -> list[dict]:
-    """List the operating guide and analysis playbooks shipped with StoreLens. Load
-    `storelens-platform` first, then the closest task-specific skill."""
-    out = []
-    if os.path.isdir(SKILLS_DIR):
-        for entry in sorted(os.listdir(SKILLS_DIR)):
-            path = os.path.join(SKILLS_DIR, entry, "SKILL.md")
-            if os.path.isfile(path):
-                with open(path, encoding="utf-8") as f:
-                    content = f.read()
-                title = next(
-                    (line[2:].strip() for line in content.splitlines() if line.startswith("# ")),
-                    entry,
-                )
-                out.append({"name": entry, "title": title})
-    return out
+# Order matters only for a stable advertised list in legacy mode.
+LEGACY_TOOLS = [
+    get_platform_config, list_skills,
+    list_sources, get_source, create_source, update_source, delete_source,
+    get_store_map, list_zones, get_zone, update_zone, create_zone,
+    project_points, unproject_points,
+    list_projection_surfaces, create_projection_surface, update_projection_surface,
+    delete_projection_surface,
+    list_zone_views, create_zone_view, update_zone_view, delete_zone_view, extend_zone_from_view,
+    list_calibrations, import_calibration,
+    list_multiview_groups, create_multiview_group, update_multiview_group, get_multiview_status,
+    register_job, list_jobs, list_workers, register_worker, heartbeat_worker,
+    get_observation_contract, submit_detection_sample, submit_observations,
+    list_observations, get_latest_observations, get_latest_detection_frames,
+    list_current_entities, list_current_fused_entities,
+    submit_events, get_events, get_analytics,
+    list_query_capabilities, query_data, list_saved_queries, create_saved_query,
+    update_saved_query, delete_saved_query, execute_saved_query,
+    list_dashboards, create_dashboard, update_dashboard, add_dashboard_widget,
+    update_dashboard_widget, delete_dashboard, create_alert_rule,
+]
 
+PUBLIC_TOOLS = [
+    "inspect_workspace", "list_workflows", "get_workflow", "get_skill",
+    "inspect_source", "configure_source", "get_source_connection", "plan_frame_capture",
+    "preview_zone", "commit_zone",
+    "inspect_perception", "get_worker_recipe", "request_worker_state",
+    "configure_multiview_group",
+    "run_query", "configure_saved_query", "configure_dashboard", "configure_alert",
+]
 
-@mcp.tool()
-def get_skill(name: str) -> str:
-    """Return a complete StoreLens operating guide or task playbook. Load
-    `storelens-platform` first on every new StoreLens task."""
-    path = os.path.join(SKILLS_DIR, name, "SKILL.md")
-    if not os.path.isfile(path):
-        raise ValueError(f"unknown skill '{name}' — call list_skills() first")
-    with open(path, encoding="utf-8") as f:
-        content = f.read()
-    endpoints = get_platform_config()
-    runtime = (
-        "## Runtime endpoints (authoritative for this connection)\n\n"
-        f"- Dashboard: `{endpoints['dashboard_url']}`\n"
-        f"- REST base: `{endpoints['rest_url']}`\n"
-        f"- OpenAPI: `{endpoints['openapi_url']}`\n"
-        f"- Interactive docs: `{endpoints['docs_url']}`\n"
-        f"- Remote MCP: `{endpoints['mcp_url']}`\n"
-        f"- Agent guide: `{endpoints['agent_guide_url']}`\n\n"
-        "Use these resolved values instead of hard-coded hosts.\n\n"
-    )
-    return runtime + content
+if LEGACY_TOOL_MODE:
+    for _legacy in LEGACY_TOOLS:
+        mcp.tool()(_legacy)
 
 
 if __name__ == "__main__":
