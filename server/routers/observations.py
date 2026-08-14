@@ -12,6 +12,11 @@ instead of a silently misinterpreted row.
 Ingestion shares one enrichment implementation with the legacy /events endpoint
 (services/enrich.py) — the projection/zone-assignment pipeline is not duplicated.
 """
+import asyncio
+import hashlib
+import json
+import math
+import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
@@ -70,6 +75,36 @@ class ObservationIn(BaseModel):
 class ObservationBatch(BaseModel):
     job_id: int | None = None
     observations: list[ObservationIn]
+
+
+class DetectionIn(BaseModel):
+    """One entity observation inside an atomic processed-camera sample."""
+
+    entity_id: str
+    label: str = "person"
+    confidence: float | None = None
+    bbox_px: list[float] | None = None
+    point_px: list[float] | None = None
+    keypoints_px: dict[str, list[float]] | None = None
+    mask: dict | str | None = None
+    attributes: dict = {}
+    identity_scope: str = "worker_run"
+    identity_model_version: str | None = None
+
+
+class DetectionSampleIn(BaseModel):
+    """One successfully processed camera frame containing zero or more detections."""
+
+    schema_version: int = 2
+    source_id: int
+    sample_id: str
+    timestamp: float | str
+    frame_index: int | None = None
+    entity_type: str = "person"
+    worker_id: int | None = None
+    job_id: int | None = None
+    attributes: dict = {}
+    detections: list[DetectionIn]
 
 
 def _parse_ts(ts) -> float:
@@ -133,6 +168,108 @@ def _to_enrich_dict(ob: ObservationIn, ts: float, fallback_job_id: int | None) -
     return ev
 
 
+def _detection_sample_hash(sample: DetectionSampleIn, timestamp: float) -> str:
+    canonical = sample.model_dump()
+    canonical["timestamp"] = timestamp
+    return hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def detection_sample_batch(sample: DetectionSampleIn) -> tuple[ObservationBatch, str]:
+    """Normalize the preferred frame envelope into the legacy-compatible row model.
+
+    The marker remains an internal storage/materialization detail. Public workers
+    submit a complete frame and never need to manufacture a numeric measurement.
+    """
+    if sample.schema_version != 2:
+        raise HTTPException(422, "detection samples require schema_version 2")
+    if not sample.sample_id.strip():
+        raise HTTPException(422, "sample_id must be a non-empty source-local identifier")
+    if sample.frame_index is not None and sample.frame_index < 0:
+        raise HTTPException(422, "frame_index must be non-negative")
+    if not sample.entity_type.strip():
+        raise HTTPException(422, "entity_type must be non-empty")
+    if len(sample.detections) > 5000:
+        raise HTTPException(413, "detection sample is too large — send at most 5000 detections")
+    timestamp = _parse_ts(sample.timestamp)
+    if not math.isfinite(timestamp):
+        raise HTTPException(422, "timestamp must be finite")
+    digest = _detection_sample_hash(sample, timestamp)
+    namespace = f"{db.current_space_revision_id()}:{sample.source_id}:{sample.sample_id}"
+    common_attributes = {
+        **sample.attributes,
+        "detection_sample_hash": digest,
+        "source_frame_index": sample.frame_index,
+    }
+    observations = []
+    for index, detection in enumerate(sample.detections):
+        if not detection.entity_id.strip():
+            raise HTTPException(422, f"detections[{index}].entity_id must be non-empty")
+        if detection.bbox_px is not None:
+            if len(detection.bbox_px) != 4:
+                raise HTTPException(422, f"detections[{index}].bbox_px must be [x0, y0, x1, y1]")
+            x0, y0, x1, y1 = detection.bbox_px
+            if not all(math.isfinite(value) for value in detection.bbox_px):
+                raise HTTPException(422, f"detections[{index}].bbox_px must contain finite coordinates")
+            if x1 <= x0 or y1 <= y0:
+                raise HTTPException(422, f"detections[{index}].bbox_px must have positive area")
+        if detection.point_px is not None:
+            if len(detection.point_px) != 2:
+                raise HTTPException(422, f"detections[{index}].point_px must be [x, y]")
+            if not all(math.isfinite(value) for value in detection.point_px):
+                raise HTTPException(422, f"detections[{index}].point_px must contain finite coordinates")
+        if detection.keypoints_px is not None:
+            if any(len(point) != 2 for point in detection.keypoints_px.values()):
+                raise HTTPException(422, f"detections[{index}].keypoints_px values must be [x, y]")
+            if any(not all(math.isfinite(value) for value in point)
+                   for point in detection.keypoints_px.values()):
+                raise HTTPException(422, f"detections[{index}].keypoints_px must contain finite coordinates")
+        if detection.confidence is not None and not math.isfinite(detection.confidence):
+            raise HTTPException(422, f"detections[{index}].confidence must be finite")
+        geometry = GeometryIn(
+            bbox_px=detection.bbox_px,
+            point_px=detection.point_px,
+            keypoints_px=detection.keypoints_px,
+            mask=detection.mask,
+        )
+        observations.append(ObservationIn(
+            schema_version=2,
+            observation_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"storelens:{namespace}:d:{index}")),
+            sample_id=sample.sample_id,
+            kind="detection",
+            timestamp=timestamp,
+            source_id=sample.source_id,
+            worker_id=sample.worker_id,
+            job_id=sample.job_id,
+            confidence=detection.confidence,
+            label=detection.label,
+            attributes={**common_attributes, **detection.attributes},
+            geometry=geometry,
+            entity_id=detection.entity_id,
+            entity_type=sample.entity_type,
+            identity_scope=detection.identity_scope,
+            identity_model_version=detection.identity_model_version,
+        ))
+    observations.append(ObservationIn(
+        schema_version=2,
+        observation_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"storelens:{namespace}:complete")),
+        sample_id=sample.sample_id,
+        kind="measurement",
+        timestamp=timestamp,
+        source_id=sample.source_id,
+        worker_id=sample.worker_id,
+        job_id=sample.job_id,
+        name=current_state.FRAME_COUNT_NAME,
+        label=sample.entity_type,
+        value=len(sample.detections),
+        value_kind="gauge",
+        unit="detections",
+        attributes={**common_attributes, "internal_sample_completion": True},
+    ))
+    return ObservationBatch(job_id=sample.job_id, observations=observations), digest
+
+
 @router.get("/observations/contract", summary="Get the current worker observation contract")
 def observation_contract():
     """Machine-readable summary of the current worker contract: the three kinds,
@@ -151,16 +288,23 @@ def observation_contract():
         },
         "identity_scopes": ["worker_run", "source", "workspace"],
         "value_kinds": ["gauge", "delta", "cumulative"],
+        "preferred_detection_sample": {
+            "endpoint": "POST /api/v1/detection-samples",
+            "meaning": "one successfully processed source frame containing exactly detections[]",
+            "empty_frame": "detections=[] is an explicit known zero",
+            "atomic": True,
+            "frame_count": "len(detections)",
+        },
+        "legacy_detection_frame_completion": {
+            "deprecated": True,
+            "kind": "measurement", "name": "detection_frame_count",
+            "purpose": "backward-compatible completion for clients posting individual rows",
+        },
         "processed_detection_frame": {
-            "kind": "measurement",
-            "name": "detection_frame_count",
-            "label": "<entity_type>",
-            "value": "number of matching detections in this processed frame, including 0",
-            "timestamp": "same timestamp as every detection emitted from the frame",
-            "sample_id": "same opaque source-local sample id as every detection emitted from the frame",
-            "ordering": "append after that frame's detections, then flush the batch",
-            "required_when_zero": True,
-            "purpose": "commits the latest completed processed frame and provides its instantaneous count",
+            "deprecated": True,
+            "preferred_endpoint": "POST /api/v1/detection-samples",
+            "kind": "measurement", "name": "detection_frame_count",
+            "required_when_using_legacy_rows": True,
         },
         "representative_point_precedence": [
             "explicit geometry.point_px",
@@ -171,10 +315,16 @@ def observation_contract():
     }
 
 
-@router.post("/observations/batch", summary="Submit schema-v2 raw observations")
-async def submit_observations(batch: ObservationBatch):
+def _process_observations(batch: ObservationBatch):
+    """Validate, persist, and derive one batch without blocking the event loop.
+
+    SQLite materialization and multiview association are synchronous. Keeping
+    them in a separate function lets the async HTTP ingestion boundary run that
+    work in a thread while publishing SSE messages back on the event-loop
+    thread, where asyncio queues are safe to use.
+    """
     if not batch.observations:
-        return {"accepted": 0, "duplicates": 0, "rejected": []}
+        return {"accepted": 0, "duplicates": 0, "rejected": []}, [], [], {}, []
     if len(batch.observations) > 5000:
         raise HTTPException(413, "batch too large — send at most 5000 observations per request")
     if batch.job_id is not None and not db.q1("SELECT id FROM jobs WHERE id=?", (batch.job_id,)):
@@ -308,8 +458,9 @@ async def submit_observations(batch: ObservationBatch):
         rows.append(enrich.row_tuple(e, ts, db.now()))
 
     if rows:
-        db.exmany(enrich.INSERT_SQL, rows)
-        enrich.update_counters(enriched, batch.job_id)
+        with db.transaction():
+            db.exmany(enrich.INSERT_SQL, rows)
+            enrich.update_counters(enriched, batch.job_id)
     completed_samples = current_state.materialize_affected(enriched) if enriched else []
 
     # Fusion is deliberately downstream of complete-source-sample materialization.
@@ -317,17 +468,90 @@ async def submit_observations(batch: ObservationBatch):
     # ingestion dependency surface.
     if completed_samples:
         from ..services import multiview
-        for sample in completed_samples:
-            multiview.process_completed_sample(sample)
+        multiview.process_completed_samples(completed_samples)
 
     zone_names = {z["id"]: z["name"] for z in context[0]}
-    alerts = alert_engine.evaluate_batch(enriched, zone_names) if enriched else []
-    enrich.publish_batch(enriched, alerts, zone_names, completed_samples=completed_samples)
-
-    return {
+    if enriched:
+        with db.transaction():
+            alerts = alert_engine.evaluate_batch(enriched, zone_names)
+    else:
+        alerts = []
+    result = {
         "accepted": len(rows), "duplicates": duplicates, "rejected": rejected,
         "alerts": len(alerts), "completed_samples": len(completed_samples),
     }
+    return result, enriched, alerts, zone_names, completed_samples
+
+
+@router.post(
+    "/detection-samples",
+    summary="Submit one complete processed detection frame",
+    description=(
+        "Preferred worker ingestion API. The envelope atomically represents one processed "
+        "camera frame; detections=[] records a trustworthy observed zero. StoreLens persists "
+        "entity-level detections and derives projection, zones, fusion, analytics, and alerts."
+    ),
+)
+async def submit_detection_sample(sample: DetectionSampleIn):
+    try:
+        batch, digest = detection_sample_batch(sample)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    existing = db.q(
+        "SELECT event_type,name,label,value,ts,attributes FROM events "
+        "WHERE source_id=? AND sample_id=? AND space_revision_id=? ORDER BY id",
+        (sample.source_id, sample.sample_id, db.current_space_revision_id()),
+    )
+    if existing:
+        markers = [row for row in existing if row["event_type"] == "measurement"
+                   and row.get("name") == current_state.FRAME_COUNT_NAME]
+        stored_hash = db.jload(markers[-1].get("attributes"), {}).get("detection_sample_hash") \
+            if markers else None
+        if stored_hash == digest:
+            return {
+                "accepted": 0, "duplicates": len(batch.observations), "rejected": [],
+                "alerts": 0, "completed_samples": 0, "sample_status": "duplicate",
+                "sample_id": sample.sample_id, "detection_count": len(sample.detections),
+            }
+        raise HTTPException(409, "sample_id already exists with different or incomplete contents")
+    result, _ = await ingest_observations(batch)
+    if result["rejected"]:
+        raise HTTPException(422, {"message": "detection sample was rejected", **result})
+    return {
+        **result,
+        "sample_status": "completed" if result["completed_samples"] else "incomplete",
+        "sample_id": sample.sample_id,
+        "detection_count": len(sample.detections),
+    }
+
+
+@router.post("/observations/batch", summary="Submit schema-v2 raw observations")
+async def submit_observations(batch: ObservationBatch):
+    result, _ = await ingest_observations(batch)
+    return result
+
+
+async def ingest_observations(batch: ObservationBatch, after_process=None):
+    """Process observations off-loop and optionally finish one derived action.
+
+    `after_process` is reserved for trusted in-process producers such as the
+    guided replay.  It runs in the same copied database context before other
+    event-loop work can observe a half-finished demo acceptance step.
+    """
+    if not batch.observations:
+        return {"accepted": 0, "duplicates": 0, "rejected": []}, None
+    processed, followup = await asyncio.to_thread(
+        _process_with_followup, batch, after_process,
+    )
+    result, enriched, alerts, zone_names, completed_samples = processed
+    enrich.publish_batch(enriched, alerts, zone_names, completed_samples=completed_samples)
+    return result, followup
+
+
+def _process_with_followup(batch: ObservationBatch, after_process=None):
+    processed = _process_observations(batch)
+    followup = after_process() if after_process is not None else None
+    return processed, followup
 
 
 def _serialize_observation(r: dict, zone_names: dict) -> dict:
@@ -522,10 +746,10 @@ def latest_observations(kind: str | None = None, source_id: int | None = None,
 def latest_detection_frames(entity_type: str = "person", source_id: int | None = None):
     """Return the latest explicitly completed processed frame per source.
 
-    A ``detection_frame_count`` measurement is the completion marker. Detections
-    for the frame are selected by the exact ``source_id + timestamp`` key and are
-    returned with their stored StoreLens geometry enrichment. Scene contents do
-    not expire; ``stale`` reports source freshness independently.
+    Preferred atomic DetectionSamples are normalized to the same completion model
+    used by legacy ``detection_frame_count`` rows. Detections are returned with
+    their stored StoreLens geometry enrichment. Scene contents do not expire;
+    ``stale`` reports source freshness independently.
     """
     where = ["entity_type=?"]
     args: list = [entity_type]
@@ -553,6 +777,8 @@ def latest_detection_frames(entity_type: str = "person", source_id: int | None =
     }
     frames = []
     for marker in markers:
+        marker_event = db.q1("SELECT attributes FROM events WHERE id=?", (marker["marker_event_id"],))
+        marker_attributes = db.jload(marker_event.get("attributes"), {}) if marker_event else {}
         detections = db.q(
             "SELECT e.* FROM source_current_entities c JOIN events e ON e.id=c.event_id "
             "WHERE c.source_id=? AND c.entity_type=? AND c.sample_key=? ORDER BY e.id",
@@ -571,6 +797,7 @@ def latest_detection_frames(entity_type: str = "person", source_id: int | None =
             "expected_count": int(marker["expected_count"]),
             "observed_count": len(detections),
             "frame_observation_id": marker.get("marker_observation_id"),
+            "source_frame_index": marker_attributes.get("source_frame_index"),
             "frame_ingested_at": frame_ingested_at,
             "frame_age_s": round(max(0.0, now - frame_ingested_at), 1)
             if frame_ingested_at is not None else None,

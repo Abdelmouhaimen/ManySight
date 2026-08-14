@@ -26,6 +26,42 @@ def test_detection_frame_count_has_no_analytics_window_metadata():
     assert "window_s" not in observation
 
 
+def test_preferred_sdk_posts_one_atomic_detection_sample(monkeypatch):
+    client = StoreLens(batch_size=100)
+    seen = {}
+
+    def request(method, path, body=None, params=None):
+        seen.update(method=method, path=path, body=body, params=params)
+        return {"sample_status": "completed"}
+
+    monkeypatch.setattr(client, "_req", request)
+    result = client.submit_detection_sample(
+        source_id=7,
+        entity_type="person",
+        sample_id="cam7-frame42",
+        timestamp=1234.5,
+        frame_index=42,
+        detections=[{"entity_id": "t1", "bbox_px": (1, 2, 3, 4), "confidence": .8}],
+    )
+    assert result["sample_status"] == "completed"
+    assert seen["path"] == "/detection-samples"
+    assert seen["body"]["frame_index"] == 42
+    assert seen["body"]["detections"][0]["bbox_px"] == (1, 2, 3, 4)
+    assert client._obs_buffer == []
+
+
+def test_empty_sdk_builder_posts_known_zero(monkeypatch):
+    client = StoreLens(batch_size=100)
+    seen = {}
+    monkeypatch.setattr(client, "_req", lambda method, path, body=None, params=None:
+                        seen.setdefault("body", body) or {"sample_status": "completed"})
+    builder = client.begin_detection_sample(
+        7, "person", ts=10.0, sample_id="empty", frame_index=5)
+    builder.submit()
+    assert seen["body"]["detections"] == []
+    assert seen["body"]["sample_id"] == "empty"
+
+
 def test_detection_frame_count_rejects_negative_values():
     client = StoreLens(batch_size=100)
 

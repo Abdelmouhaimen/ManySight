@@ -14,6 +14,11 @@ import uuid
 from .. import db
 
 
+def _new_fused_id() -> str:
+    """Create an opaque runtime identity; offline fixtures patch this deterministically."""
+    return "F" + uuid.uuid4().hex[:16]
+
+
 def _groups_for_source(source_id: int) -> list[dict]:
     return [row for row in db.q("SELECT * FROM multiview_groups WHERE enabled=1")
             if source_id in db.jload(row["source_ids_json"], [])]
@@ -81,7 +86,27 @@ def process_completed_sample(sample: dict) -> None:
         _process_group_sample(group, sample)
 
 
-def _process_group_sample(group: dict, sample: dict) -> None:
+def process_completed_samples(samples: list[dict]) -> None:
+    """Process one ingestion batch and refresh each affected fused view once.
+
+    Source-local association still runs independently for every completed sample.
+    Deferring the read-model refresh until all synchronized camera samples have
+    contributed avoids rebuilding the same group several times per video frame.
+    """
+    with db.transaction():
+        affected: dict[tuple[int, str], tuple[dict, float]] = {}
+        for sample in samples:
+            for group in _groups_for_source(sample["source_id"]):
+                _process_group_sample(group, sample, refresh=False)
+                key = (group["id"], sample["entity_type"])
+                previous = affected.get(key)
+                if previous is None or sample["timestamp"] > previous[1]:
+                    affected[key] = (group, sample["timestamp"])
+        for (_group_id, entity_type), (group, timestamp) in affected.items():
+            _refresh_group_current(group, entity_type, timestamp)
+
+
+def _process_group_sample(group: dict, sample: dict, refresh: bool = True) -> None:
     source_id = sample["source_id"]
     entity_type = sample["entity_type"]
     timestamp = sample["timestamp"]
@@ -147,7 +172,7 @@ def _process_group_sample(group: dict, sample: dict) -> None:
         fused_id = already.get(index)
         cost = assignment_costs.get(index)
         if fused_id is None:
-            fused_id = "F" + uuid.uuid4().hex[:16]
+            fused_id = _new_fused_id()
             db.ex(
                 "INSERT INTO fused_entities (id,group_id,entity_type,algorithm,algorithm_version,"
                 "configuration_revision,space_revision_id,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -166,7 +191,8 @@ def _process_group_sample(group: dict, sample: dict) -> None:
         )
         db.ex("UPDATE fused_entities SET last_seen_at=?,ended_at=NULL WHERE id=?", (timestamp, fused_id))
 
-    _refresh_group_current(group, entity_type, timestamp)
+    if refresh:
+        _refresh_group_current(group, entity_type, timestamp)
 
 
 def _refresh_group_current(group: dict, entity_type: str, as_of: float,

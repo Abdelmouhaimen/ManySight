@@ -11,6 +11,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.environ.get("STORELENS_DATA", os.path.join(ROOT, "data"))
 DB_PATH = os.path.join(DATA_DIR, "storelens.db")
 _DB_PATH_OVERRIDE: ContextVar[str | None] = ContextVar("storelens_db_path", default=None)
+_DB_CONNECTION_OVERRIDE: ContextVar[sqlite3.Connection | None] = ContextVar(
+    "storelens_db_connection", default=None,
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stores (
@@ -487,6 +490,26 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     return con
 
 
+@contextmanager
+def transaction():
+    """Reuse one SQLite connection and commit once across related db helpers."""
+    existing = _DB_CONNECTION_OVERRIDE.get()
+    if existing is not None:
+        yield existing
+        return
+    con = connect()
+    token = _DB_CONNECTION_OVERRIDE.set(con)
+    try:
+        yield con
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        _DB_CONNECTION_OVERRIDE.reset(token)
+        con.close()
+
+
 def init_db(path: str | None = None):
     con = connect(path)
     try:
@@ -833,11 +856,13 @@ def _migrate_insights_to_analyses(con: sqlite3.Connection):
 
 
 def q(sql: str, args=()) -> list[dict]:
-    con = connect()
+    con = _DB_CONNECTION_OVERRIDE.get() or connect()
+    owned = _DB_CONNECTION_OVERRIDE.get() is None
     try:
         return [dict(r) for r in con.execute(sql, args).fetchall()]
     finally:
-        con.close()
+        if owned:
+            con.close()
 
 
 def q1(sql: str, args=()) -> dict | None:
@@ -846,23 +871,29 @@ def q1(sql: str, args=()) -> dict | None:
 
 
 def ex(sql: str, args=()) -> int:
-    con = connect()
+    con = _DB_CONNECTION_OVERRIDE.get() or connect()
+    owned = _DB_CONNECTION_OVERRIDE.get() is None
     try:
         cur = con.execute(sql, args)
-        con.commit()
+        if owned:
+            con.commit()
         return cur.lastrowid
     finally:
-        con.close()
+        if owned:
+            con.close()
 
 
 def exmany(sql: str, seq) -> int:
-    con = connect()
+    con = _DB_CONNECTION_OVERRIDE.get() or connect()
+    owned = _DB_CONNECTION_OVERRIDE.get() is None
     try:
         cur = con.executemany(sql, seq)
-        con.commit()
+        if owned:
+            con.commit()
         return cur.rowcount
     finally:
-        con.close()
+        if owned:
+            con.close()
 
 
 def jload(s, default=None):

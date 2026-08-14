@@ -6,7 +6,7 @@ from helpers import make_detection, make_measurement
 from server import db
 
 
-def frame_batch(source_id, ts, entity_ids, prefix="frame"):
+def frame_batch(source_id, ts, entity_ids, prefix="frame", frame_index=None):
     observations = [
         make_detection(
             source_id,
@@ -17,6 +17,7 @@ def frame_batch(source_id, ts, entity_ids, prefix="frame"):
         )
         for index, entity_id in enumerate(entity_ids)
     ]
+    marker_attributes = {} if frame_index is None else {"source_frame_index": frame_index}
     observations.append(make_measurement(
         source_id,
         f"{prefix}-count",
@@ -25,6 +26,7 @@ def frame_batch(source_id, ts, entity_ids, prefix="frame"):
         len(entity_ids),
         label="person",
         unit="tracks",
+        attributes=marker_attributes,
     ))
     return {"observations": observations}
 
@@ -62,6 +64,17 @@ def test_new_zero_frame_clears_previous_frame(client, calibrated_source):
     frame = latest_frames(client, calibrated_source)["frames"][0]
     assert frame["timestamp"] == 1001.0
     assert frame["expected_count"] == 0
+    assert frame["detections"] == []
+
+
+def test_frame_index_comes_from_completion_marker_even_when_frame_is_empty(client, calibrated_source):
+    client.post(
+        "/api/v1/observations/batch",
+        json=frame_batch(calibrated_source, 1001.0, [], "empty-indexed", frame_index=30),
+    )
+
+    frame = latest_frames(client, calibrated_source)["frames"][0]
+    assert frame["source_frame_index"] == 30
     assert frame["detections"] == []
 
 

@@ -43,19 +43,28 @@ def materialize_affected(enriched: list[dict]) -> list[dict]:
             affected.add((event["source_id"], event.get("sample_id"), event["ts"], entity_type))
 
     committed = []
-    for source_id, sid, timestamp, entity_type in sorted(affected, key=lambda value: value[2]):
-        frame = materialize_sample(source_id, entity_type, sid, timestamp)
-        if frame:
-            committed.append(frame)
-    return committed
+    con = db.connect()
+    try:
+        for source_id, sid, timestamp, entity_type in sorted(affected, key=lambda value: value[2]):
+            frame = materialize_sample(source_id, entity_type, sid, timestamp, connection=con)
+            if frame:
+                committed.append(frame)
+        con.commit()
+        return committed
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
 
 
 def materialize_sample(source_id: int, entity_type: str, sid: str | None,
-                       timestamp: float) -> dict | None:
+                       timestamp: float, connection=None) -> dict | None:
     predicate, predicate_args = _sample_predicate(sid)
     if sid is None:
         predicate_args.append(timestamp)
-    con = db.connect()
+    con = connection or db.connect()
+    owned = connection is None
     try:
         marker = con.execute(
             "SELECT * FROM events WHERE source_id=? AND event_type='measurement' "
@@ -109,7 +118,8 @@ def materialize_sample(source_id: int, entity_type: str, sid: str | None,
               row.get("x_map"), row.get("y_map"), row.get("zone_id"), row.get("confidence"),
               row["ts"]) for row in detections],
         )
-        con.commit()
+        if owned:
+            con.commit()
         return {
             "source_id": source_id,
             "entity_type": entity_type,
@@ -118,9 +128,11 @@ def materialize_sample(source_id: int, entity_type: str, sid: str | None,
             "timestamp": marker["ts"],
             "expected_count": expected,
             "marker_event_id": marker["id"],
+            "source_frame_index": db.jload(marker.get("attributes"), {}).get("source_frame_index"),
         }
     finally:
-        con.close()
+        if owned:
+            con.close()
 
 
 def rebuild_from_history() -> int:

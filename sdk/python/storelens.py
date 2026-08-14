@@ -22,9 +22,8 @@ Typical worker loop:
     sample = sl.begin_detection_sample(src["id"], "person", ts=time.time())
     for track in tracks:
         sample.add_detection(entity_id=str(track.id), point_px=track.floor_point)
-    # Required even when tracks is empty; one batch carries detections and marker.
+    # Required even when tracks is empty; one request carries the complete sample.
     sample.submit()
-    sl.flush()   # or use `with sl.batch():` — observations auto-flush every `batch_size`
 """
 import atexit
 import json
@@ -40,12 +39,15 @@ class DetectionSample:
     """Builder for one complete processed detection sample."""
 
     def __init__(self, client, source_id: int, entity_type: str, ts: float | None = None,
-                 sample_id: str | None = None):
+                 sample_id: str | None = None, frame_index: int | None = None,
+                 attributes: dict | None = None):
         self.client = client
         self.source_id = source_id
         self.entity_type = entity_type
         self.timestamp = time.time() if ts is None else ts
         self.sample_id = sample_id or str(uuid.uuid4())
+        self.frame_index = frame_index
+        self.attributes = attributes or {}
         self.tracks: list[dict] = []
         self._submitted = False
 
@@ -61,7 +63,8 @@ class DetectionSample:
         self._submitted = True
         return self.client.submit_detection_sample(
             self.source_id, self.entity_type, self.tracks,
-            ts=self.timestamp, sample_id=self.sample_id,
+            timestamp=self.timestamp, sample_id=self.sample_id,
+            frame_index=self.frame_index, attributes=self.attributes,
         )
 
 
@@ -315,9 +318,10 @@ class StoreLens:
                                ts: float | None = None, attributes: dict | None = None,
                                observation_id: str | None = None,
                                sample_id: str | None = None) -> None:
-        """Submit the entity count observed in one processed frame.
+        """Submit a legacy frame-completion measurement.
 
-        Submit this once per inference sample with the same timestamp used by
+        New workers should use ``submit_detection_sample``. This compatibility
+        helper submits once per inference sample with the same timestamp used by
         every detection from that frame. The value, including zero, is the
         instantaneous camera/entity-type count at that exact timestamp. Buffer
         it after the frame's detections so one flushed batch preserves the
@@ -341,47 +345,57 @@ class StoreLens:
 
     def begin_detection_sample(self, source_id: int, entity_type: str = "person",
                                ts: float | None = None,
-                               sample_id: str | None = None) -> DetectionSample:
-        """Create a builder that guarantees one ID/timestamp and one count marker."""
-        return DetectionSample(self, source_id, entity_type, ts=ts, sample_id=sample_id)
+                               sample_id: str | None = None,
+                               frame_index: int | None = None,
+                               attributes: dict | None = None) -> DetectionSample:
+        """Create an atomic processed-frame builder; an empty builder is known zero."""
+        return DetectionSample(self, source_id, entity_type, ts=ts, sample_id=sample_id,
+                               frame_index=frame_index, attributes=attributes)
 
     def submit_detection_sample(self, source_id: int, entity_type: str,
-                                tracks: list[dict], ts: float | None = None,
-                                sample_id: str | None = None) -> dict:
-        """Atomically submit 0..N detections plus exactly one completion marker."""
-        timestamp = time.time() if ts is None else ts
+                                detections: list[dict], ts: float | None = None,
+                                sample_id: str | None = None,
+                                frame_index: int | None = None,
+                                timestamp: float | None = None,
+                                attributes: dict | None = None) -> dict:
+        """Submit one processed frame containing 0..N entity detections.
+
+        ``detections=[]`` explicitly means that processing succeeded and observed
+        no entities. The server owns completion bookkeeping; this preferred SDK
+        path does not expose ``detection_frame_count`` as a measurement.
+        """
+        if timestamp is not None and ts is not None and timestamp != ts:
+            raise ValueError("timestamp and legacy ts disagree")
+        timestamp = time.time() if timestamp is None and ts is None else (
+            timestamp if timestamp is not None else ts)
         sid = sample_id or str(uuid.uuid4())
-        observations = []
-        for track in tracks:
-            geometry = {}
-            for key in ("point_px", "bbox_px", "keypoints_px", "point_map"):
-                if track.get(key) is not None:
-                    value = track[key]
-                    if key == "point_map" and not isinstance(value, dict):
-                        value = {"x": value[0], "y": value[1]}
-                    elif key != "point_map":
-                        value = ({name: list(point) for name, point in value.items()}
-                                 if key == "keypoints_px" else list(value))
-                    geometry[key] = value
-            observations.append({
-                "schema_version": 2, "observation_id": track.get("observation_id") or str(uuid.uuid4()),
-                "sample_id": sid, "kind": "detection", "timestamp": timestamp,
-                "source_id": source_id, "worker_id": self.worker_instance_id,
-                "job_id": self.job_id, "entity_type": entity_type,
-                "entity_id": track.get("entity_id"), "label": track.get("label"),
-                "confidence": track.get("confidence"),
-                "identity_scope": track.get("identity_scope", "worker_run"),
-                "identity_model_version": track.get("identity_model_version"),
-                "attributes": track.get("attributes") or {}, "geometry": geometry or None,
-            })
-        observations.append({
-            "schema_version": 2, "observation_id": str(uuid.uuid4()), "sample_id": sid,
-            "kind": "measurement", "timestamp": timestamp, "source_id": source_id,
-            "worker_id": self.worker_instance_id, "job_id": self.job_id,
-            "name": "detection_frame_count", "label": entity_type, "value": len(tracks),
-            "value_kind": "gauge", "unit": "tracks",
+        rows = []
+        for detection in detections:
+            row = {
+                "entity_id": detection.get("entity_id"),
+                "label": detection.get("label") or entity_type,
+                "confidence": detection.get("confidence"),
+                "bbox_px": detection.get("bbox_px"),
+                "point_px": detection.get("point_px"),
+                "keypoints_px": detection.get("keypoints_px"),
+                "mask": detection.get("mask"),
+                "attributes": detection.get("attributes") or {},
+                "identity_scope": detection.get("identity_scope", "worker_run"),
+                "identity_model_version": detection.get("identity_model_version"),
+            }
+            rows.append({key: value for key, value in row.items() if value is not None})
+        return self._req("POST", "/detection-samples", {
+            "schema_version": 2,
+            "source_id": source_id,
+            "sample_id": sid,
+            "timestamp": timestamp,
+            "frame_index": frame_index,
+            "entity_type": entity_type,
+            "worker_id": self.worker_instance_id,
+            "job_id": self.job_id,
+            "attributes": attributes or {},
+            "detections": rows,
         })
-        return self.submit_observations(observations)
 
     def submit_state(self, source_id: int, name: str, label: str, entity_id: str | None = None,
                      info: dict | None = None, confidence: float | None = None,

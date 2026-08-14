@@ -3,6 +3,9 @@ must never be shadowed by /observations/{observation_id}. A dynamic single-segme
 path parameter route registered before a static path with the same prefix swallows
 it (FastAPI/Starlette matches routes in registration order), so this file locks in
 both the runtime behavior and the registration order itself."""
+import asyncio
+import threading
+
 from helpers import make_detection
 
 
@@ -83,3 +86,45 @@ def test_static_observation_routes_registered_before_dynamic_id_route():
         assert paths.index(path) < id_route_index, (
             f"{path} is registered after /observations/{{observation_id}} and will be shadowed by it"
         )
+
+
+def test_observation_processing_yields_to_the_event_loop(monkeypatch):
+    """Replay ingestion must not freeze setup/calibration HTTP requests."""
+    from server.routers import observations
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_processing(_batch):
+        started.set()
+        assert release.wait(timeout=2)
+        return (
+            {"accepted": 1, "duplicates": 0, "rejected": [], "alerts": 0,
+             "completed_samples": 0},
+            [], [], {}, [],
+        )
+
+    monkeypatch.setattr(observations, "_process_observations", slow_processing)
+    batch = observations.ObservationBatch(observations=[observations.ObservationIn(
+        schema_version=2,
+        observation_id="non-blocking-ingestion",
+        kind="measurement",
+        timestamp=1000.0,
+        source_id=1,
+        name="test",
+        value=1,
+    )])
+
+    async def scenario():
+        task = asyncio.create_task(observations.submit_observations(batch))
+        for _ in range(100):
+            if started.is_set():
+                break
+            await asyncio.sleep(0.005)
+        assert started.is_set()
+        assert not task.done()
+        release.set()
+        result = await task
+        assert result["accepted"] == 1
+
+    asyncio.run(scenario())
