@@ -13,6 +13,12 @@ venv/
 dashboard/node_modules/
 dashboard/dist/
 
+# The public landing page is a standalone application with its own build and
+# deployment. It talks to this platform over the public demo API only, and is
+# kept out of this repository's tracked tree on purpose.
+/landing/
+old_landing/
+
 # Local tooling and operating-system files
 .coverage
 .pytest_cache/
