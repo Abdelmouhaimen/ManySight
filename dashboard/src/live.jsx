@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
-  Camera,
   Clock3,
   Pause,
   Play,
@@ -14,11 +13,12 @@ import {
 import { api, assetUrl, formatPreciseDateTime } from "./api.js";
 import {
   frameIsStale,
+  highlightedZoneIds,
   latestFrameTracks,
   reconcileCompletedFrames,
 } from "./live-state.js";
 import { trackColor } from "./live-colors.js";
-import { Badge, MetricCard } from "./components.jsx";
+import { Badge } from "./components.jsx";
 import { resultQuality } from "./status.js";
 import { EmptyState, ErrorState, LoadingState, PageHeader, ResultValue, StatusPill } from "./ui.jsx";
 
@@ -107,23 +107,6 @@ function visibleTrackRows(tracks, playhead, mode, liveNow) {
   return rendered;
 }
 
-function pointInPolygon(point, polygon = []) {
-  if (!point || polygon.length < 3) return false;
-  let inside = false;
-  for (let current = 0, previous = polygon.length - 1; current < polygon.length; previous = current++) {
-    const a = polygon[previous];
-    const b = polygon[current];
-    const cross = (point.y - a.y) * (b.x - a.x) - (point.x - a.x) * (b.y - a.y);
-    const onSegment = Math.abs(cross) < 1e-8
-      && point.x >= Math.min(a.x, b.x) && point.x <= Math.max(a.x, b.x)
-      && point.y >= Math.min(a.y, b.y) && point.y <= Math.max(a.y, b.y);
-    if (onSegment) return true;
-    const crossesRay = ((a.y > point.y) !== (b.y > point.y))
-      && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x;
-    if (crossesRay) inside = !inside;
-  }
-  return inside;
-}
 
 function zoneRings(zone) {
   const geometry = zone?.geometry;
@@ -444,17 +427,11 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken, backgr
       layer.add(group);
     }
 
-    const occupiedZoneIds = new Set();
-    for (const track of renderedTracks) {
-      for (const zone of zones) {
-        if (
-          Number(track.position.observation?.zone_id) === Number(zone.id)
-          || zoneRings(zone).some((ring) => pointInPolygon(track.position, ring))
-        ) occupiedZoneIds.add(String(zone.id));
-      }
-    }
+    // A lighting cue, not a measurement. `highlightedZoneIds` documents why the
+    // authoritative count still comes from the server.
+    const highlighted = highlightedZoneIds(renderedTracks, zones, zoneRings);
     for (const [zoneId, materials] of zoneMaterialsRef.current.entries()) {
-      const occupied = occupiedZoneIds.has(zoneId);
+      const occupied = highlighted.has(zoneId);
       for (const material of materials) {
         material.color.set(occupied ? "#ef2929" : material.userData.baseColor);
         material.opacity = occupied ? .52 : .18;
@@ -772,6 +749,7 @@ function OperationalLivePage({ liveTick = 0 }) {
 function DemoLivePage({ demoReplay }) {
   const [context, setContext] = useState({ loading: true, error: null, store: null, zones: [], sources: [] });
   const [resetToken, setResetToken] = useState(0);
+  const debug = new URLSearchParams(window.location.search).get("debug") === "1";
   useEffect(() => {
     let cancelled = false;
     Promise.all([api.get("/store"), api.get("/zones"), api.get("/sources")])
@@ -798,13 +776,44 @@ function DemoLivePage({ demoReplay }) {
   });
   const kpi = replay?.kpi;
   return <>
-    <PageHeader eyebrow="Guided demo · synchronized Live" title="StoreLens-derived fused state"
-      description="Visual positions interpolate only between adjacent confirmed samples for the same anonymous fused ID. Occupancy, quality, and alerts remain stepwise derived truth." />
-    <div className="live-toolbar" role="toolbar" aria-label="Demo replay status">
-      <button onClick={() => setResetToken((value) => value + 1)}><RotateCcw size={14} /> Reset 3D view</button>
-      <time>Media {replay.videoTime.toFixed(3)}s · frame {replay.frameIndex} · derived {replay.derivedSample?.video_time_s?.toFixed(3) ?? "—"}s · epoch {replay.epoch}</time>
+    <PageHeader title="Live" description="The four demo cameras, combined into one floor map." />
+    <div className="live-toolbar" role="toolbar" aria-label="Replay view">
+      <button onClick={() => setResetToken((value) => value + 1)}>
+        <RotateCcw size={14} aria-hidden="true" /> Reset view
+      </button>
+      {/* Clock internals are for developers checking synchronization, not for
+          the person watching the demo. */}
+      {debug && (
+        <time>
+          Media {replay.videoTime.toFixed(3)}s · frame {replay.frameIndex}
+          {" · derived "}{replay.derivedSample?.video_time_s?.toFixed(3) ?? "—"}s
+          {" · epoch "}{replay.epoch}
+        </time>
+      )}
     </div>
-    <div className="live-layout" data-demo-tour="live-floor-map"><LiveScene3D store={context.store} zones={context.zones} sources={context.sources} renderedTracks={tracks} resetToken={resetToken} backgroundImageUrl={assetUrl("/demo/plan.png")} /><aside className="live-rail"><div className="live-summary-grid"><MetricCard label="Fused people" value={tracks.length} note="Interpolated presentation positions" /><MetricCard label="People in Aisle 04" value={kpi?.value ?? "—"} note={`${kpi?.quality || "unknown"} · ${kpi?.evidence?.source_count || 0} contributing sources`} /></div><section className="live-rail-section"><div className="live-rail-heading"><Users size={15} /><div><strong>Anonymous fused tracks</strong><small>One stable color per epoch-namespaced global ID</small></div></div><div className="live-track-list">{tracks.slice(0, 16).map((track) => <div key={track.key}><i style={{ background: track.color }} /><span><strong>{track.key}</strong><small>{track.position.observation.zone_name || "unassigned floor"}</small></span><time>{track.age.toFixed(2)}s</time></div>)}</div></section><div className="live-provenance"><Camera size={14} /><span>Cached state was derived offline through StoreLens from complete four-camera detection samples at {demoReplay.cache?.metadata?.sample_rate_hz} Hz.</span></div></aside></div>
+    <div className="live-layout" data-demo-tour="live-floor-map"><LiveScene3D store={context.store} zones={context.zones} sources={context.sources} renderedTracks={tracks} resetToken={resetToken} backgroundImageUrl={assetUrl("/demo/plan.png")} /><aside className="live-rail">
+      <div className="live-summary-grid">
+        <div className="live-headline">
+          <span>People in Aisle 04</span>
+          <ResultValue value={kpi?.value} quality={kpi?.quality} />
+        </div>
+      </div>
+      <section className="live-rail-section">
+        <div className="live-rail-heading"><Users size={15} aria-hidden="true" /><div><strong>Current tracks</strong></div></div>
+        <div className="live-track-list">
+          {tracks.slice(0, 16).map((track, index) => (
+            <div key={track.key}>
+              <i style={{ background: track.color }} />
+              <span>
+                <strong>Person {index + 1}</strong>
+                <small>{track.position.observation.zone_name || "On the floor"}</small>
+              </span>
+              {debug && <time>{track.key}</time>}
+            </div>
+          ))}
+        </div>
+      </section>
+    </aside></div>
   </>;
 }
 

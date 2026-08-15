@@ -97,6 +97,8 @@ export function alertFacts(alert, context = {}) {
   const observed = payload.value ?? payload.occupancy ?? payload.derived_dwell_s
     ?? payload.open_visit?.value ?? payload.derived_duration_s;
   if (observed != null) {
+    // "Observed" here is the measured value. The drawer labels the alert's
+    // timestamp "Observed at", so the two never collide.
     const label = payload.occupancy != null || payload.value != null ? "Observed" : "Duration";
     rows.push([label, payload.derived_dwell_s != null || payload.derived_duration_s != null
       ? formatSeconds(observed) : String(observed)]);
@@ -109,8 +111,16 @@ export function alertFacts(alert, context = {}) {
   if (zoneId != null) rows.push(["Zone", named(context.zones, zoneId, `zone ${zoneId}`)]);
   const sourceId = payload.source_id ?? payload.event?.source_id;
   if (sourceId != null) rows.push(["Camera", named(context.sources, sourceId, `source ${sourceId}`)]);
-  if (payload.held_since) rows.push(["Held since", payload.held_since]);
+  // The engine records this as a Unix timestamp; a person needs a clock time.
+  if (payload.held_since) rows.push(["True since", formatClock(payload.held_since)]);
   return rows;
+}
+
+/** Local clock time for a Unix timestamp. Kept here so this module stays pure. */
+export function formatClock(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  return new Date(value * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 /** The quality of the evidence a query-backed alert fired on, when known. */

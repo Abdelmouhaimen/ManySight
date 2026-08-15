@@ -27,7 +27,7 @@ export const TOUR_GROUPS = [
   { id: "calibration", label: "Camera calibration" },
   { id: "tracking", label: "Person tracking" },
   { id: "zone", label: "Aisle 04" },
-  { id: "query", label: "Occupancy query" },
+  { id: "query", label: "People count" },
   { id: "alert", label: "Alert" },
   { id: "dashboard", label: "Dashboard" },
 ];
@@ -137,7 +137,7 @@ const STEPS = [
     type: "automatic",
     route: "demo",
     title: "Preparing camera calibration",
-    description: "Each camera already carries a validated world-to-pixel matrix.",
+    description: "Each camera is already calibrated against the floor map.",
     detail: (observed, elapsed) => staged(cameraItems(observed, (camera) => camera.calibrated, " calibrated"), elapsed),
     complete: (observed, elapsed) =>
       stagedComplete(cameraItems(observed, (camera) => camera.calibrated), elapsed),
@@ -316,7 +316,7 @@ const STEPS = [
     target: "floor-map",
     minMs: 3200,
     title: "One physical zone",
-    description: "Both camera views project into the same metric floor area.",
+    description: "Both cameras now point at the same area of the floor map.",
     detail: (observed) => [
       line(`${observed.zoneName || "Zone"} created`, observed.zoneId ? "complete" : "active"),
     ],
@@ -330,9 +330,9 @@ const STEPS = [
     route: "setup",
     effect: "applyRequest:query",
     minMs: 2400,
-    title: "Creating occupancy query",
-    description: "One saved question, derived centrally by StoreLens.",
-    detail: (observed) => [line(observed.queryName || "Occupancy query", observed.queryId ? "complete" : "active")],
+    title: "Counting people in the aisle",
+    description: "One question StoreLens answers from every camera at once.",
+    detail: (observed) => [line(observed.queryName || "People in the aisle", observed.queryId ? "complete" : "active")],
     complete: (observed) => Boolean(observed.queryId),
   },
   {
@@ -358,7 +358,7 @@ const STEPS = [
     effect: "applyRequest:dashboard",
     minMs: 2400,
     title: "Creating dashboard",
-    description: "The widget is a view over the saved query — not a second calculation.",
+    description: "The dashboard shows that same answer. Nothing is recalculated here.",
     detail: (observed) => [
       line(observed.dashboardWidgetTitle || "Dashboard widget", observed.dashboardId ? "complete" : "active"),
     ],
@@ -382,9 +382,9 @@ const STEPS = [
     timeoutMs: null,
     minMs: WATCH_MIN_MS,
     title: "Replay is running",
-    description: "Video, boxes, fused positions, KPI, and alerts follow one master clock.",
+    description: "Every camera, count and alert you see is from the same moment.",
     detail: (observed) => [
-      line(`Fused people in ${observed.zoneName || "the zone"}: ${observed.kpiValue ?? "—"}`,
+      line(`People in ${observed.zoneName || "the zone"}: ${observed.kpiValue ?? "—"}`,
         observed.alertEvent ? "complete" : "active"),
     ],
     complete: (observed) => Boolean(observed.alertEvent),

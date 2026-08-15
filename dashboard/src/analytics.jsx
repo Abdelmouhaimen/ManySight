@@ -79,10 +79,10 @@ function QueryBody({ definition, context, result, loading, error }) {
       const groups = {};
       rows.forEach((row) => { (groups[String(row[splitKey] ?? "—")] ||= []).push(makePoint(row)); });
       return <MultiLineChart series={Object.entries(groups).map(([label, points]) => ({ label, points }))}
-        empty="No samples in this period." />;
+        empty="No data in this period." />;
     }
     return <MultiLineChart series={[{ label: measures[0].replaceAll("_", " "), points: rows.map(makePoint) }]}
-      empty="No samples in this period." gapAfterSeconds={result.metadata?.display_gap_s ?? null} />;
+      empty="No data in this period." gapAfterSeconds={result.metadata?.display_gap_s ?? null} />;
   }
   const dimensionKey = dimensions[0];
   if (dimensionKey === "zone_id" && measures.length === 1) {
@@ -96,7 +96,7 @@ function QueryBody({ definition, context, result, loading, error }) {
     ...measures.map((key) => ({ key, label: key.replaceAll("_", " ") })),
     ...(rows.some((row) => row.quality) ? [{ key: "quality", label: "quality" }] : []),
   ];
-  return <DataTable columns={columns} rows={rows} empty="No rows for this query." />;
+  return <DataTable columns={columns} rows={rows} empty="No results in this period." />;
 }
 
 export function AnalysisCard({ definition, rangeSeconds, context, liveTick, resultOverride = null, tour = null }) {

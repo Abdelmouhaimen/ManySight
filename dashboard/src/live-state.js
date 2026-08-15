@@ -47,3 +47,57 @@ export function frameIsStale(frame, nowSeconds) {
   if (frame.source_last_ingestion_at == null) return true;
   return nowSeconds - frame.source_last_ingestion_at > (frame.stale_after_s || 30);
 }
+
+/* ------------------------------------------------- presentation-only geometry
+ *
+ * The 3D scene tints a zone red while a rendered track sits inside it. That test
+ * runs in the browser, over interpolated presentation positions, against
+ * whichever zones happen to be loaded — it is a *lighting cue*, nothing more.
+ *
+ * Authoritative occupancy comes from the server: current-state materialization
+ * and the saved-query engine, which carry their own known/partial/unknown
+ * quality. Those two numbers can legitimately disagree, and when they do the
+ * server is right.
+ *
+ * So this helper deliberately returns a Set of zone IDs to paint and never a
+ * count. Do not add a `.size` shortcut here, do not surface its result as a
+ * number, and do not feed it into a result card, an alert or a query.
+ */
+
+export function pointInPolygon(point, polygon = []) {
+  if (!point || polygon.length < 3) return false;
+  let inside = false;
+  for (let current = 0, previous = polygon.length - 1; current < polygon.length; previous = current++) {
+    const a = polygon[previous];
+    const b = polygon[current];
+    const cross = (point.y - a.y) * (b.x - a.x) - (point.x - a.x) * (b.y - a.y);
+    const onSegment = Math.abs(cross) < 1e-8
+      && point.x >= Math.min(a.x, b.x) && point.x <= Math.max(a.x, b.x)
+      && point.y >= Math.min(a.y, b.y) && point.y <= Math.max(a.y, b.y);
+    if (onSegment) return true;
+    const crossesRay = ((a.y > point.y) !== (b.y > point.y))
+      && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x;
+    if (crossesRay) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Which zones the scene should tint. Presentation only — see the note above.
+ *
+ * @returns {Set<string>} zone IDs to highlight. Never a count.
+ */
+export function highlightedZoneIds(renderedTracks = [], zones = [], ringsOf = () => []) {
+  const highlighted = new Set();
+  for (const track of renderedTracks) {
+    for (const zone of zones) {
+      const serverAssigned =
+        track.position?.observation?.zone_id != null
+        && Number(track.position.observation.zone_id) === Number(zone.id);
+      if (serverAssigned || ringsOf(zone).some((ring) => pointInPolygon(track.position, ring))) {
+        highlighted.add(String(zone.id));
+      }
+    }
+  }
+  return highlighted;
+}

@@ -116,7 +116,11 @@ function AlertsView({ alerts, reload, context, initialAlert, clearInitial }) {
                   <time dateTime={new Date(alert.ts * 1000).toISOString()}>{formatTime(alert.ts)}</time>
                   <span className="alert-row-copy">
                     <strong>{alert.title}</strong>
-                    <small>{alert.rule_name || "Rule removed"}</small>
+                    {/* A rule is often named after what it reports, so only say
+                        it twice when the two actually differ. */}
+                    {!alert.rule_name
+                      ? <small>Rule removed</small>
+                      : alert.rule_name !== alert.title && <small>{alert.rule_name}</small>}
                   </span>
                   <StatusPill status={status} compact />
                 </button>
@@ -179,7 +183,7 @@ function AlertDrawer({ alert, context, onClose, onSave }) {
         rows={[
           ...facts,
           ["Rule", alert.rule_name || "Rule removed"],
-          ["Observed", formatDateTime(alert.ts)],
+          ["Observed at", formatDateTime(alert.ts)],
           quality ? ["Quality", <StatusPill key="q" status={resultQuality(quality)} compact />] : null,
         ]}
       />

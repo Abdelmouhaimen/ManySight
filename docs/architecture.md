@@ -16,8 +16,12 @@ produced an observation.
    bounded source-local scene state.
 5. **The multiview service** associates source-local tracks inside explicit groups of
    cameras that share compatible metric world geometry.
-6. **The ManySight dashboard** is the bundled interface for setup, observations,
-   fused/source-debug Live views, generated dashboards, workers, and alerts.
+6. **The ManySight dashboard** is the bundled human interface, organised around six
+   routes — Dashboard, Live, Review, Observations, Sources, and Setup. It shows state
+   and enables action; it deliberately leaves the architecture to this documentation,
+   the MCP surface, and `skills/`. Live presents multiview fusion as "Combined" and
+   per-source tracks as "Per camera"; internal vocabulary stays behind
+   *Technical details* disclosures.
 7. **The MCP server** exposes a small curated semantic interface for coding agents over
    the same REST API, plus the playbooks in `skills/`. REST and the SDK remain the
    complete low-level interface; only the advertised agent surface is curated. It holds

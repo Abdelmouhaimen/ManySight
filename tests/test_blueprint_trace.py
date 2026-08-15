@@ -58,3 +58,35 @@ def test_rejects_incomplete_polygon(client):
     response = client.post("/api/v1/store/blueprint", json=trace)
     assert response.status_code == 422
     assert "three points" in response.json()["detail"]
+
+
+def test_renaming_the_workspace_leaves_the_traced_dimensions_alone(client):
+    """The traced plan is the one source of truth for the metric floor size.
+
+    Setup's workspace form only sends a name, so the two can no longer disagree.
+    `PUT /store` still accepts explicit dimensions for API clients, but omitting
+    them must never reset the size the trace established.
+    """
+    client.post("/api/v1/store/blueprint", json=valid_trace())
+
+    renamed = client.put("/api/v1/store", json={"name": "North warehouse"})
+    assert renamed.status_code == 200, renamed.text
+
+    store = client.get("/api/v1/store").json()
+    assert store["name"] == "North warehouse"
+    assert store["width_m"] == 5
+    assert store["height_m"] == 3
+    assert store["map"]["floor_polygons"][0][2] == {"x": 5.0, "y": 3.0}
+
+
+def test_retracing_the_plan_replaces_the_dimensions(client):
+    """Re-digitizing is the supported way to change the floor size."""
+    client.post("/api/v1/store/blueprint", json=valid_trace())
+
+    wider = valid_trace()
+    wider["known_distance_m"] = 4.0  # same pixels, half the scale -> twice the size
+    assert client.post("/api/v1/store/blueprint", json=wider).status_code == 200
+
+    store = client.get("/api/v1/store").json()
+    assert store["width_m"] == 10
+    assert store["height_m"] == 6
