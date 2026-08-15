@@ -1,8 +1,8 @@
 # Workers and observations
 
-A StoreLens worker is an external process running where its camera, video, file, or
+A ManySight worker is an external process running where its camera, video, file, or
 sensor is reachable. It owns capture, inference, tracking, and model-specific
-preprocessing. StoreLens owns geometry enrichment and derived analytics.
+preprocessing. ManySight owns geometry enrichment and derived analytics.
 
 ## Before writing a worker
 
@@ -32,7 +32,7 @@ disk may predate the current API; the recipe, `GET /api/v1/observations/contract
    complete samples, projection, and zone assignment. Create a saved query and dashboard
    widget only after the observations are correct.
 
-A job is metadata. A worker instance is heartbeat-backed runtime state. StoreLens does
+A job is metadata. A worker instance is heartbeat-backed runtime state. ManySight does
 not start or relaunch arbitrary worker scripts.
 
 The guided demo is not a worker. Offline fixture generation submits versioned raw
@@ -70,7 +70,7 @@ timestamp, source ID, and one of these kinds:
 - `measurement`: one directly observed numeric value with a name, value kind, and
   optional unit. Do not submit a pre-aggregated dashboard total.
 - `state`: the current categorical label for a state name. Send every sample,
-  including repeated labels, so StoreLens can derive intervals and staleness.
+  including repeated labels, so ManySight can derive intervals and staleness.
 
 `sample_id` is an opaque source-local frame/sample key. Continuous detection workers
 should prefer the atomic `POST /api/v1/detection-samples` envelope. The lower-level
@@ -78,7 +78,7 @@ observation batch remains available for advanced producers and backward compatib
 The runtime contract is available at `GET /api/v1/observations/contract`.
 
 Workers must not send `zone_id` or `zone`, or publish derived kinds such as
-`zone_enter`, `zone_exit`, `zone_dwell`, `state_change`, or `count`. StoreLens rejects
+`zone_enter`, `zone_exit`, `zone_dwell`, `state_change`, or `count`. ManySight rejects
 those values on the schema-v2 endpoint.
 
 ## Complete detection samples, including zero
@@ -102,7 +102,7 @@ client.submit_detection_sample(
 ```
 
 The SDK builder offers the same API incrementally in memory before one atomic submit.
-StoreLens internally normalizes the envelope into entity observations and a private
+ManySight internally normalizes the envelope into entity observations and a private
 completion record used by existing materializers. Workers do not author that record.
 Legacy producers may still submit detection rows plus one `detection_frame_count`
 measurement with matching source, entity type, timestamp, and `sample_id`; incomplete
@@ -113,13 +113,13 @@ complete frame per source. The
 scene persists until a newer marker arrives. Freshness is reported separately, so a
 stopped worker makes the last frame stale without changing its contents.
 
-Workers never fuse identities. StoreLens performs geometry-first association only after
+Workers never fuse identities. ManySight performs geometry-first association only after
 complete samples are materialized for sources in an explicit multiview group. A worker
 continues to use its own opaque, scope-limited tracker IDs.
 
 ## Spatial evidence
 
-For camera workers, submit pixel evidence and let StoreLens project it. The
+For camera workers, submit pixel evidence and let ManySight project it. The
 representative-point order is explicit point, feet/ankle keypoints, bounding-box
 bottom-center, then no point for a mask-only observation. Bounding boxes use corner
 form `[x0, y0, x1, y1]`.

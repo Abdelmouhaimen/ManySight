@@ -1,6 +1,6 @@
 # Source connections and credentials
 
-StoreLens coordinates source access but is not a video proxy. A worker running where the
+ManySight coordinates source access but is not a video proxy. A worker running where the
 camera or file is reachable opens the source and submits observations. The server never
 connects to the feed.
 
@@ -29,7 +29,7 @@ the referenced value.
 ## Deployment keys
 
 `STORELENS_CREDENTIAL_KEY` must be URL-safe base64 that decodes to exactly 32 random
-bytes. StoreLens does not generate, persist, or fall back to an implicit key. Missing or
+bytes. ManySight does not generate, persist, or fall back to an implicit key. Missing or
 malformed configuration fails closed for credential writes and reads. Rotating this key
 currently requires decrypting and re-encrypting credentials under controlled operator
 tooling; changing it directly makes existing ciphertext unreadable.

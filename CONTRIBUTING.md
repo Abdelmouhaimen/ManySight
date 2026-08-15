@@ -1,6 +1,6 @@
-# Contributing to StoreLens
+# Contributing to ManySight
 
-Thank you for improving StoreLens. The repository is under active development; discuss
+Thank you for improving ManySight. The repository is under active development; discuss
 large contract or architecture changes in an issue before implementing them.
 
 ## Set up the repository
@@ -39,7 +39,7 @@ consistent with surrounding Python and React code.
 
 ## Bug reports and pull requests
 
-Bug reports should include reproducible steps, expected and actual behavior, StoreLens
+Bug reports should include reproducible steps, expected and actual behavior, ManySight
 version or commit, operating system, and relevant sanitized logs. Never post source
 credentials or identifiable camera footage in a public issue.
 

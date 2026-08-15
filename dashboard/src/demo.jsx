@@ -115,7 +115,7 @@ export function DemoPage({ refreshShell, demoReplay }) {
 
   if (!assets) return error ? <ErrorState error={error} retry={() => window.location.reload()} /> : <LoadingState label="Checking demo assets…" />;
   if (!session) return <>
-    <PageHeader title="Try StoreLens" />
+    <PageHeader title="Try ManySight" />
     <section className="demo-hero panel"><div><h2>See four cameras become one space</h2><p>Watch people tracked across four views, and an alert fire when the aisle gets busy. Your own workspace is untouched.</p><div className="demo-actions"><button className="button button-primary" data-demo-tour="demo-start-guided" disabled={busy || !assets.available} onClick={() => begin("guided")}><Play size={15} aria-hidden="true" /> Start demo</button><button className="button button-secondary" disabled={busy || !assets.available} onClick={() => begin("learn")}><ExternalLink size={15} aria-hidden="true" /> Explore on my own</button></div></div><div className={`demo-asset-card ${assets.available ? "ready" : "missing"}`}>{assets.available ? <CheckCircle2 /> : <AlertTriangle />}<strong>{assets.available ? "Ready to play" : "The demo isn't available"}</strong><p>{assets.available ? "Sample footage is installed." : "The sample footage or its prepared results are missing on this server."}</p>{!assets.available && <code>{assets.derived_cache_error || assets.install_command}</code>}</div></section>
     {error && <div className="inline-warning">{error.message}</div>}
   </>;

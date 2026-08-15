@@ -80,7 +80,7 @@ const STEPS = [
     route: "demo",
     minMs: 1400,
     title: "Preparing your demo",
-    description: "Creating a temporary StoreLens workspace…",
+    description: "Creating a temporary ManySight workspace…",
     detail: (observed) => [line("Demo workspace ready", observed.workspaceReady ? "complete" : "active")],
     complete: (observed) => observed.workspaceReady,
   },
@@ -91,7 +91,7 @@ const STEPS = [
     route: "demo",
     target: "demo-camera-grid",
     title: "Adding camera sources",
-    description: "Each camera becomes one logical StoreLens source.",
+    description: "Each camera becomes one logical ManySight source.",
     detail: (observed, elapsed) => staged(cameraItems(observed), elapsed),
     complete: (observed, elapsed) => stagedComplete(cameraItems(observed), elapsed)
       && observed.sourceCount === observed.cameras.length,
@@ -104,7 +104,7 @@ const STEPS = [
     route: "demo",
     title: "Set up the physical space",
     description:
-      "StoreLens needs a floor plan so detections from several cameras can share the same physical coordinate system.",
+      "ManySight needs a floor plan so detections from several cameras can share the same physical coordinate system.",
     actions: [
       { id: "manual", label: "Show me how", branch: "manual" },
       { id: "auto", label: "Set it up automatically", branch: "auto", primary: true },
@@ -186,7 +186,7 @@ const STEPS = [
     minMs: 1800,
     title: "Physical map created",
     description:
-      "StoreLens compares your trace, then restores the prepared demo plan so the recorded replay keeps its exact geometry.",
+      "ManySight compares your trace, then restores the prepared demo plan so the recorded replay keeps its exact geometry.",
     detail: (observed) => [
       line("Physical map created", observed.planSavedAt ? "complete" : "pending"),
       line("Validated demo plan restored", observed.planRestoredAt ? "complete" : "active"),
@@ -278,7 +278,7 @@ const STEPS = [
     title: "Now imagine you asked Codex:",
     quote: "Alert me when there are at least 2 people in Aisle 04.",
     description:
-      "Nothing is running an agent here. We reproduce the configuration StoreLens would need for that request, using what this demo already prepared.",
+      "Nothing is running an agent here. We reproduce the configuration ManySight would need for that request, using what this demo already prepared.",
     actions: [{ id: "continue", label: "Continue", primary: true }],
   },
   {
@@ -331,7 +331,7 @@ const STEPS = [
     effect: "applyRequest:query",
     minMs: 2400,
     title: "Counting people in the aisle",
-    description: "One question StoreLens answers from every camera at once.",
+    description: "One question ManySight answers from every camera at once.",
     detail: (observed) => [line(observed.queryName || "People in the aisle", observed.queryId ? "complete" : "active")],
     complete: (observed) => Boolean(observed.queryId),
   },
@@ -370,7 +370,7 @@ const STEPS = [
     type: "explanation",
     route: "demo",
     title: "Everything is ready",
-    description: "Watch StoreLens track the space across four synchronized cameras.",
+    description: "Watch ManySight track the space across four synchronized cameras.",
     actions: [{ id: "watch", label: "Watch it run", primary: true }],
   },
   {
@@ -401,7 +401,7 @@ const STEPS = [
         + ` in ${observed.zoneName || "the zone"} when the recorded alert fired.`
       : "The recorded threshold event is active.",
     actions: [
-      { id: "explore", label: "Explore StoreLens", primary: true },
+      { id: "explore", label: "Explore ManySight", primary: true },
       { id: "exit", label: "Exit demo" },
     ],
   },
@@ -411,7 +411,7 @@ const STEPS = [
     type: "terminal",
     dim: false,
     title: "Demo complete",
-    description: "Everything on screen is the real StoreLens interface.",
+    description: "Everything on screen is the real ManySight interface.",
   },
 ];
 
@@ -566,7 +566,7 @@ export function tourCardView(state, observed, elapsedMs = 0) {
     description: stepText(step.description, observed) || "",
     quote: step.quote || "",
     detail: step.detail ? step.detail(observed, elapsedMs) : [],
-    hint: step.reopen?.(observed) ? "Reopen that dialog in StoreLens to continue." : "",
+    hint: step.reopen?.(observed) ? "Reopen that dialog in ManySight to continue." : "",
     actions: failed ? [] : step.actions || [],
     error: failed ? state.error : "",
     checklist: tourChecklist(state),

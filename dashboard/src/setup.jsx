@@ -300,7 +300,7 @@ function CombinedTrackingModal({ group, sources, onClose, onSaved }) {
   return (
     <Modal
       title="Combined tracking"
-      description="Choose the cameras whose views overlap. StoreLens matches the same person across them."
+      description="Choose the cameras whose views overlap. ManySight matches the same person across them."
       onClose={onClose}
       footer={
         <>

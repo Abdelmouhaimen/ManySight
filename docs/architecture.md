@@ -1,16 +1,16 @@
 # Architecture and current scope
 
-StoreLens separates local observation from central spatial and temporal derivation.
+ManySight separates local observation from central spatial and temporal derivation.
 The platform does not need to know which detector, tracker, classifier, or sensor
 produced an observation.
 
 ## Components
 
 1. **Sources** describe logical cameras, files, streams, or sensors. Connection
-   configuration is either StoreLens-managed or resolved from an external secret.
+   configuration is either ManySight-managed or resolved from an external secret.
 2. **Local workers** open sources, run inference and tracking, and submit direct
    observations through the REST API or Python SDK.
-3. **The StoreLens API** persists observations in SQLite and enriches spatial evidence
+3. **The ManySight API** persists observations in SQLite and enriches spatial evidence
    using the geometry active at ingestion.
 4. **The current-state service** commits only complete processed samples and maintains
    bounded source-local scene state.
@@ -40,11 +40,11 @@ produced an observation.
 ## Data flow
 
 Workers submit schema-v2 `detection`, `measurement`, or `state` observations. A
-detection may carry a pixel point, bounding box, keypoints, or mask. StoreLens chooses
+detection may carry a pixel point, bounding box, keypoints, or mask. ManySight chooses
 a representative point, applies the relevant floor or named-plane homography, assigns
 a physical zone, and records the geometry revisions used at ingestion.
 
-StoreLens derives current presence, density, visits, dwell, transitions, measurement
+ManySight derives current presence, density, visits, dwell, transitions, measurement
 series, state intervals, fused occupancy, saved-query results, generated dashboards,
 and alerts. Legacy `/api/v1/events` remains accepted for compatibility. New camera
 workers should use `/api/v1/detection-samples`; other producers use
@@ -57,12 +57,12 @@ Continuous detection workers submit one atomic `DetectionSample` with one source
 an observed empty frame without a fake detection. The SDK builder accumulates detections
 in memory and submits that same public envelope.
 
-StoreLens internally normalizes the envelope for its existing event/materialization
+ManySight internally normalizes the envelope for its existing event/materialization
 model. Legacy detection rows plus one matching `detection_frame_count` measurement are
 still supported, but partial or count-mismatched legacy samples never replace current
 state. Older rows without `sample_id` retain exact source/timestamp fallback semantics.
 
-Scene contents and freshness are independent. If a worker stops, StoreLens retains the
+Scene contents and freshness are independent. If a worker stops, ManySight retains the
 last complete sample and marks it stale; elapsed wall time never fabricates an empty
 scene.
 

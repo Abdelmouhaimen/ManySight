@@ -15,7 +15,7 @@ General bugs that do not contain sensitive information may use the public issue 
 
 ## Security scope and deployment responsibility
 
-StoreLens can store managed source credentials encrypted with
+ManySight can store managed source credentials encrypted with
 `STORELENS_CREDENTIAL_KEY`. Operators must:
 
 - generate, store, rotate, and back up the encryption key separately from the database;
@@ -33,7 +33,7 @@ The general API accepts a query-string API key for browser SSE and protected-med
 compatibility. Prefer the `X-API-Key` header elsewhere and configure proxies not to log
 sensitive query strings. Managed source-connection resolution is always header-only.
 
-The current optional API key is not a multi-user authorization system. StoreLens does
+The current optional API key is not a multi-user authorization system. ManySight does
 not attest to worker code or model output, and cooperative worker controls require an
 external process supervisor. Deployers are responsible for camera authorization,
 network access, retention, privacy, and compliance obligations.

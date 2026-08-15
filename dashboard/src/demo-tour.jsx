@@ -224,7 +224,7 @@ export function useDemoTour({ session, cache, replay, refreshSession } = {}) {
         console.warn(`guided tour target "${step.target}" was not found for step "${step.id}"`);
         setState((current) => (current && current.stepId === step.id
           ? reportTourTargetMissing(current, step.fallback
-            || "That control is not on screen yet. Open it in StoreLens to continue.")
+            || "That control is not on screen yet. Open it in ManySight to continue.")
           : current));
         return;
       }

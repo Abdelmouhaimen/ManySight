@@ -1,6 +1,6 @@
 # Workspace reinitialization and space revisions
 
-StoreLens separates spatial setup from observation history. Destructive actions require
+ManySight separates spatial setup from observation history. Destructive actions require
 exact confirmation text in Setup → Advanced → Danger zone and run in one SQLite
 transaction.
 
@@ -20,7 +20,7 @@ Two history policies are available:
   fired alerts are also removed.
 
 Zone database IDs are not reused. A saved query that references a deleted zone or group
-returns `409 unresolved_query_reference`; StoreLens never silently applies it to a new
+returns `409 unresolved_query_reference`; ManySight never silently applies it to a new
 zone with the same name.
 
 `GET /api/v1/workspace/revisions` lists revision metadata. Raw historical evidence can

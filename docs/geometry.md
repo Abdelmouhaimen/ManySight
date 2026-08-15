@@ -1,6 +1,6 @@
 # Geometry and calibration
 
-StoreLens uses one metric map frame for canonical physical geometry. Workers submit
+ManySight uses one metric map frame for canonical physical geometry. Workers submit
 camera evidence; the platform selects the relevant plane, projects the representative
 point, assigns a zone, and stores the definition revisions used.
 
@@ -21,7 +21,7 @@ must be approved before it is stored. Two endpoints make that safe:
 The result is one canonical zone with one zone view per contributing camera. Cameras that
 cannot see the region get no zone view. `GET /api/v1/agent/sources/{id}/frame-capture-plan`
 supplies the local capture plan and pixel-coordinate context needed to propose polygons
-from a real image rather than from guessed coordinates; StoreLens never returns camera
+from a real image rather than from guessed coordinates; ManySight never returns camera
 pixels itself. See [the agent operating surface](agent-surface.md).
 
 ## Canonical zones and camera views
@@ -49,7 +49,7 @@ world calibration:
 - a rank-3 3x4 world-to-pixel projection matrix;
 - metres as world units;
 - a named world frame with explicit axes;
-- an optional affine provider-world-to-StoreLens-map transform (the original matrix is preserved);
+- an optional affine provider-world-to-ManySight-map transform (the original matrix is preserved);
 - ground-plane Z;
 - optional frame dimensions, distortion, intrinsics, extrinsics, and verification points.
 

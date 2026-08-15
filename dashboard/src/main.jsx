@@ -67,7 +67,7 @@ function App() {
       ]);
       setShell({ store, sources, alerts });
     } catch (error) {
-      notify("Couldn't reach StoreLens", error.message, "error");
+      notify("Couldn't reach ManySight", error.message, "error");
     }
   };
 

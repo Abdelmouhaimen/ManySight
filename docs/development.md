@@ -2,7 +2,7 @@
 
 ## Prerequisites and installation
 
-StoreLens currently targets Python 3.11+ and Node.js 20+. From the repository root:
+ManySight currently targets Python 3.11+ and Node.js 20+. From the repository root:
 
 ```powershell
 python -m venv .venv
@@ -106,7 +106,7 @@ observation history and jobs. It is destructive to the selected `STORELENS_DATA`
 database and must not be used against retained data.
 
 `demo/loop_video_stream.py` loops a local video as an MJPEG endpoint for development.
-It is not a camera gateway or a required StoreLens service. See `demo/README.md`.
+It is not a camera gateway or a required ManySight service. See `demo/README.md`.
 
 The separate [guided demo](guided-demo.md) uses an isolated database and a committed
 numerical replay fixture. Its NVIDIA media is downloaded on demand and remains ignored.

@@ -1,6 +1,6 @@
 # Saved queries and generated dashboards
 
-StoreLens exposes deterministic analytics instead of arbitrary SQL. A saved query is the
+ManySight exposes deterministic analytics instead of arbitrary SQL. A saved query is the
 canonical analytical question: subject, measures, filters, grouping, range, and optional
 comparison. Presentation is not part of query identity.
 
@@ -49,7 +49,7 @@ playbook including the exact comparison-operator table.
 ## Threshold phrasing is exact
 
 An occupancy question and its threshold are separate decisions, and English threshold
-words map to exactly one operator. StoreLens never normalizes one into another:
+words map to exactly one operator. ManySight never normalizes one into another:
 
 | the user says | operator |
 |---|---|

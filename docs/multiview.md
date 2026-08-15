@@ -6,14 +6,14 @@ Ordinary single-camera ingestion and source-local Live debugging continue to wor
 
 ## Preconditions
 
-- At least two sources in the same StoreLens space.
+- At least two sources in the same ManySight space.
 - A usable floor/world calibration for every source.
 - Rich calibrations, when present, on every source with identical units and world-frame
   metadata. Rich and planar-only calibrations cannot be mixed in one group.
 - A sensible time tolerance, spatial gate, active-track age, and optional neighbor graph.
 
 Workers do not coordinate identities. Each source posts its own `sample_id`, timestamp,
-local `entity_id`, confidence, and pixel evidence. StoreLens waits for complete source
+local `entity_id`, confidence, and pixel evidence. ManySight waits for complete source
 samples, projects them independently, then associates active tracks centrally.
 
 Cross-camera occupancy is a count of **fused entities inside the canonical zone**. It is

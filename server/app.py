@@ -64,7 +64,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="StoreLens",
+    title="ManySight",
     version="1.0.0",
     description="Infrastructure for turning raw camera and sensor observations into spatial and "
                 "temporal analytics. StoreLens manages logical sources, protected connection configuration, mapped "

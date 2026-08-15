@@ -114,6 +114,33 @@ test("no page stringifies a params object straight into a row", () => {
   assert.deepEqual(offenders, []);
 });
 
+/* The product has one visible name. `StoreLens` survives only as internal
+ * machinery — the demo-session header, localStorage keys and a DOM event name —
+ * which no user reads and which cannot be renamed without breaking existing
+ * sessions and the API contract. Nothing a person sees may say it. */
+test("no page shows the StoreLens name to a user", () => {
+  const INTERNAL = [
+    'X-StoreLens-Demo-Session', // request header, part of the API contract
+    'storelens_api_key',        // localStorage keys, renaming logs users out
+    'storelens_demo_session',
+    'storelens-demo-session',   // window event name
+    'storelens-tour-event',
+    'storelens-setup-tab',
+    'storelens.demo-tour',
+    'storelens.setup.tab',
+    'storelens_managed',        // credential-management enum value in the API
+  ]
+  const offenders = []
+  for (const [name, text] of Object.entries(SOURCES)) {
+    for (const literal of stringLiterals(text)) {
+      if (!/storelens/i.test(literal)) continue
+      if (INTERNAL.some((allowed) => literal.includes(allowed))) continue
+      offenders.push(`${name}: "${literal}"`)
+    }
+  }
+  assert.deepEqual(offenders, [])
+})
+
 test("the audit actually looked at the product files", () => {
   assert.ok(UI_FILES.includes("main.jsx"));
   assert.ok(UI_FILES.includes("live.jsx"));

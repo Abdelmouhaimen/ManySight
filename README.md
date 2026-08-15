@@ -1,22 +1,25 @@
-# StoreLens
+# ManySight
 
-StoreLens is intended to be an open-source platform for turning observations from cameras and
+ManySight is intended to be an open-source platform for turning observations from cameras and
 sensors into spatial and temporal analytics for physical spaces. It stores source
 configuration and mapped geometry, accepts raw observations from local workers,
 projects spatial evidence into a floor plan, associates source-local tracks across
 explicit calibrated camera groups, and derives visits, dwell, occupancy,
 transitions, saved queries, dashboards, and alerts.
 
-**StoreLens** is the platform, REST API, SDK, and MCP integration. **ManySight** is
-the bundled web dashboard. The dashboard name is retained as a user-interface
-brand; the repository and API use StoreLens terminology.
+**ManySight** is the product: the platform, the dashboard, the REST API, the SDK
+and the MCP integration. `StoreLens` survives inside the implementation as the
+original name — the `storelens` Python module and SDK class, `STORELENS_*`
+environment variables, the `X-StoreLens-*` headers and `data/storelens.db`.
+Those are compatibility identifiers, not a second product, and renaming them is
+a separate controlled migration.
 
 > **Release status:** this repository is under active development. It currently
 > uses SQLite, represents mapped surfaces with planar homographies, and relies on
 > external worker processes for inference. It does not yet contain an open-source
 > license; see [License](#license).
 
-## What StoreLens does
+## What ManySight does
 
 - Registers camera, video, file, and sensor sources with managed or external-secret
   connection configuration.
@@ -29,7 +32,7 @@ brand; the repository and API use StoreLens terminology.
   saved-query results, generated dashboards, and alerts from observations.
 - Exposes a web dashboard, REST/OpenAPI API, Python worker SDK, and MCP server.
 
-StoreLens does not prescribe a computer-vision model or camera vendor, treat
+ManySight does not prescribe a computer-vision model or camera vendor, treat
 anonymous tracker IDs or fused tracks as verified identities, proxy camera feeds
 through the platform server, run appearance/ReID models centrally, or execute
 arbitrary worker code inside the server process.
@@ -48,7 +51,7 @@ local worker (capture, inference, tracking)
 raw detection / measurement / state observations
         |
         v
-StoreLens
+ManySight
   geometry enrichment -> zone assignment -> temporal derivation
         |
         v
@@ -56,8 +59,8 @@ source state / multiview fusion / queries / alerts / ManySight dashboard
 ```
 
 Workers open sources where the device or stream is reachable. They submit direct
-evidence, not StoreLens-owned results: no canonical zone IDs, entry/exit events,
-dwell, occupancy, transitions, state changes, or dashboard aggregates. StoreLens
+evidence, not ManySight-owned results: no canonical zone IDs, entry/exit events,
+dwell, occupancy, transitions, state changes, or dashboard aggregates. ManySight
 records the geometry revisions used at ingestion and derives higher-level results.
 
 Read [Architecture](docs/architecture.md) and the
@@ -126,14 +129,14 @@ disclosures. Agents and the API keep the precise names — see
 
 The dashboard's **Try Demo** entry uses cameras 1-4 of NVIDIA's synthetic `mtmc_12cam`
 warehouse sample. A versioned raw YOLO11n + ByteTrack `DetectionSample` fixture is
-derived offline through the real StoreLens geometry, multiview, saved-query, and alert
+derived offline through the real ManySight geometry, multiview, saved-query, and alert
 pipeline. Playable runtime uses one lightweight master clock to present the four native
 videos, exact frame boxes, interpolated fused positions, stepwise KPI, and alert events
 from that committed derived cache. Runtime needs neither a GPU nor model weights and
 runs in an isolated temporary workspace.
 
-StoreLens does not redistribute the NVIDIA media. Install it locally on demand, start
-StoreLens, then select **Try Demo**:
+ManySight does not redistribute the NVIDIA media. Install it locally on demand, start
+ManySight, then select **Try Demo**:
 
 ```powershell
 python demo/fetch_nvidia_mv3dt.py
@@ -145,7 +148,7 @@ It supports discard or explicit setup-only promotion. See the
 [guided-demo architecture, provenance, and asset terms](docs/guided-demo.md).
 
 A guided progress card, slight dimming, and a spotlight explain each step on top of the
-real interface. You can let StoreLens present the prepared space and calibrations, or
+real interface. You can let ManySight present the prepared space and calibrations, or
 choose **Show me how** and work through the actual plan digitizer and Camera 1
 calibration controls; both paths continue from the same validated demo state.
 
@@ -160,7 +163,7 @@ Sensitive authentication material is stored or resolved separately:
 - `external_secret` stores only `locator.local_secret_ref`; the worker resolves that
   reference from its own environment, keychain, or ignored configuration.
 
-Normal source discovery never returns credentials. StoreLens still does not connect
+Normal source discovery never returns credentials. ManySight still does not connect
 to the feed: source resolution only gives an authorized local worker the information
 it needs to open the source itself. See
 [Source connections and credentials](docs/source-connections.md) for deployment keys,
@@ -213,7 +216,7 @@ writing a new integration.
 
 The Live view represents the latest complete processed sample for each source. Submit
 `detections=[]` to record a successfully processed zero-detection frame. If processing
-stops, the last scene remains visible with stale-source status; StoreLens does not
+stops, the last scene remains visible with stale-source status; ManySight does not
 reinterpret missing observations as an empty scene. Legacy detection rows completed by
 a `detection_frame_count` measurement remain readable for backward compatibility.
 

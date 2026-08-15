@@ -1,6 +1,6 @@
 # Alerts
 
-Alerts evaluate StoreLens-derived state. Workers do not emit business alerts, occupancy,
+Alerts evaluate ManySight-derived state. Workers do not emit business alerts, occupancy,
 zone entry, dwell, or transitions.
 
 Legacy rule kinds remain available for dwell, occupancy, state, and event compatibility.
@@ -28,5 +28,5 @@ Query-backed alerts use the same deterministic engine as dashboard widgets. The 
 - includes value, threshold, quality, query ID, and held-since provenance in the payload.
 
 Webhook URLs receive alert JSON and should be treated as sensitive deployment
-configuration. StoreLens does not guarantee delivery retries beyond the current process
+configuration. ManySight does not guarantee delivery retries beyond the current process
 behavior; use a durable external workflow system when delivery guarantees matter.

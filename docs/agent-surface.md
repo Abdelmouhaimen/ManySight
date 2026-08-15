@@ -1,6 +1,6 @@
 # The agent operating surface
 
-StoreLens has three interfaces with three different jobs. Conflating them is what makes
+ManySight has three interfaces with three different jobs. Conflating them is what makes
 coding agents operate the platform badly.
 
 ```text
@@ -71,7 +71,7 @@ capped, so the call stays cheap on a workspace with millions of observations.
 
 ## `inspect_perception` — reuse before starting anything
 
-Answers "can StoreLens already answer this?" for an entity type and a set of sources, and
+Answers "can ManySight already answer this?" for an entity type and a set of sources, and
 returns a single `action`:
 
 | action | meaning |

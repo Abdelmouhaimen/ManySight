@@ -285,7 +285,7 @@ function PreviewModal({ source, onClose }) {
   return (
     <Modal
       title={`Preview ${source.name}`}
-      description="Point this at a player running on your own machine. StoreLens never receives the address or the video."
+      description="Point this at a player running on your own machine. ManySight never receives the address or the video."
       onClose={onClose}
       footer={<button className="button button-secondary" onClick={onClose}>Close</button>}
     >
@@ -495,7 +495,7 @@ export function SourceEditorModal({ source = null, onClose, onSaved }) {
         )}
       </div>
       <p className="form-note">
-        StoreLens never opens the camera itself — a worker on your network does, using these
+        ManySight never opens the camera itself — a worker on your network does, using these
         details.
       </p>
       {error && <div className="form-error" role="alert">{error}</div>}

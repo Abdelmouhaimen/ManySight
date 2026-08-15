@@ -1,6 +1,6 @@
 # Guided four-camera demo
 
-The **Try Demo** workflow is a deterministic, isolated StoreLens walkthrough using
+The **Try Demo** workflow is a deterministic, isolated ManySight walkthrough using
 cameras 1–4 from NVIDIA's synthetic `mtmc_12cam` warehouse dataset. It answers one
 fixed question:
 
@@ -10,8 +10,8 @@ The demonstration has three deliberately separate stages:
 
 ```text
 fixture generation:  NVIDIA video → YOLO11n + ByteTrack → raw DetectionSample fixture
-cache generation:    raw fixture → real StoreLens derivation → derived replay cache
-playable runtime:    one master clock → video + boxes + cached StoreLens state
+cache generation:    raw fixture → real ManySight derivation → derived replay cache
+playable runtime:    one master clock → video + boxes + cached ManySight state
 ```
 
 Playable runtime is not live fusion and is not a worker. It does no inference, ongoing
@@ -19,7 +19,7 @@ projection, multiview optimization, query recomputation, or alert evaluation.
 
 ## Install optional NVIDIA media
 
-StoreLens does not redistribute NVIDIA videos or model weights:
+ManySight does not redistribute NVIDIA videos or model weights:
 
 ```powershell
 python demo/fetch_nvidia_mv3dt.py
@@ -28,7 +28,7 @@ python demo/fetch_nvidia_mv3dt.py
 The fetcher downloads NVIDIA's archive, prints its SHA-256, rejects unsafe archive
 paths, and installs the dataset below ignored `data/demo-assets/`. Use
 `STORELENS_DEMO_ASSET_DIR` for another extracted `datasets/mtmc_12cam` path. Review the
-applicable NVIDIA terms; StoreLens's repository license does not grant rights to that
+applicable NVIDIA terms; ManySight's repository license does not grant rights to that
 media.
 
 ## Raw detection fixture
@@ -44,7 +44,7 @@ frame is a public schema-v2 `DetectionSample` with:
 - no map point, zone assignment, fused ID, KPI, or alert.
 
 An empty `detections` list is a complete known-zero sample. Fixture authors do not
-create a generic `detection_frame_count` measurement; StoreLens retains that record only
+create a generic `detection_frame_count` measurement; ManySight retains that record only
 as an internal/legacy normalization detail.
 
 Validate the fixture without model dependencies:
@@ -62,9 +62,9 @@ python demo/generate_mv3dt_fixture.py `
   --model C:\path\to\yolo11n.pt
 ```
 
-## StoreLens-derived replay cache
+## ManySight-derived replay cache
 
-`demo/build_mv3dt_demo_fixture.py` configures an isolated real StoreLens workspace,
+`demo/build_mv3dt_demo_fixture.py` configures an isolated real ManySight workspace,
 imports the four validated NVIDIA projection matrices, constructs Aisle 04, and sends
 synchronized raw samples through normal observation enrichment, complete-sample
 materialization, multiview association, saved-query execution, and query-alert
@@ -86,7 +86,7 @@ Each of the 201 derived samples contains:
 
 - media time and source frame index;
 - four complete source-sample references;
-- StoreLens fused entities with member provenance;
+- ManySight fused entities with member provenance;
 - the real saved-query value, quality, `as_of`, and evidence window;
 - real edge-triggered alert events produced at that sample.
 
@@ -116,7 +116,7 @@ Camera 4 projects to approximately:
 ```
 
 Camera 3 creates the first canonical polygon. Camera 4 is an explicit
-`extend_zone_from_view` operation. StoreLens unions the overlapping physical
+`extend_zone_from_view` operation. ManySight unions the overlapping physical
 contributions into one metric Polygon at zone revision 2 and records original pixels,
 projected points, calibration revision, view revision, operation, and resulting zone
 revision. Coordinates are never moved merely to improve appearance.
@@ -132,7 +132,7 @@ app-level `requestAnimationFrame` clock derived from that anchor. At master time
 - fused positions interpolate only when the same fused ID exists in both adjacent
   derived samples;
 - occupancy, quality, evidence, and alerts remain stepwise and are never interpolated;
-- dashboard widgets use the cached StoreLens saved-query result, not frontend box or
+- dashboard widgets use the cached ManySight saved-query result, not frontend box or
   polygon counting.
 
 The optional **Debug sync** display reports master time, video frame, box frame, derived
@@ -159,7 +159,7 @@ would genuinely cover the element being explained — returning as soon as that 
 Steps are paced to be watched rather than skimmed, and each holds its finished state on
 screen before moving on. It reports
 what is happening now, what is already complete, what happens next, and whether
-StoreLens is doing something automatically or waiting for a click. States are `pending`,
+ManySight is doing something automatically or waiting for a click. States are `pending`,
 `active`, `loading`, `complete`, `error`, and `waiting_for_user`, each shown with an icon
 and text rather than colour alone. Escape releases the dimming, the card can be collapsed
 or hidden, and **Exit demo** always remains reachable.
@@ -173,7 +173,7 @@ explains it: the floor map has no Aisle 04, and no camera carries a zone trace.
 
 The walkthrough then applies those stages one at a time through
 `POST /api/v1/demo/sessions/{id}/apply-request` with a `stage` of `zone_seed`,
-`zone_extend`, `query`, `alert`, or `dashboard`. Each stage runs the same real StoreLens
+`zone_extend`, `query`, `alert`, or `dashboard`. Each stage runs the same real ManySight
 operations the prepared workspace uses, in the same order, and appends the same
 action-log entries; stages are ordered (a stage refuses to run before its prerequisite)
 and idempotent, so a refresh or a retry never duplicates geometry. `mode=learn`, the
@@ -229,7 +229,7 @@ demo-workspace sources, zones, zone views, saved query, alert rule and dashboard
 committed replay cache. Progress presentation is sequenced, never invented — the four
 source rows appear one at a time because their real IDs already exist, an uncalibrated
 camera is never shown as calibrated, a camera's zone trace appears only once that zone
-view has been created, and the alert step reports the occupancy StoreLens derived for the
+view has been created, and the alert step reports the occupancy ManySight derived for the
 sample that actually fired rather than a fixed number. The walkthrough
 performs no projection, fusion, query, or alert evaluation of its own and takes no part in
 playback timing.
