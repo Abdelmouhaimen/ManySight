@@ -11,6 +11,20 @@ export const ROUTES = ["dashboard", "live", "review", "observations", "sources",
 
 export const DEFAULT_ROUTE = "dashboard";
 
+/**
+ * The permanent sidebar, in order. `demo` is deliberately not here: Try Demo in
+ * the top bar is the single entry point, so the product does not advertise two
+ * doors into the same thing. The shell adds an icon per entry.
+ */
+export const NAV_ITEMS = [
+  ["dashboard", "Dashboard"],
+  ["live", "Live"],
+  ["review", "Review"],
+  ["observations", "Observations"],
+  ["sources", "Sources"],
+  ["setup", "Setup"],
+];
+
 /** Old hashes kept working. Each resolves to a canonical route and rewrites. */
 export const ROUTE_ALIASES = {
   overview: "dashboard",

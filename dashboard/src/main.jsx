@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BellRing, Camera, Gauge, Menu, PlayCircle, Radio, ScanSearch, Settings2, X } from "lucide-react";
 import { api, apiKey, demoSessionId } from "./api.js";
-import { DEFAULT_ROUTE, resolveRoute, routeHref } from "./routes.js";
+import { DEFAULT_ROUTE, NAV_ITEMS, resolveRoute, routeHref } from "./routes.js";
 import { dataHealth, isOpenAlert } from "./status.js";
 import { BrandMark, LoadingState, Toast } from "./ui.jsx";
 import { ObservationsPage } from "./observations.jsx";
@@ -19,17 +19,16 @@ const LivePage = lazy(() =>
   import("./live.jsx").then((module) => ({ default: module.LivePage })),
 );
 
-/* The permanent navigation. The guided demo is deliberately absent: Try Demo in
- * the top bar is the single entry point, so the product does not advertise two
- * doors into the same thing. */
-const NAV = [
-  ["dashboard", "Dashboard", Gauge],
-  ["live", "Live", Radio],
-  ["review", "Review", BellRing],
-  ["observations", "Observations", ScanSearch],
-  ["sources", "Sources", Camera],
-  ["setup", "Setup", Settings2],
-];
+/* The sidebar order lives in routes.js so it can be asserted without a browser;
+ * only the icon per entry belongs to the shell. */
+const NAV_ICONS = {
+  dashboard: Gauge,
+  live: Radio,
+  review: BellRing,
+  observations: ScanSearch,
+  sources: Camera,
+  setup: Settings2,
+};
 
 const PAGES = {
   dashboard: DashboardPage,
@@ -174,21 +173,24 @@ function App() {
       </header>
       <aside className={`app-sidebar ${mobileOpen ? "mobile-open" : ""}`}>
         <nav aria-label="Sections">
-          {NAV.map(([value, label, Icon]) => (
-            <a
-              key={value}
-              href={routeHref(value)}
-              className={location.route === value ? "active" : ""}
-              aria-current={location.route === value ? "page" : undefined}
-              data-demo-tour={`nav-${value}`}
-            >
-              <Icon size={17} aria-hidden="true" />
-              <span>{label}</span>
-              {value === "review" && openAlertCount > 0 && (
-                <b aria-label={`${openAlertCount} open`}>{openAlertCount}</b>
-              )}
-            </a>
-          ))}
+          {NAV_ITEMS.map(([value, label]) => {
+            const Icon = NAV_ICONS[value];
+            return (
+              <a
+                key={value}
+                href={routeHref(value)}
+                className={location.route === value ? "active" : ""}
+                aria-current={location.route === value ? "page" : undefined}
+                data-demo-tour={`nav-${value}`}
+              >
+                <Icon size={17} aria-hidden="true" />
+                <span>{label}</span>
+                {value === "review" && openAlertCount > 0 && (
+                  <b aria-label={`${openAlertCount} open`}>{openAlertCount}</b>
+                )}
+              </a>
+            );
+          })}
         </nav>
       </aside>
       <main className="app-main">
