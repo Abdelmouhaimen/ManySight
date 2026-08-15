@@ -184,8 +184,9 @@ Two teaching paths are offered once the four demo sources are ready:
 
 - **Set it up automatically** presents the prepared demo plan, placements, and imported
   calibrations.
-- **Show me how** navigates to the real Setup area and spotlights the actual
-  **Digitize plan** control, then the actual **Calibrate camera** control for Camera 1.
+- **Show me how** navigates to the real Setup area — `#setup/space`, then
+  `#setup/cameras` — and spotlights the actual **Digitize plan** control, then the
+  actual **Calibrate camera** control for Camera 1.
   The user works in the real digitizer and the real calibration dialog; the tour never
   substitutes its own controls. Both the digitizer canvas and the calibration dialog's
   floor map keep the bird's-eye plan behind them, so matching points has a recognisable

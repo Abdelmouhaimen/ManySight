@@ -1,7 +1,8 @@
 # Workspace reinitialization and space revisions
 
 StoreLens separates spatial setup from observation history. Destructive actions require
-exact confirmation text in Setup → Reinitialize and run in one SQLite transaction.
+exact confirmation text in Setup → Advanced → Danger zone and run in one SQLite
+transaction.
 
 ## Reinitialize space
 

@@ -92,9 +92,35 @@ Once running:
 | Agent guide | <http://127.0.0.1:8000/agent.md> |
 | Agent workspace snapshot | <http://127.0.0.1:8000/api/v1/agent/workspace> |
 
-The default SQLite database is `data/storelens.db`. Use the dashboard's
-**Setup** section to define the workspace, trace a floor plan, create zones, add
-sources, and calibrate cameras.
+The default SQLite database is `data/storelens.db`.
+
+### Finding your way around ManySight
+
+The dashboard has six areas, each answering one question:
+
+| Area | Answers | Contains |
+|---|---|---|
+| **Dashboard** | What am I monitoring? | Saved result views, rendered server-side |
+| **Live** | What is happening now? | The floor map, current tracks, Combined / Per camera |
+| **Review** | What needs attention? | **Alerts** (fired occurrences) and **Rules** (the conditions) |
+| **Observations** | What raw evidence exists? | Filterable raw rows with expandable payloads |
+| **Sources** | Where does data come from, and is it working? | Camera list, per-source detail, add/edit |
+| **Setup** | How is the physical space configured? | **Space** (floor plan, zones), **Cameras** (placement, calibration, combined tracking), **Advanced** |
+
+Add cameras in **Sources**, then trace a floor plan and draw zones in
+**Setup → Space**, then place and calibrate each camera in **Setup → Cameras**.
+Workspace name, workers, API access and the destructive reinitialize operations
+live in **Setup → Advanced**. **Try Demo** in the top bar is the only entry to
+the guided demo.
+
+The interface uses product vocabulary — *alert rule*, *alert*, *combined
+tracking*, *quality* — while the platform keeps its precise internal terms.
+*Combined tracking* is the multiview fusion group; *quality* is the
+known/partial/unknown guarantee; a result whose quality is unknown renders as
+`—`, never as a confident zero. Internal identifiers, raw payloads and
+calibration metadata sit behind **Technical details** and **Advanced**
+disclosures. Agents and the API keep the precise names — see
+[the agent operating surface](docs/agent-surface.md).
 
 ## Try the guided four-camera demo
 

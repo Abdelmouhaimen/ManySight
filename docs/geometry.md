@@ -42,8 +42,8 @@ warnings after a calibration or view changes.
 
 ## Calibration forms
 
-The interactive Setup workflow accepts at least four pixel/map correspondences for a
-floor homography. `POST /api/v1/calibrations/import` accepts richer provider-neutral
+The interactive Setup → Cameras workflow (presented to users as *Camera calibration*)
+accepts at least four pixel/map correspondences for a floor homography. `POST /api/v1/calibrations/import` accepts richer provider-neutral
 world calibration:
 
 - a rank-3 3x4 world-to-pixel projection matrix;
