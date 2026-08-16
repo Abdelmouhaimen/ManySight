@@ -1039,6 +1039,8 @@ def resume_active_sessions() -> int:
 
 def resume_promoted_media() -> bool:
     """Restart the controlled stream process for an existing promoted sandbox."""
+    from . import demo_media
+
     row = _normal_row(
         "SELECT * FROM demo_sessions WHERE status='promoted' ORDER BY updated_at DESC LIMIT 1"
     )
