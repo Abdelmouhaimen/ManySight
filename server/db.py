@@ -17,6 +17,9 @@ _DB_PATH_OVERRIDE: ContextVar[str | None] = ContextVar("manysight_db_path", defa
 _DB_CONNECTION_OVERRIDE: ContextVar[sqlite3.Connection | None] = ContextVar(
     "manysight_db_connection", default=None,
 )
+_DB_TRANSIENT_CONNECTIONS: ContextVar[bool] = ContextVar(
+    "manysight_db_transient_connections", default=False,
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stores (
@@ -470,16 +473,22 @@ def current_db_path() -> str:
 
 
 @contextmanager
-def using_database(path: str):
+def using_database(path: str, *, close_on_exit: bool = False):
     """Temporarily route all db helpers to one isolated SQLite workspace.
 
     Context variables are async-task local, so concurrent demo requests cannot
     leak rows into the normal workspace or into another demo session.
     """
     token = _DB_PATH_OVERRIDE.set(os.path.abspath(path))
+    transient_token = _DB_TRANSIENT_CONNECTIONS.set(
+        close_on_exit or _DB_TRANSIENT_CONNECTIONS.get()
+    )
     try:
         yield
     finally:
+        if close_on_exit:
+            close_pooled_connections(path)
+        _DB_TRANSIENT_CONNECTIONS.reset(transient_token)
         _DB_PATH_OVERRIDE.reset(token)
 
 
@@ -547,15 +556,18 @@ def pooled_connection(path: str | None = None) -> sqlite3.Connection:
     return con
 
 
-def close_pooled_connections() -> None:
-    """Release this thread's pooled connections (shutdown and tests)."""
+def close_pooled_connections(path: str | None = None) -> None:
+    """Release this thread's pooled connections, optionally for one database."""
     connections = getattr(_pool, "connections", None)
     if not connections:
         return
-    for con in connections.values():
+    paths = list(connections) if path is None else [os.path.abspath(path)]
+    for resolved in paths:
+        con = connections.pop(resolved, None)
+        if con is None:
+            continue
         with contextlib.suppress(sqlite3.Error):
             con.close()
-    connections.clear()
 
 
 # SQLite allows one writer at a time. Left to itself, a contended writer is
@@ -585,7 +597,8 @@ def transaction():
     if existing is not None:
         yield existing
         return
-    con = pooled_connection()
+    transient = _DB_TRANSIENT_CONNECTIONS.get()
+    con = connect() if transient else pooled_connection()
     lock = write_lock()
     lock.acquire()
     token = _DB_CONNECTION_OVERRIDE.set(con)
@@ -598,6 +611,8 @@ def transaction():
     finally:
         _DB_CONNECTION_OVERRIDE.reset(token)
         lock.release()
+        if transient:
+            con.close()
 
 
 def init_db(path: str | None = None):
@@ -979,8 +994,15 @@ def active_connection() -> sqlite3.Connection | None:
 
 
 def q(sql: str, args=()) -> list[dict]:
-    con = _DB_CONNECTION_OVERRIDE.get() or pooled_connection()
-    return [dict(r) for r in con.execute(sql, args).fetchall()]
+    con = _DB_CONNECTION_OVERRIDE.get()
+    transient = con is None and _DB_TRANSIENT_CONNECTIONS.get()
+    if con is None:
+        con = connect() if transient else pooled_connection()
+    try:
+        return [dict(r) for r in con.execute(sql, args).fetchall()]
+    finally:
+        if transient:
+            con.close()
 
 
 def q1(sql: str, args=()) -> dict | None:
@@ -1004,8 +1026,9 @@ def _note_write(sql: str) -> None:
 def ex(sql: str, args=()) -> int:
     con = _DB_CONNECTION_OVERRIDE.get()
     owned = con is None
+    transient = owned and _DB_TRANSIENT_CONNECTIONS.get()
     if owned:
-        con = pooled_connection()
+        con = connect() if transient else pooled_connection()
         write_lock().acquire()
     try:
         cur = con.execute(sql, args)
@@ -1021,14 +1044,17 @@ def ex(sql: str, args=()) -> int:
     finally:
         if owned:
             write_lock().release()
+        if transient:
+            con.close()
         _note_write(sql)
 
 
 def exmany(sql: str, seq) -> int:
     con = _DB_CONNECTION_OVERRIDE.get()
     owned = con is None
+    transient = owned and _DB_TRANSIENT_CONNECTIONS.get()
     if owned:
-        con = pooled_connection()
+        con = connect() if transient else pooled_connection()
         write_lock().acquire()
     try:
         cur = con.executemany(sql, seq)
@@ -1042,6 +1068,8 @@ def exmany(sql: str, seq) -> int:
     finally:
         if owned:
             write_lock().release()
+        if transient:
+            con.close()
         _note_write(sql)
 
 

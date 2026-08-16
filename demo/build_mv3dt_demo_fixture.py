@@ -189,7 +189,7 @@ def build_cache(raw_path: Path = DEFAULT_RAW, recipe_path: Path = DEFAULT_RECIPE
         # Derivation must not inherit live bookkeeping from an earlier build in
         # the same process (the tests build two caches back to back).
         realtime.coordinator.reset()
-        with db.using_database(str(workspace)):
+        with db.using_database(str(workspace), close_on_exit=True):
             _actions, setup = demo_runtime._setup_workspace(
                 workspace, "fixture-builder", "http://fixture.invalid")
             source_ids = setup["source_ids"]
@@ -290,7 +290,6 @@ def build_cache(raw_path: Path = DEFAULT_RAW, recipe_path: Path = DEFAULT_RECIPE
                     "projected_polygon_m": db.jload(item["projected_map_polygon_json"], []),
                 } for item in provenance],
             }
-
     payload_hash = canonical_hash({"geometry": geometry, "timeline": timeline})
     generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     cache = {

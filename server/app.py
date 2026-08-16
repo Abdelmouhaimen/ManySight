@@ -156,7 +156,7 @@ class DemoWorkspaceGuard:
         if workspace_path is None:
             response = JSONResponse({"detail": "demo session is not active"}, status_code=409)
             return await response(scope, receive, send)
-        with db.using_database(workspace_path):
+        with db.using_database(workspace_path, close_on_exit=True):
             return await self.app(scope, receive, send)
 
 

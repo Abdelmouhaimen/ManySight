@@ -17,19 +17,19 @@ playable runtime:    one master clock → video + boxes + cached ManySight state
 Playable runtime is not live fusion and is not a worker. It does no inference, ongoing
 projection, multiview optimization, query recomputation, or alert evaluation.
 
-## Install optional NVIDIA media
+## Runtime media for normal users
 
-ManySight does not redistribute NVIDIA videos or model weights:
+A fresh clone includes the only five media files the guided demo needs:
+`demo/assets/guided_demo/map.png` and the four camera recordings in its `videos/`
+directory. After installing dependencies and starting ManySight, select **Try Demo**;
+there is no separate dataset download, temporary directory, or asset-path configuration.
 
-```powershell
-python demo/fetch_nvidia_mv3dt.py
-```
+The bundle deliberately excludes the other eight camera recordings and all full-dataset
+support files. Its source, exact scope, and third-party licensing boundary are recorded
+in [`demo/assets/guided_demo/README.md`](../demo/assets/guided_demo/README.md).
 
-The fetcher downloads NVIDIA's archive, prints its SHA-256, rejects unsafe archive
-paths, and installs the dataset below ignored `data/demo-assets/`. Use
-`MANYSIGHT_DEMO_ASSET_DIR` for another extracted `datasets/mtmc_12cam` path. Review the
-applicable NVIDIA terms; ManySight's repository license does not grant rights to that
-media.
+`MANYSIGHT_DEMO_ASSET_DIR` is an explicit developer override for testing a different
+four-camera media root. It is never required for normal guided-demo playback.
 
 ## Raw detection fixture
 
@@ -53,8 +53,13 @@ Validate the fixture without model dependencies:
 python demo/validate_mv3dt_fixture.py demo/fixtures/nvidia_mv3dt_yolo11n_bytetrack.jsonl
 ```
 
-Regenerating detections is an offline maintainer operation requiring the downloaded
-dataset, YOLO weights, Ultralytics, OpenCV, and PyTorch:
+## Maintainer rebuilds
+
+The full twelve-camera NVIDIA `mtmc_12cam` dataset is not part of the ManySight
+repository. It is a maintainer-only dependency for regenerating the raw fixture or
+revalidating cache provenance against the original recordings. Obtain it separately,
+then run the fetch helper or provide its extracted path directly. Regenerating detections
+also requires YOLO weights, Ultralytics, OpenCV, and PyTorch:
 
 ```powershell
 python demo/generate_mv3dt_fixture.py `
@@ -75,6 +80,11 @@ evaluation at 10 Hz. It writes
 python demo/build_mv3dt_demo_fixture.py `
   --asset-root C:\path\to\datasets\mtmc_12cam
 ```
+
+The explicit `--asset-root` remains the canonical maintainer path for rebuilding with
+the full source dataset. The bundled four-camera media is enough for normal playback;
+it does not weaken replay provenance validation. When a derivation input changes, the
+committed replay becomes stale until a maintainer rebuilds and commits it.
 
 The artifact records raw-fixture, recipe, media, geometry, fusion configuration,
 derivation-code, and canonical payload hashes. The builder uses a deterministic

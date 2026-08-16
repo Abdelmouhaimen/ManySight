@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "demo" / "fixtures" / "nvidia_mv3dt_yolo11n_bytetrack.jsonl"
 RECIPE = ROOT / "demo" / "fixtures" / "nvidia_mv3dt_recipe.json"
 DERIVED_CACHE = ROOT / "demo" / "fixtures" / "nvidia_mv3dt_derived_replay.json"
+BUNDLED_ASSET_ROOT = ROOT / "demo" / "assets" / "guided_demo"
+DEMO_CAMERA_KEYS = tuple(f"Warehouse_Synthetic_Cam{i:03d}" for i in range(1, 5))
 DERIVATION_FILES = [
     ROOT / "server" / "routers" / "observations.py",
     ROOT / "server" / "services" / "enrich.py",
@@ -29,10 +31,6 @@ DERIVATION_FILES = [
     ROOT / "server" / "routers" / "analytics_query.py",
     ROOT / "server" / "services" / "alert_engine.py",
 ]
-UPSTREAM_ARCHIVE = (
-    "https://github.com/NVIDIA/DeepStream/raw/refs/heads/main/"
-    "src/apps/reference_apps/deepstream-tracker-3d-multi-view/assets/datasets.zip"
-)
 SESSION_ROOT = Path(tempfile.gettempdir()) / "manysight-demo-sessions"
 ACTIVE_STATES = {"ready", "running", "paused"}
 logger = logging.getLogger("manysight.demo")
@@ -120,12 +118,9 @@ def load_derived_cache() -> dict:
 
 
 def resolve_asset_root(explicit: str | None = None) -> Path | None:
-    candidates = [
-        explicit,
-        os.environ.get("MANYSIGHT_DEMO_ASSET_DIR"),
-        str(ROOT / "data" / "demo-assets" / "datasets" / "mtmc_12cam"),
-        str(Path(tempfile.gettempdir()) / "manysight-demo-assets" / "datasets" / "mtmc_12cam"),
-    ]
+    """Resolve the self-contained runtime bundle, or an explicit developer override."""
+    developer_override = explicit or os.environ.get("MANYSIGHT_DEMO_ASSET_DIR")
+    candidates = [developer_override, BUNDLED_ASSET_ROOT]
     for value in candidates:
         if not value:
             continue
@@ -133,8 +128,7 @@ def resolve_asset_root(explicit: str | None = None) -> Path | None:
         videos = root / "videos"
         if (
             (root / "map.png").is_file()
-            and all((videos / f"Warehouse_Synthetic_Cam{i:03d}.mp4").is_file() for i in range(1, 5))
-            and (root / "camInfo" / "Warehouse_Synthetic_Cam012.yml").is_file()
+            and all((videos / f"{camera}.mp4").is_file() for camera in DEMO_CAMERA_KEYS)
         ):
             return root
     return None
@@ -142,6 +136,7 @@ def resolve_asset_root(explicit: str | None = None) -> Path | None:
 
 def asset_status() -> dict:
     root = resolve_asset_root()
+    bundled_root = BUNDLED_ASSET_ROOT.resolve()
     cache_ready = True
     cache_error = None
     try:
@@ -153,10 +148,12 @@ def asset_status() -> dict:
     return {
         "available": root is not None and cache_ready,
         "dataset": "NVIDIA DeepStream MV3DT mtmc_12cam synthetic warehouse sample (cameras 1-4)",
-        "download_url": UPSTREAM_ARCHIVE,
-        "install_command": "python demo/fetch_nvidia_mv3dt.py",
-        "environment_variable": "MANYSIGHT_DEMO_ASSET_DIR",
-        "redistributed_by_manysight": False,
+        "asset_source": (
+            "repository_bundle" if root == bundled_root
+            else "developer_override" if root is not None else None
+        ),
+        "runtime_media": "four camera videos and one bird's-eye plan",
+        "redistributed_by_manysight": True,
         "bird_view_available": root is not None,
         "derived_cache_available": cache_ready,
         "derived_cache": cache_metadata,
@@ -217,7 +214,7 @@ def _public(row: dict) -> dict:
     workspace = Path(row["workspace_path"])
     if workspace.is_file():
         usage["database_bytes"] = workspace.stat().st_size
-        with db.using_database(str(workspace)):
+        with db.using_database(str(workspace), close_on_exit=True):
             usage["observations"] = db.q1("SELECT COUNT(*) n FROM events")["n"]
             usage["fused_observations"] = db.q1("SELECT COUNT(*) n FROM fused_observations")["n"]
     result = db.jload(row["result_json"], {})
@@ -229,7 +226,7 @@ def _public(row: dict) -> dict:
     if result.get("zone_id"):
         workspace = Path(row["workspace_path"])
         if workspace.is_file():
-            with db.using_database(str(workspace)):
+            with db.using_database(str(workspace), close_on_exit=True):
                 traced_sources = {view["source_id"] for view in db.q(
                     "SELECT source_id FROM zone_views WHERE zone_id=?", (result["zone_id"],))}
     result["camera_overlays"] = {
@@ -297,7 +294,7 @@ def _setup_space(path: Path, session_id: str, base_url: str) -> tuple[list, dict
     log: list[dict] = []
     _action(log, "Inspect workspace", {"workspace": "isolated demo"},
             "Confirmed that guided-demo changes are isolated from the normal ManySight workspace.")
-    with db.using_database(str(path)):
+    with db.using_database(str(path), close_on_exit=True):
         configured = store.update_store(store.StorePatch(
             name=recipe["store"]["name"], space_type=recipe["store"]["space_type"],
             environment="demo", width_m=recipe["store"]["width_m"],
@@ -474,7 +471,7 @@ REQUEST_STAGE_ORDER = list(REQUEST_STAGES)
 def _apply_request(path: Path, log: list, result: dict) -> tuple[list, dict]:
     """Apply every request stage in order, in one workspace context."""
     recipe = load_recipe()
-    with db.using_database(str(path)):
+    with db.using_database(str(path), close_on_exit=True):
         for stage in REQUEST_STAGE_ORDER:
             REQUEST_STAGES[stage][0](recipe, result, log)
     return log, result
@@ -515,6 +512,7 @@ def create_session(base_url: str, mode: str = "guided") -> dict:
             log, result = _setup_workspace(workspace_path, session_id, base_url.rstrip("/"))
         result["derived_replay"] = cache["metadata"]
     except Exception:
+        db.close_pooled_connections(str(workspace_path))
         shutil.rmtree(workspace_dir, ignore_errors=True)
         raise
     now = db.now()
@@ -553,7 +551,7 @@ def apply_request_stage(session_id: str, stage: str) -> dict:
             raise HTTPException(409, f"demo request stage '{earlier}' must be applied first")
     if already_applied(result):
         return {"session_id": session_id, "stage": stage, "applied": False, "result": result}
-    with db.using_database(row["workspace_path"]):
+    with db.using_database(row["workspace_path"], close_on_exit=True):
         apply_stage(load_recipe(), result, log)
     _normal_ex(
         "UPDATE demo_sessions SET action_log_json=?,result_json=?,updated_at=? WHERE id=?",
@@ -686,7 +684,7 @@ def restore_practice_calibration(session_id: str, source_id: int) -> dict:
         raise HTTPException(409, "practice calibration requires an active demo")
     if not _session_cache_current(row):
         raise HTTPException(409, "demo session belongs to an obsolete derived cache")
-    with db.using_database(row["workspace_path"]):
+    with db.using_database(row["workspace_path"], close_on_exit=True):
         source = db.q1("SELECT * FROM sources WHERE id=?", (source_id,))
         if not source:
             raise HTTPException(404, "demo source not found")
@@ -739,7 +737,7 @@ def restore_practice_space(session_id: str) -> dict:
     if not _session_cache_current(row):
         raise HTTPException(409, "demo session belongs to an obsolete derived cache")
     recipe = load_recipe()
-    with db.using_database(row["workspace_path"]):
+    with db.using_database(row["workspace_path"], close_on_exit=True):
         current = db.q1("SELECT * FROM stores WHERE id=1")
         practice_trace = db.jload(current["map_json"], {}).get("blueprint_trace")
         comparison = {
@@ -836,6 +834,7 @@ async def discard(session_id: str) -> dict:
     workspace = Path(row["workspace_path"]).resolve().parent
     if SESSION_ROOT.resolve() not in workspace.parents:
         raise HTTPException(500, "refusing to remove an invalid demo workspace path")
+    db.close_pooled_connections(row["workspace_path"])
     shutil.rmtree(workspace, ignore_errors=False)
     _normal_ex("UPDATE demo_sessions SET status='discarded',updated_at=? WHERE id=?", (db.now(), session_id))
     logger.info("demo session discarded", extra={"demo_session_id": session_id})
@@ -851,6 +850,7 @@ def cleanup_expired(now: float | None = None) -> int:
     for row in expired:
         workspace = Path(row["workspace_path"]).resolve().parent
         if SESSION_ROOT.resolve() in workspace.parents and workspace.exists():
+            db.close_pooled_connections(row["workspace_path"])
             shutil.rmtree(workspace, ignore_errors=True)
         _normal_ex("UPDATE demo_sessions SET status='expired',updated_at=? WHERE id=?",
                    (cutoff, row["id"]))
@@ -902,11 +902,11 @@ async def promote(session_id: str, base_url: str, include_observations: bool = F
             batch, _ = detection_sample_batch(sample)
             observations.extend(batch.observations)
         if observations:
-            with db.using_database(row["workspace_path"]):
+            with db.using_database(row["workspace_path"], close_on_exit=True):
                 result, _ = await ingest_observations(ObservationBatch(observations=observations))
             if result["rejected"]:
                 raise HTTPException(500, "could not materialize opted-in demo observations")
-    with db.using_database(row["workspace_path"]):
+    with db.using_database(row["workspace_path"], close_on_exit=True):
         demo_store = db.q1("SELECT * FROM stores WHERE id=1")
         demo_sources = db.q("SELECT * FROM sources ORDER BY id")
         demo_calibrations = db.q("SELECT * FROM camera_calibrations ORDER BY source_id")
@@ -1013,6 +1013,7 @@ async def promote(session_id: str, base_url: str, include_observations: bool = F
     _normal_ex("UPDATE demo_sessions SET status='promoted',updated_at=? WHERE id=?", (db.now(), session_id))
     workspace = Path(row["workspace_path"]).resolve().parent
     if SESSION_ROOT.resolve() in workspace.parents:
+        db.close_pooled_connections(row["workspace_path"])
         shutil.rmtree(workspace, ignore_errors=True)
     logger.info(
         "demo promotion succeeded",

@@ -130,12 +130,10 @@ videos, exact frame boxes, interpolated fused positions, stepwise KPI, and alert
 from that committed derived cache. Runtime needs neither a GPU nor model weights and
 runs in an isolated temporary workspace.
 
-ManySight does not redistribute the NVIDIA media. Install it locally on demand, start
-ManySight, then select **Try Demo**:
-
-```powershell
-python demo/fetch_nvidia_mv3dt.py
-```
+The exact four camera recordings and bird's-eye plan required at runtime are committed
+under `demo/assets/guided_demo/`. A normal clone only needs the standard install and
+server command above; then select **Try Demo**. It does not download the full NVIDIA
+dataset, require a GPU, or need an asset-path environment variable.
 
 The fixed walkthrough alerts when at least two anonymous fused tracks are in either of
 the camera-authored Aisle 04 footprint.
@@ -297,6 +295,7 @@ commits.
 
 ManySight is released under the [Apache License 2.0](LICENSE).
 
-The bundled guided demo can download NVIDIA sample media on request. That media is
-covered by NVIDIA's own terms, is never committed to this repository, and is not
-redistributed under this license.
+The guided-demo runtime media is third-party NVIDIA sample media redistributed with
+maintainer-confirmed permission. Its source and scope are documented in
+[`demo/assets/guided_demo/README.md`](demo/assets/guided_demo/README.md); it is not
+relicensed under Apache-2.0.

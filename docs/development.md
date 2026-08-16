@@ -50,7 +50,7 @@ registry file path.
 | `MANYSIGHT_SQLITE_SYNCHRONOUS` | `NORMAL` (default) or `FULL`. See [the realtime pipeline](realtime-pipeline.md) for what each guarantees and what FULL costs. |
 | `MANYSIGHT_INLINE_INGEST_MAX_OBSERVATIONS` | Batches at or below this size are processed on the event loop; larger ones go to the pipeline thread. Defaults to 64. |
 | `MANYSIGHT_INLINE_INGEST_LOCK_WAIT_S` | How long an inline batch waits for the write lock before offloading itself; defaults to 0.25 s. |
-| `MANYSIGHT_DEMO_ASSET_DIR` | Optional local path to extracted NVIDIA `datasets/mtmc_12cam` assets. The demo uses cameras 1-4. |
+| `MANYSIGHT_DEMO_ASSET_DIR` | Optional explicit developer override for the committed guided-demo media. Normal users should leave it unset: **Try Demo** uses `demo/assets/guided_demo/`. |
 | `MANYSIGHT_DEMO_STREAM_PORT` | Loopback port for the post-promotion synchronized demo stream supervisor; defaults to 8765. |
 | `MANYSIGHT_ENDPOINT_CONFIG` | Optional path to an endpoint registry JSON file. |
 | `MANYSIGHT_ENDPOINT_PROFILE` | Endpoint profile name; defaults to the registry's active profile. |
@@ -126,6 +126,7 @@ database and must not be used against retained data.
 `demo/loop_video_stream.py` loops a local video as an MJPEG endpoint for development.
 It is not a camera gateway or a required ManySight service. See `demo/README.md`.
 
-The separate [guided demo](guided-demo.md) uses an isolated database and a committed
-numerical replay fixture. Its NVIDIA media is downloaded on demand and remains ignored.
-The four-camera synchronized MJPEG supervisor starts only after setup promotion.
+The separate [guided demo](guided-demo.md) uses an isolated database, a committed
+numerical replay fixture, and a committed four-camera runtime-media bundle. The full
+NVIDIA source dataset is maintainer-only input for fixture regeneration. The four-camera
+synchronized MJPEG supervisor starts only after setup promotion.

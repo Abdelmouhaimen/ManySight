@@ -129,11 +129,11 @@
     "zone_name": "Aisle 04"
   },
   "metadata": {
-    "derivation_code_hash": "4b4b52f3a8175c9e61899ada4416ded48d49fd3f8580f13cf2816bd40a691157",
+    "derivation_code_hash": "d1696011901ebdd6253850de89f974a455f7e9132f8ebd3c8722f9edcef66b57",
     "duration_s": 20.066666666666666,
     "fixture_version": 3,
     "fusion_config_hash": "9a65ff1c129d0712e8a8ffa22f61cb6c742227e0c45ddeb1ba7f4db7a3ea8ac1",
-    "generated_at": "2026-08-16T20:38:40+00:00",
+    "generated_at": "2026-08-16T23:11:35+00:00",
     "geometry_hash": "072ba23e23cf8e3a2a158cb778e2579b26ca75f3eddfe14678c497e9ffdac33a",
     "manysight_observation_schema_version": 2,
     "media": {

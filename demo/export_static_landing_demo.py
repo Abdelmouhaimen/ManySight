@@ -318,9 +318,8 @@ def export(output: Path, asset_root: Path | None, skip_media: bool) -> dict:
         root = Path(asset_root).expanduser().resolve() if asset_root else demo_runtime.resolve_asset_root()
         if root is None:
             raise ExportError(
-                "the source dataset is not installed, so the videos cannot be exported.\n"
-                "Install it with `python demo/fetch_nvidia_mv3dt.py`, point "
-                "MANYSIGHT_DEMO_ASSET_DIR at it, or pass --assets PATH.\n"
+                "the guided-demo runtime bundle is unavailable, so the videos cannot be exported.\n"
+                "Restore the committed bundle or pass --assets PATH for an explicit developer override.\n"
                 "Use --skip-media to write only manifest.json and replay.json."
             )
         written.extend(copy_media(recipe, output, root))
@@ -333,7 +332,7 @@ def main(argv=None) -> int:
     parser.add_argument("--output", required=True, type=Path,
                         help="directory to write the bundle into, e.g. ../landing/public/demo")
     parser.add_argument("--assets", type=Path, default=None,
-                        help="source dataset root; defaults to the usual demo asset locations")
+                        help="explicit developer media root; defaults to the committed guided-demo bundle")
     parser.add_argument("--skip-media", action="store_true",
                         help="write only manifest.json and replay.json")
     args = parser.parse_args(argv)

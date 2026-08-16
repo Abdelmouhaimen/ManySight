@@ -14,14 +14,31 @@ def _assets(tmp_path: Path, monkeypatch) -> Path:
     root = tmp_path / "assets"
     videos = root / "videos"
     videos.mkdir(parents=True)
-    cam_info = root / "camInfo"
-    cam_info.mkdir()
     for camera in CAMERAS:
         (videos / f"{camera}.mp4").write_bytes(b"test-media")
     (root / "map.png").write_bytes(b"test-bird-view")
-    (cam_info / "Warehouse_Synthetic_Cam012.yml").write_text("dataset sentinel", encoding="utf-8")
     monkeypatch.setenv("MANYSIGHT_DEMO_ASSET_DIR", str(root))
     return root
+
+
+def test_repository_bundle_is_the_default_demo_runtime_media(client):
+    from server.services import demo_runtime
+
+    assert demo_runtime.resolve_asset_root() == demo_runtime.BUNDLED_ASSET_ROOT.resolve()
+    assets = client.get("/api/v1/demo/assets")
+    assert assets.status_code == 200
+    assert assets.json()["available"] is True
+    assert assets.json()["asset_source"] == "repository_bundle"
+
+
+def test_repository_bundle_videos_match_the_committed_replay_provenance():
+    from server.services import demo_runtime
+
+    media = demo_runtime.load_derived_cache()["metadata"]["media"]
+    root = demo_runtime.BUNDLED_ASSET_ROOT
+    for camera in CAMERAS:
+        digest = demo_runtime._sha256(root / "videos" / f"{camera}.mp4")
+        assert digest == media[camera]["sha256"]
 
 
 def test_canonical_fixture_is_synchronized_and_worker_raw_only():

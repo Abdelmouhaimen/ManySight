@@ -1,4 +1,4 @@
-"""Download and safely extract NVIDIA's optional MV3DT demo assets locally."""
+"""Download and safely extract the full NVIDIA MV3DT dataset for maintainer rebuilds."""
 from __future__ import annotations
 
 import argparse
