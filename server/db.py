@@ -1,9 +1,12 @@
 """SQLite storage layer for StoreLens. Plain sqlite3, WAL mode, dict rows."""
+import contextlib
 import hashlib
 import json
 import os
 import sqlite3
+import threading
 import time
+from collections import OrderedDict
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -480,14 +483,99 @@ def using_database(path: str):
         _DB_PATH_OVERRIDE.reset(token)
 
 
+# Durability of a commit, in WAL mode.
+#
+#   NORMAL (default) — the commit is written to the WAL before the request
+#     returns, but not fsync'd. The database is never corrupted, and accepted
+#     evidence survives a crash of this process; a host power loss or kernel
+#     panic can lose the most recent transactions.
+#   FULL — fsync on every commit, so a committed sample survives power loss.
+#     Measured cost on ordinary hardware is roughly 5 ms per commit, i.e. a
+#     ceiling near 200 commits/second for the whole workspace. A 4 x 60 FPS
+#     deployment submits 240 samples/second and cannot be served under it.
+#
+# Set STORELENS_SQLITE_SYNCHRONOUS=FULL where power-loss durability of the last
+# few frames matters more than keeping up with the cameras.
+SYNCHRONOUS = os.environ.get("STORELENS_SQLITE_SYNCHRONOUS", "NORMAL").upper()
+if SYNCHRONOUS not in {"OFF", "NORMAL", "FULL", "EXTRA"}:
+    SYNCHRONOUS = "NORMAL"
+
+
 def connect(path: str | None = None) -> sqlite3.Connection:
+    """Open a new dedicated connection. The caller owns and closes it."""
     resolved = os.path.abspath(path or current_db_path())
     os.makedirs(os.path.dirname(resolved), exist_ok=True)
     con = sqlite3.connect(resolved, timeout=15)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
+    con.execute(f"PRAGMA synchronous={SYNCHRONOUS}")
     con.execute("PRAGMA foreign_keys=ON")
     return con
+
+
+# Closing the last connection to a WAL database runs a checkpoint and removes
+# the -wal file. The helpers below used to open and close a connection per call,
+# so every read and every write paid for a checkpoint — measured at ~4.7 ms,
+# which alone put a ceiling of a couple of hundred operations per second on the
+# whole pipeline. They now borrow a long-lived connection instead.
+#
+# The pool is thread-local: sqlite3 connections are not safe to share between
+# threads, and FastAPI runs sync endpoints and `asyncio.to_thread` work on a
+# thread pool, so a handful of connections per workspace is all that exists.
+# A small per-thread bound keeps a long test session or a series of demo
+# workspaces from accumulating file handles.
+POOL_SIZE_PER_THREAD = 4
+_pool = threading.local()
+
+
+def pooled_connection(path: str | None = None) -> sqlite3.Connection:
+    """The calling thread's long-lived connection for one database path."""
+    resolved = os.path.abspath(path or current_db_path())
+    connections = getattr(_pool, "connections", None)
+    if connections is None:
+        connections = _pool.connections = OrderedDict()
+    con = connections.get(resolved)
+    if con is None:
+        con = connect(resolved)
+        connections[resolved] = con
+        while len(connections) > POOL_SIZE_PER_THREAD:
+            _, evicted = connections.popitem(last=False)
+            with contextlib.suppress(sqlite3.Error):
+                evicted.close()
+    else:
+        connections.move_to_end(resolved)
+    return con
+
+
+def close_pooled_connections() -> None:
+    """Release this thread's pooled connections (shutdown and tests)."""
+    connections = getattr(_pool, "connections", None)
+    if not connections:
+        return
+    for con in connections.values():
+        with contextlib.suppress(sqlite3.Error):
+            con.close()
+    connections.clear()
+
+
+# SQLite allows one writer at a time. Left to itself, a contended writer is
+# parked by the busy handler, which sleeps in growing steps (1, 2, 5, 10 ... ms)
+# and so pays far more than the lock was actually held for. Four camera threads
+# plus a fusion tick hit that constantly. Since one process owns a workspace
+# (see services/realtime.py), an in-process mutex per database orders writers
+# fairly and hands the lock over the moment it is free. The busy timeout stays
+# as the backstop for the rare writer outside this path.
+_write_lock_registry: dict[str, threading.RLock] = {}
+_write_lock_registry_guard = threading.Lock()
+
+
+def write_lock(path: str | None = None) -> threading.RLock:
+    resolved = os.path.abspath(path or current_db_path())
+    lock = _write_lock_registry.get(resolved)
+    if lock is None:
+        with _write_lock_registry_guard:
+            lock = _write_lock_registry.setdefault(resolved, threading.RLock())
+    return lock
 
 
 @contextmanager
@@ -497,7 +585,9 @@ def transaction():
     if existing is not None:
         yield existing
         return
-    con = connect()
+    con = pooled_connection()
+    lock = write_lock()
+    lock.acquire()
     token = _DB_CONNECTION_OVERRIDE.set(con)
     try:
         yield con
@@ -507,7 +597,7 @@ def transaction():
         raise
     finally:
         _DB_CONNECTION_OVERRIDE.reset(token)
-        con.close()
+        lock.release()
 
 
 def init_db(path: str | None = None):
@@ -744,6 +834,18 @@ def init_db(path: str | None = None):
 
 
 def current_space_revision_id() -> int:
+    """The active space revision, cached until a configuration write occurs.
+
+    Read several times per observation (validation, enrichment, every insert),
+    so at 240 samples/second the uncached version was thousands of queries a
+    second for a value that only changes when the space is reinitialized — a
+    write to `stores`, which invalidates the configuration cache.
+    """
+    from .services import config_cache
+    return config_cache.current_space_revision_id()
+
+
+def read_current_space_revision_id() -> int:
     row = q1("SELECT current_space_revision_id FROM stores WHERE id=1")
     return int(row["current_space_revision_id"] if row else 1)
 
@@ -868,13 +970,8 @@ def active_connection() -> sqlite3.Connection | None:
 
 
 def q(sql: str, args=()) -> list[dict]:
-    con = _DB_CONNECTION_OVERRIDE.get() or connect()
-    owned = _DB_CONNECTION_OVERRIDE.get() is None
-    try:
-        return [dict(r) for r in con.execute(sql, args).fetchall()]
-    finally:
-        if owned:
-            con.close()
+    con = _DB_CONNECTION_OVERRIDE.get() or pooled_connection()
+    return [dict(r) for r in con.execute(sql, args).fetchall()]
 
 
 def q1(sql: str, args=()) -> dict | None:
@@ -896,31 +993,47 @@ def _note_write(sql: str) -> None:
 
 
 def ex(sql: str, args=()) -> int:
-    con = _DB_CONNECTION_OVERRIDE.get() or connect()
-    owned = _DB_CONNECTION_OVERRIDE.get() is None
+    con = _DB_CONNECTION_OVERRIDE.get()
+    owned = con is None
+    if owned:
+        con = pooled_connection()
+        write_lock().acquire()
     try:
         cur = con.execute(sql, args)
         if owned:
             con.commit()
         return cur.lastrowid
-    finally:
-        _note_write(sql)
+    except Exception:
         if owned:
-            con.close()
+            # A pooled connection outlives the call; never leave a partial
+            # statement for the next caller to commit by accident.
+            con.rollback()
+        raise
+    finally:
+        if owned:
+            write_lock().release()
+        _note_write(sql)
 
 
 def exmany(sql: str, seq) -> int:
-    con = _DB_CONNECTION_OVERRIDE.get() or connect()
-    owned = _DB_CONNECTION_OVERRIDE.get() is None
+    con = _DB_CONNECTION_OVERRIDE.get()
+    owned = con is None
+    if owned:
+        con = pooled_connection()
+        write_lock().acquire()
     try:
         cur = con.executemany(sql, seq)
         if owned:
             con.commit()
         return cur.rowcount
-    finally:
-        _note_write(sql)
+    except Exception:
         if owned:
-            con.close()
+            con.rollback()
+        raise
+    finally:
+        if owned:
+            write_lock().release()
+        _note_write(sql)
 
 
 def jload(s, default=None):

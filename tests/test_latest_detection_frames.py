@@ -113,6 +113,9 @@ def test_batch_sse_preserves_detection_then_frame_marker_order(client, calibrate
     from server.services.sse import broker
 
     published = []
+    # Ingestion skips building SSE payloads when nobody is listening, so a test
+    # about what subscribers receive has to say that someone is.
+    monkeypatch.setattr(broker, "has_subscribers", lambda: True)
     monkeypatch.setattr(broker, "publish", lambda event, data: published.append((event, data)))
     payload = frame_batch(calibrated_source, 1000.0, ["A", "B"], "ordered")
     response = client.post("/api/v1/observations/batch", json=payload)

@@ -88,32 +88,42 @@ def test_static_observation_routes_registered_before_dynamic_id_route():
         )
 
 
-def test_observation_processing_yields_to_the_event_loop(monkeypatch):
-    """Replay ingestion must not freeze setup/calibration HTTP requests."""
-    from server.routers import observations
-
-    started = threading.Event()
-    release = threading.Event()
-
-    def slow_processing(_batch):
-        started.set()
-        assert release.wait(timeout=2)
-        return (
-            {"accepted": 1, "duplicates": 0, "rejected": [], "alerts": 0,
-             "completed_samples": 0},
-            [], [], {}, [],
-        )
-
-    monkeypatch.setattr(observations, "_process_observations", slow_processing)
-    batch = observations.ObservationBatch(observations=[observations.ObservationIn(
+def _blocking_batch(observations, count):
+    return observations.ObservationBatch(observations=[observations.ObservationIn(
         schema_version=2,
-        observation_id="non-blocking-ingestion",
+        observation_id=f"non-blocking-ingestion-{index}",
         kind="measurement",
         timestamp=1000.0,
         source_id=1,
         name="test",
         value=1,
-    )])
+    ) for index in range(count)])
+
+
+def _slow_processing(started, release, accepted):
+    def process(_batch):
+        started.set()
+        assert release.wait(timeout=2)
+        return (
+            {"accepted": accepted, "duplicates": 0, "rejected": [], "alerts": 0,
+             "completed_samples": 0},
+            [], [], {}, [],
+        )
+    return process
+
+
+def test_bulk_observation_processing_yields_to_the_event_loop(monkeypatch):
+    """A backfill must not freeze setup/calibration HTTP requests.
+
+    A batch larger than INLINE_OBSERVATION_LIMIT can hold the interpreter long
+    enough to stall the whole server, so it runs on the pipeline thread.
+    """
+    from server.routers import observations
+
+    started, release = threading.Event(), threading.Event()
+    monkeypatch.setattr(observations, "_process_observations",
+                        _slow_processing(started, release, 1))
+    batch = _blocking_batch(observations, observations.INLINE_OBSERVATION_LIMIT + 1)
 
     async def scenario():
         task = asyncio.create_task(observations.submit_observations(batch))
@@ -126,5 +136,32 @@ def test_observation_processing_yields_to_the_event_loop(monkeypatch):
         release.set()
         result = await task
         assert result["accepted"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_camera_sized_batches_are_processed_inline(monkeypatch):
+    """One processed frame runs on the event loop, on purpose.
+
+    Handing a five-row batch to a worker thread costs more in context switches
+    and GIL hand-off than the work itself: measured over 4 cameras at 60 FPS it
+    cost about a third of achievable throughput and made ingestion latency five
+    times worse. The bound above is what keeps the stall short — this asserts a
+    camera frame is on the inline side of it.
+    """
+    from server.routers import observations
+
+    started, release = threading.Event(), threading.Event()
+    release.set()
+    monkeypatch.setattr(observations, "_process_observations",
+                        _slow_processing(started, release, 6))
+    batch = _blocking_batch(observations, 6)
+
+    async def scenario():
+        task = asyncio.create_task(observations.submit_observations(batch))
+        # The coroutine runs to completion before it ever yields.
+        await asyncio.sleep(0)
+        assert task.done()
+        assert (await task)["accepted"] == 6
 
     asyncio.run(scenario())

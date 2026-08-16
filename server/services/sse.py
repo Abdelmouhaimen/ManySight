@@ -18,12 +18,27 @@ class Broker:
     def unsubscribe(self, q: asyncio.Queue):
         self._clients.pop(q, None)
 
-    def publish(self, event: str, data: dict):
-        msg = f"event: {event}\ndata: {json.dumps(data)}\n\n"
+    def has_subscribers(self) -> bool:
+        """Whether anyone is listening on the caller's workspace channel.
+
+        Serializing a message nobody receives is pure cost, and ingestion emits
+        several per observation. At 240 frames/second with no browser attached
+        that was the single largest item on the hot path.
+        """
+        if not self._clients:
+            return False
         channel = db.current_db_path()
-        for q, subscribed_channel in list(self._clients.items()):
-            if subscribed_channel != channel:
-                continue
+        return any(subscribed == channel for subscribed in self._clients.values())
+
+    def publish(self, event: str, data: dict):
+        if not self._clients:
+            return
+        channel = db.current_db_path()
+        targets = [q for q, subscribed in self._clients.items() if subscribed == channel]
+        if not targets:
+            return
+        msg = f"event: {event}\ndata: {json.dumps(data)}\n\n"
+        for q in targets:
             try:
                 q.put_nowait(msg)
             except asyncio.QueueFull:

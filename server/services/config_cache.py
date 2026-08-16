@@ -54,6 +54,7 @@ _generation = 0
 _geometry: "OrderedDict[tuple[str, int], tuple[int, tuple]]" = OrderedDict()
 _groups: "OrderedDict[str, tuple[int, dict]]" = OrderedDict()
 _alert_rules: "OrderedDict[str, tuple[int, int]]" = OrderedDict()
+_space_revision: "OrderedDict[str, tuple[int, int]]" = OrderedDict()
 _classified: dict[str, bool] = {}
 
 
@@ -70,6 +71,7 @@ def invalidate(_reason: str = "") -> int:
         _geometry.clear()
         _groups.clear()
         _alert_rules.clear()
+        _space_revision.clear()
         return _generation
 
 
@@ -115,6 +117,21 @@ def touches_configuration(sql: str) -> bool:
 def note_write(sql: str) -> None:
     if touches_configuration(sql):
         invalidate(sql)
+
+
+def current_space_revision_id() -> int:
+    """Cached backing for `db.current_space_revision_id()`."""
+    key = db.current_db_path()
+    with _lock:
+        entry = _space_revision.get(key)
+        current = _generation
+    if entry is not None and entry[0] == current:
+        return entry[1]
+    value = db.read_current_space_revision_id()
+    with _lock:
+        if _generation == current:
+            _remember(_space_revision, key, (current, value))
+    return value
 
 
 def _remember(store: OrderedDict, key, value) -> None:

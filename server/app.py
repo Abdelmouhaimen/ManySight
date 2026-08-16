@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers, QueryParams
 
 from . import db
 from .platform_config import resolve as resolve_platform_config
@@ -96,41 +97,70 @@ API_KEY = os.environ.get("STORELENS_API_KEY", "")
 PUBLIC_READS = os.environ.get("STORELENS_PUBLIC_READS", "false").lower() in {"1", "true", "yes"}
 
 
-@app.middleware("http")
-async def api_key_guard(request: Request, call_next):
-    if API_KEY and request.url.path.startswith("/api/") and request.url.path != "/api/v1/health":
+# Both guards are pure ASGI middleware rather than @app.middleware("http").
+# BaseHTTPMiddleware pipes every request and response body through an anyio
+# memory stream in a child task; measured on the 4x60 FPS load test, the two of
+# them together cost about a third of the achievable ingestion throughput.
+# Behaviour, ordering, and responses below are unchanged — only the wrapper is.
+# Reading the scope directly also means the demo workspace ContextVar is set in
+# the same task that runs the endpoint, instead of relying on task-creation
+# context copying.
+
+class ApiKeyGuard:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not API_KEY:
+            return await self.app(scope, receive, send)
+        path, method = scope["path"], scope["method"]
+        if not path.startswith("/api/") or path == "/api/v1/health":
+            return await self.app(scope, receive, send)
         # The connection-resolution endpoint has its own stronger, header-only
         # credential access check. Do not make a distinct credential key also
         # satisfy the general API-key middleware.
-        if request.method == "GET" and request.url.path.startswith("/api/v1/sources/") \
-                and request.url.path.endswith("/connection"):
-            return await call_next(request)
-        if PUBLIC_READS and request.method in {"GET", "HEAD", "OPTIONS"}:
-            return await call_next(request)
-        supplied = request.headers.get("x-api-key") or request.query_params.get("api_key")
+        if method == "GET" and path.startswith("/api/v1/sources/") and path.endswith("/connection"):
+            return await self.app(scope, receive, send)
+        if PUBLIC_READS and method in {"GET", "HEAD", "OPTIONS"}:
+            return await self.app(scope, receive, send)
+        supplied = (Headers(scope=scope).get("x-api-key")
+                    or QueryParams(scope["query_string"]).get("api_key"))
         if supplied != API_KEY:
-            return JSONResponse({"detail": "invalid or missing API key"}, status_code=401)
-    return await call_next(request)
+            response = JSONResponse({"detail": "invalid or missing API key"}, status_code=401)
+            return await response(scope, receive, send)
+        return await self.app(scope, receive, send)
 
 
-@app.middleware("http")
-async def demo_workspace_guard(request: Request, call_next):
+class DemoWorkspaceGuard:
     """Route explicit demo-session API requests to their isolated workspace."""
-    session_id = request.headers.get("x-storelens-demo-session") or request.query_params.get("demo_session")
-    if session_id and request.url.path.startswith("/api/v1/") \
-            and not request.url.path.startswith("/api/v1/demo/"):
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        path = scope["path"]
+        if not path.startswith("/api/v1/") or path.startswith("/api/v1/demo/"):
+            return await self.app(scope, receive, send)
+        session_id = (Headers(scope=scope).get("x-storelens-demo-session")
+                      or QueryParams(scope["query_string"]).get("demo_session"))
+        if not session_id:
+            return await self.app(scope, receive, send)
         workspace_path = demo_runtime.session_database(session_id)
         if workspace_path is None:
-            return JSONResponse({"detail": "demo session is not active"}, status_code=409)
+            response = JSONResponse({"detail": "demo session is not active"}, status_code=409)
+            return await response(scope, receive, send)
         with db.using_database(workspace_path):
-            return await call_next(request)
-    return await call_next(request)
+            return await self.app(scope, receive, send)
 
 
-# Added after api_key_guard so it becomes the outermost middleware (Starlette
-# runs the last-registered middleware first) — otherwise a cross-origin CORS
-# preflight (OPTIONS, no X-API-Key) gets 401'd by the guard before CORS
-# headers are ever attached, breaking every private, key-protected deployment.
+# Registration order matters: Starlette runs the last-registered middleware
+# first, so CORS must be added last to stay outermost — otherwise a cross-origin
+# preflight (OPTIONS, no X-API-Key) gets 401'd by the guard before CORS headers
+# are ever attached, breaking every private, key-protected deployment.
+app.add_middleware(ApiKeyGuard)
+app.add_middleware(DemoWorkspaceGuard)
 CORS_ORIGINS = resolve_platform_config()["cors_origins"]
 app.add_middleware(
     CORSMiddleware,
@@ -173,6 +203,13 @@ def realtime_metrics():
         "raw_evidence_dropped": 0,
         **snapshot,
     }
+
+
+@app.post("/api/v1/realtime/metrics/reset", tags=["platform"])
+def reset_realtime_metrics():
+    """Zero the instrumentation counters. Affects observability only."""
+    metrics_registry.reset()
+    return {"reset": True}
 
 
 def _endpoint_config(request: Request) -> dict:

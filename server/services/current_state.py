@@ -78,7 +78,7 @@ def materialize_affected(enriched: list[dict],
     con = db.active_connection()
     owned = con is None
     if owned:
-        con = db.connect()
+        con = db.pooled_connection()
     try:
         for key in sorted(affected, key=_affected_sort_key):
             source_id, sid, timestamp, entity_type = key
@@ -95,9 +95,6 @@ def materialize_affected(enriched: list[dict],
         if owned:
             con.rollback()
         raise
-    finally:
-        if owned:
-            con.close()
 
 
 def _supersedes_current(con, source_id: int, entity_type: str,
@@ -182,7 +179,7 @@ def materialize_sample(source_id: int, entity_type: str, sid: str | None,
     con = connection or db.active_connection()
     owned = con is None
     if owned:
-        con = db.connect()
+        con = db.pooled_connection()
     try:
         marker = con.execute(
             "SELECT * FROM events WHERE source_id=? AND event_type='measurement' "
@@ -227,9 +224,10 @@ def materialize_sample(source_id: int, entity_type: str, sid: str | None,
             "marker_event_id": marker["id"],
             "source_frame_index": db.jload(marker.get("attributes"), {}).get("source_frame_index"),
         }
-    finally:
+    except Exception:
         if owned:
-            con.close()
+            con.rollback()
+        raise
 
 
 def rebuild_from_history() -> int:

@@ -272,6 +272,10 @@ def publish_batch(enriched: list[dict], alerts: list[dict], zone_names: dict,
     (observation.created/current_*.updated/alert.created/analysis.invalidated)
     so older dashboard builds and the current one both work against one stream."""
     from .sse import broker
+    if not broker.has_subscribers():
+        # Nothing to fan out to. Building the per-observation payloads is not
+        # free at high frame rates, and no state depends on them.
+        return
     for e in enriched[:25]:
         payload = {**e, "zone_name": zone_names.get(e.get("zone_id"))}
         broker.publish("cv_event", payload)
@@ -290,14 +294,23 @@ def publish_batch(enriched: list[dict], alerts: list[dict], zone_names: dict,
         broker.publish("alert.created", a)
 
 
+def _json(value) -> str:
+    # Most detections carry no keypoints and no mask; skipping the encoder for
+    # the null case removes three quarters of the JSON work on the hot path.
+    if value is None:
+        return "null"
+    import json
+    return json.dumps(value)
+
+
 def row_tuple(enriched: dict, ts: float, ingested_at: float) -> tuple:
     """Positional tuple matching INSERT_SQL for one enriched observation."""
     import json
     return (
         enriched["job_id"], enriched["source_id"], ts, enriched["event_type"], enriched["track_id"],
         enriched["zone_id"], enriched["x_px"], enriched["y_px"], enriched["x_map"], enriched["y_map"],
-        enriched["value"], enriched["label"], json.dumps(enriched["bbox"]), json.dumps(enriched["keypoints"]),
-        json.dumps(enriched["mask"]), enriched["point_kind"], enriched["projection_surface_id"],
+        enriched["value"], enriched["label"], _json(enriched["bbox"]), _json(enriched["keypoints"]),
+        _json(enriched["mask"]), enriched["point_kind"], enriched["projection_surface_id"],
         enriched["zone_view_id"], enriched["zone_assignment_method"], enriched["projection_method"],
         enriched["zone_revision"], enriched["calibration_revision"], enriched["surface_revision"],
         enriched["zone_view_revision"], json.dumps(enriched["attributes"]), ingested_at,

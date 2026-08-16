@@ -12,10 +12,10 @@ instead of a silently misinterpreted row.
 Ingestion shares one enrichment implementation with the legacy /events endpoint
 (services/enrich.py) — the projection/zone-assignment pipeline is not duplicated.
 """
-import asyncio
 import hashlib
 import json
 import math
+import os
 import uuid
 from datetime import datetime
 
@@ -534,6 +534,11 @@ def _persist_batch(batch: ObservationBatch, connection):
     ),
 )
 async def submit_detection_sample(sample: DetectionSampleIn):
+    with registry.timer("ingestion.endpoint_duration_s"):
+        return await _submit_detection_sample(sample)
+
+
+async def _submit_detection_sample(sample: DetectionSampleIn):
     try:
         batch, digest = detection_sample_batch(sample)
     except (TypeError, ValueError) as exc:
@@ -581,9 +586,7 @@ async def ingest_observations(batch: ObservationBatch, after_process=None):
     """
     if not batch.observations:
         return {"accepted": 0, "duplicates": 0, "rejected": []}, None
-    processed, followup = await asyncio.to_thread(
-        _process_with_followup, batch, after_process,
-    )
+    processed, followup = await _run_pipeline(batch, after_process)
     result, enriched, alerts, zone_names, completed_samples = processed
     enrich.publish_batch(enriched, alerts, zone_names, completed_samples=completed_samples)
     return result, followup
@@ -593,6 +596,38 @@ def _process_with_followup(batch: ObservationBatch, after_process=None):
     processed = _process_observations(batch)
     followup = after_process() if after_process is not None else None
     return processed, followup
+
+
+# One camera frame is a handful of observations. Handing that off to a worker
+# thread costs two context switches and a GIL round trip per request, which
+# measured larger than the work itself at 4x60 FPS — running it on the event
+# loop instead raised sustained throughput by half and cut ingestion latency
+# fivefold. So a camera-sized batch is processed inline.
+#
+# A bulk batch is different: a backfill of thousands of observations can hold
+# the interpreter long enough to stall every other request, so it goes to the
+# pipeline thread. An inline batch waits a bounded time for the write lock, and
+# offloads itself if it cannot get it — that is what keeps a bulk batch on the
+# pipeline thread from parking the event loop behind it. The wait has to be long
+# enough to cover a normal fusion tick, or the first contended sample would
+# offload and every sample after it would find the pipeline thread busy and do
+# the same.
+INLINE_OBSERVATION_LIMIT = int(
+    os.environ.get("STORELENS_INLINE_INGEST_MAX_OBSERVATIONS", "64"))
+INLINE_LOCK_WAIT_S = float(os.environ.get("STORELENS_INLINE_INGEST_LOCK_WAIT_S", "0.25"))
+
+
+async def _run_pipeline(batch: ObservationBatch, after_process=None):
+    if len(batch.observations) <= INLINE_OBSERVATION_LIMIT:
+        lock = db.write_lock()
+        if lock.acquire(timeout=INLINE_LOCK_WAIT_S):
+            try:
+                registry.increment("ingestion.inline_batches")
+                return _process_with_followup(batch, after_process)
+            finally:
+                lock.release()
+    registry.increment("ingestion.offloaded_batches")
+    return await realtime.run_in_pipeline(_process_with_followup, batch, after_process)
 
 
 def _serialize_observation(r: dict, zone_names: dict) -> dict:

@@ -32,6 +32,7 @@ SQLite workspace would split that state. See docs/realtime-pipeline.md.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import logging
 import os
@@ -47,6 +48,27 @@ logger = logging.getLogger("storelens.realtime")
 # 100 Hz maximum live fusion cadence.
 TICK_INTERVAL_S = float(os.environ.get("STORELENS_LIVE_TICK_INTERVAL_S", "0.01"))
 ENABLED = os.environ.get("STORELENS_LIVE_SCHEDULER", "1").lower() not in {"0", "false", "no"}
+
+# Ingestion and fusion both write, and SQLite serializes writers regardless, so
+# running them on many pool threads buys no parallelism — it only adds GIL
+# hand-off and lock convoying between however many threads asyncio's default
+# executor happens to have. One dedicated pipeline thread turns that into a
+# plain FIFO queue: the same total work, in arrival order, with far less
+# scheduling overhead and much tighter tail latency.
+pipeline_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="storelens-pipeline")
+
+
+async def run_in_pipeline(function, *args):
+    """Run one unit of pipeline work on the dedicated pipeline thread.
+
+    Mirrors `asyncio.to_thread`, including copying the current context, so the
+    demo-session database override still applies inside the call.
+    """
+    import contextvars
+    context = contextvars.copy_context()
+    return await asyncio.get_running_loop().run_in_executor(
+        pipeline_executor, lambda: context.run(function, *args))
 
 
 class SourceSnapshot:
@@ -139,12 +161,15 @@ class RealtimeStateCoordinator:
 
     def oldest_pending_age_s(self) -> float:
         """Age of the oldest live update that has not reached fused state yet."""
-        now = time.monotonic()
         with self._lock:
-            if not self._dirty:
-                return 0.0
-            unconsumed = [now - snapshot.received_at for snapshot in self._latest.values()
-                          if self._is_unconsumed(snapshot)]
+            return self._oldest_pending_age_locked()
+
+    def _oldest_pending_age_locked(self) -> float:
+        if not self._dirty:
+            return 0.0
+        now = time.monotonic()
+        unconsumed = [now - snapshot.received_at for snapshot in self._latest.values()
+                      if self._is_unconsumed(snapshot)]
         return round(max(unconsumed), 6) if unconsumed else 0.0
 
     def drain(self, budget: int = 64) -> int:
@@ -224,7 +249,7 @@ class RealtimeStateCoordinator:
                 await asyncio.sleep(delay)
             registry.increment("realtime.ticks_requested")
             if self._dirty:
-                await asyncio.to_thread(self._run_due_ticks)
+                await run_in_pipeline(self._run_due_ticks)
             else:
                 registry.increment("realtime.ticks_skipped_clean")
             now = time.monotonic()
@@ -304,7 +329,7 @@ class RealtimeStateCoordinator:
                 "max_cadence_hz": round(1.0 / self.interval_s, 3),
                 "tracked_sources": len(self._latest),
                 "dirty_groups": len(self._dirty),
-                "oldest_unconsumed_live_update_s": self.oldest_pending_age_s(),
+                "oldest_unconsumed_live_update_s": self._oldest_pending_age_locked(),
             }
 
 

@@ -118,15 +118,20 @@ def _load_existing_memberships(group_id: int, source_id: int,
     return {key: value[2] for key, value in best.items()}
 
 
-def minimum_cost_assignment(costs: list[list[float]], invalid: float = math.inf) -> list[tuple[int, int, float]]:
-    """Globally minimize a small rectangular assignment using dynamic programming.
+MATCH_REWARD = 1_000_000.0
 
-    Active camera groups are intentionally bounded; this exact solver avoids the
-    unstable decisions of greedy nearest-neighbour matching without adding a
-    heavyweight runtime dependency. Unmatched rows have zero cost and are allowed.
+
+def _exact_assignment(costs: list[list[float]]) -> list[tuple[int, int, float]]:
+    """Exact rectangular assignment over one dense block, by dynamic programming.
+
+    Cost model, unchanged: a valid association receives a gate-sized reward, so
+    the optimum prefers more compatible matches over fewer cheaper ones; rows may
+    stay unmatched at zero cost; a non-finite cost is a forbidden pair; equal
+    totals are broken by the lexicographically smallest tuple of pairs.
+
+    Complexity is exponential in the number of columns, which is why callers go
+    through `minimum_cost_assignment` rather than here.
     """
-    if not costs or not costs[0]:
-        return []
     memo: dict[tuple[int, int], tuple[float, tuple]] = {}
 
     def solve(row: int, used: int) -> tuple[float, tuple]:
@@ -140,9 +145,7 @@ def minimum_cost_assignment(costs: list[list[float]], invalid: float = math.inf)
             if used & (1 << col) or not math.isfinite(value):
                 continue
             tail_cost, tail_pairs = solve(row + 1, used | (1 << col))
-            # A valid association receives a gate-sized reward, so the global
-            # optimum prefers compatible matches while still minimizing cost.
-            total = value - 1_000_000.0 + tail_cost
+            total = value - MATCH_REWARD + tail_cost
             candidate = ((row, col, value),) + tail_pairs
             if total < best_cost or (total == best_cost and candidate < best_pairs):
                 best_cost, best_pairs = total, candidate
@@ -150,6 +153,77 @@ def minimum_cost_assignment(costs: list[list[float]], invalid: float = math.inf)
         return memo[key]
 
     return list(solve(0, 0)[1])
+
+
+def minimum_cost_assignment(costs: list[list[float]], invalid: float = math.inf) -> list[tuple[int, int, float]]:
+    """Globally minimize a small rectangular assignment.
+
+    The exact solver above is kept — its decisions, including tie-breaking, are
+    the association semantics and no approximation replaces them. What changed is
+    the size of the problem it is handed.
+
+    A spatial gate of a couple of metres makes the feasibility graph very sparse:
+    most (local track, fused entity) pairs are forbidden outright. Two reductions
+    exploit that, and neither can change the answer:
+
+    * A column feasible for no row can never be assigned, so dropping it removes
+      no solution. Dropping preserves the relative order of the remaining
+      columns, so the lexicographic tie-break picks the same solution.
+    * If the feasibility graph splits into components that share no row and no
+      column, the total cost is the sum of the components' costs and the optimum
+      is the union of their optima. Comparing merged results position by position
+      is comparing each component's own tuple, so lexicographic tie-breaking
+      composes as well.
+
+    Together these turn the practical case — a handful of people, each near at
+    most one or two existing identities — into several one- or two-column blocks.
+    The exact solver ran 10 tracks against 24 candidates in 97 seconds; the same
+    matrix decomposes into blocks it finishes instantly. A genuinely dense block
+    (everybody inside everybody else's gate) is still exponential, and
+    `tests/test_pipeline_equivalence.py` pins the size at which that bites.
+    """
+    if not costs or not costs[0]:
+        return []
+    rows, columns = len(costs), len(costs[0])
+    feasible = [[column for column in range(columns) if math.isfinite(costs[row][column])]
+                for row in range(rows)]
+    if not any(feasible):
+        return []
+
+    # Union rows with the columns they can reach; columns are offset by `rows`.
+    parent = list(range(rows + columns))
+
+    def find(node: int) -> int:
+        while parent[node] != node:
+            parent[node] = parent[parent[node]]
+            node = parent[node]
+        return node
+
+    for row, reachable in enumerate(feasible):
+        for column in reachable:
+            left, right = find(row), find(rows + column)
+            if left != right:
+                parent[left] = right
+
+    components: dict[int, tuple[list[int], list[int]]] = {}
+    for row, reachable in enumerate(feasible):
+        if not reachable:
+            continue  # no feasible pair: unmatched at zero cost, as before
+        components.setdefault(find(row), ([], []))[0].append(row)
+    for column in range(columns):
+        root = find(rows + column)
+        if root in components:
+            components[root][1].append(column)
+
+    assignments: list[tuple[int, int, float]] = []
+    for component_rows, component_columns in components.values():
+        block = [[costs[row][column] for column in component_columns]
+                 for row in component_rows]
+        for row_index, column_index, value in _exact_assignment(block):
+            assignments.append((component_rows[row_index],
+                                component_columns[column_index], value))
+    assignments.sort()
+    return assignments
 
 
 # --------------------------------------------------------------------------

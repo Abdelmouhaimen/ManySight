@@ -129,11 +129,11 @@
     "zone_name": "Aisle 04"
   },
   "metadata": {
-    "derivation_code_hash": "c7e3f6c6eb4dc01c139919e89db0c1f3f7fa819660c8210514570c6eeace722d",
+    "derivation_code_hash": "3e6108d7268f68e676bfffa03dcc40defcb9fa8e17c30e28559399c128176002",
     "duration_s": 20.066666666666666,
     "fixture_version": 3,
     "fusion_config_hash": "9a65ff1c129d0712e8a8ffa22f61cb6c742227e0c45ddeb1ba7f4db7a3ea8ac1",
-    "generated_at": "2026-08-16T10:52:42+00:00",
+    "generated_at": "2026-08-16T11:54:37+00:00",
     "geometry_hash": "072ba23e23cf8e3a2a158cb778e2579b26ca75f3eddfe14678c497e9ffdac33a",
     "media": {
       "Warehouse_Synthetic_Cam001": {
