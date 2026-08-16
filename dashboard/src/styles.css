@@ -1324,6 +1324,11 @@ textarea:focus-visible {
   cursor: pointer;
   outline: none;
 }
+/* Drawn for reference only: the click belongs to the map underneath. */
+.workbench-camera.inert {
+  pointer-events: none;
+  cursor: inherit;
+}
 .workbench-camera .camera-fov {
   fill: rgba(112, 89, 255, 0.09);
   stroke: rgba(112, 89, 255, 0.38);
@@ -2658,6 +2663,12 @@ body {
 .danger-block p { margin: 0 0 .7rem; font-size: .86rem; color: #5f5c55; max-width: 62ch; }
 .camera-detail-panel { margin-top: 1rem; }
 .camera-detail { gap: .8rem; }
+/* Shorter than the Space tab's map: here it is a reference for the controls
+   under it, so both have to be visible at once. */
+.camera-aim-map > svg {
+  min-height: 240px;
+  max-height: 380px;
+}
 .draft-count { margin-left: auto; font-size: .8rem; color: #6f6a60; }
 .calibration-pair-list { display: grid; gap: .3rem; padding-left: 1.1rem; font-size: .8rem; }
 .calibration-pair-list li { display: flex; align-items: center; gap: .5rem; }

@@ -15,6 +15,7 @@ import { reportTourEvent } from "./demo-tour.jsx";
 import { PlanDigitizer } from "./plan-digitizer.jsx";
 import { EmptyState, Modal, OverflowMenu, Panel, StatusPill, TechnicalDetails } from "./ui.jsx";
 import { calibrationStatus } from "./status.js";
+import { DEFAULT_FOV_DEG, aimDegrees, fovWedge, pointAlong } from "./placement.js";
 
 const ZONE_TYPES = [
   "area", "entrance", "checkout", "queue", "aisle", "stockroom", "restricted",
@@ -37,7 +38,7 @@ const TOOL_HINTS = {
   wall: "Click each corner, then press Enter to finish.",
   zone: "Click the corners, then finish the shape.",
   label: "Click where the label should go.",
-  camera: "Choose a camera, then click the map.",
+  camera: "Choose a camera, then click where it is on the map.",
   erase: "Click a wall or label to remove it.",
 };
 
@@ -77,26 +78,25 @@ function centroid(points = []) {
 
 function CameraGlyph({ source, selected, onClick }) {
   if (!source.placement) return null;
-  const { x, y, rotation_deg: rotation = 0, fov_deg: fov = 70 } = source.placement;
-  const length = 2.1;
-  const a = ((rotation - fov / 2) * Math.PI) / 180;
-  const b = ((rotation + fov / 2) * Math.PI) / 180;
-  const wedge = `${x},${y} ${x + Math.cos(a) * length},${y + Math.sin(a) * length} `
-    + `${x + Math.cos(b) * length},${y + Math.sin(b) * length}`;
+  const { x, y, rotation_deg: rotation = 0 } = source.placement;
+  const wedge = polygonPoints(fovWedge(source.placement));
+  const nose = pointAlong(source.placement, rotation, 0.52);
   return (
     <g
-      className={`workbench-camera ${selected ? "selected" : ""}`}
-      onClick={(event) => { event.stopPropagation(); onClick?.(); }}
-      role="button"
-      tabIndex="0"
-      aria-label={`Select ${source.name}`}
+      // Without a handler the glyph is decoration and lets clicks through: on
+      // the aiming map, the spot you want a camera to face is often exactly
+      // where another camera is drawn.
+      className={`workbench-camera ${selected ? "selected" : ""} ${onClick ? "" : "inert"}`}
+      onClick={(event) => { if (onClick) { event.stopPropagation(); onClick(); } }}
+      role={onClick ? "button" : "presentation"}
+      tabIndex={onClick ? 0 : -1}
+      aria-label={onClick ? `Select ${source.name}` : undefined}
       onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onClick?.(); }}
     >
       <polygon points={wedge} className="camera-fov" />
       <circle className="camera-focus-ring" cx={x} cy={y} r=".31" />
       <circle className="camera-position" cx={x} cy={y} r=".19" />
-      <path d={`M ${x} ${y} L ${x + Math.cos((rotation * Math.PI) / 180) * 0.52} `
-        + `${y + Math.sin((rotation * Math.PI) / 180) * 0.52}`} />
+      <path d={`M ${x} ${y} L ${nose.x} ${nose.y}`} />
       <text x={x} y={y - 0.32}>{source.name}</text>
     </g>
   );
@@ -104,12 +104,15 @@ function CameraGlyph({ source, selected, onClick }) {
 
 export function MapSurface({
   store, zones = [], sources = [], backgroundUrl, draft = [], selectedSourceId, tool = "select",
-  onMapClick, onSourceSelect, onEraseWall, onEraseLabel, svgRef, testPoint, children,
+  onMapClick, onSourceSelect, onEraseWall, onEraseLabel, svgRef, testPoint, className = "",
+  // A tour hook must resolve to exactly one element, so a second map on the same
+  // screen opts out rather than making "floor-map" ambiguous.
+  tourId = "floor-map", children,
 }) {
   const width = Math.max(Number(store?.width_m) || 20, 1);
   const height = Math.max(Number(store?.height_m) || 12, 1);
   return (
-    <div className="map-workbench-canvas" data-demo-tour="floor-map">
+    <div className={`map-workbench-canvas ${className}`.trim()} data-demo-tour={tourId || undefined}>
       <svg
         ref={svgRef}
         viewBox={`-.6 -.6 ${width + 1.2} ${height + 1.2}`}
@@ -215,14 +218,20 @@ export function SpaceEditor({ store, zones, sources, zoneViews = [], onRefresh, 
   const [labelDraft, setLabelDraft] = useState(null);
   const [editingZone, setEditingZone] = useState(null);
   const [placingSourceId, setPlacingSourceId] = useState(sources[0]?.id || null);
+  // Set between the click that positions a camera and the click that aims it.
+  // Placing without aiming used to mean leaving for the Cameras tab to set a
+  // direction with no picture in front of you; the second click is here so the
+  // whole gesture happens on the plan it refers to.
+  const [aimingSourceId, setAimingSourceId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   const placingSource = sources.find((source) => source.id === placingSourceId) || null;
+  const aimingSource = sources.find((source) => source.id === aimingSourceId) || null;
 
   useEffect(() => {
     const onKeyDown = (event) => {
-      if (event.key === "Escape") setDraft([]);
+      if (event.key === "Escape") { setDraft([]); setAimingSourceId(null); }
       if (event.target.closest?.("input, select, textarea, [role='dialog']")) return;
       if (event.key === "Enter" && (tool === "wall" || tool === "zone")) finishDraft();
     };
@@ -259,6 +268,23 @@ export function SpaceEditor({ store, zones, sources, zoneViews = [], onRefresh, 
     if (!point) return;
     if (tool === "wall" || tool === "zone") setDraft((current) => [...current, point]);
     if (tool === "label") setLabelDraft(point);
+    if (tool === "camera" && aimingSource?.placement) {
+      // Second click: aim it. Clicking the camera itself has no direction, so
+      // that just finishes placement at whatever it already faces.
+      const rotation = aimDegrees(aimingSource.placement, point);
+      setAimingSourceId(null);
+      setTool("select");
+      if (rotation === null) return;
+      setBusy(true);
+      try {
+        await api.put(`/sources/${aimingSource.id}/placement`, {
+          ...aimingSource.placement, rotation_deg: rotation,
+        });
+        await onRefresh();
+        notify("Camera aimed", `${aimingSource.name} faces ${rotation}°`);
+      } catch (err) { setError(err.message); } finally { setBusy(false); }
+      return;
+    }
     if (tool === "camera" && placingSource) {
       setBusy(true);
       setError("");
@@ -266,11 +292,11 @@ export function SpaceEditor({ store, zones, sources, zoneViews = [], onRefresh, 
         await api.put(`/sources/${placingSource.id}/placement`, {
           x: point.x, y: point.y,
           rotation_deg: placingSource.placement?.rotation_deg || 0,
-          fov_deg: placingSource.placement?.fov_deg || 70,
+          fov_deg: placingSource.placement?.fov_deg || DEFAULT_FOV_DEG,
         });
         await onRefresh();
-        notify("Camera placed", placingSource.name);
-        setTool("select");
+        notify("Camera placed", `Now click where ${placingSource.name} looks`);
+        setAimingSourceId(placingSource.id);
       } catch (err) { setError(err.message); } finally { setBusy(false); }
     }
   };
@@ -309,7 +335,9 @@ export function SpaceEditor({ store, zones, sources, zoneViews = [], onRefresh, 
               <button
                 key={value}
                 className={tool === value ? "active" : ""}
-                onClick={() => { setTool(value); setDraft([]); setError(""); }}
+                onClick={() => {
+                  setTool(value); setDraft([]); setError(""); setAimingSourceId(null);
+                }}
                 aria-pressed={tool === value}
                 disabled={busy || (value === "camera" && !sources.length)}
                 title={value === "camera" && !sources.length ? "Add a source first" : undefined}
@@ -322,8 +350,12 @@ export function SpaceEditor({ store, zones, sources, zoneViews = [], onRefresh, 
       >
         <div className="workbench-status" role="status">
           <Crosshair size={15} aria-hidden="true" />
-          <span>{TOOL_HINTS[tool]}</span>
-          {tool === "camera" && sources.length > 0 && (
+          <span>
+            {aimingSource
+              ? `Now click where ${aimingSource.name} looks, or press Escape to leave it as is.`
+              : TOOL_HINTS[tool]}
+          </span>
+          {tool === "camera" && !aimingSource && sources.length > 0 && (
             <select
               aria-label="Camera to place"
               value={placingSourceId || ""}
@@ -342,7 +374,7 @@ export function SpaceEditor({ store, zones, sources, zoneViews = [], onRefresh, 
           sources={sources}
           backgroundUrl={demoPlanBackground}
           draft={draft}
-          selectedSourceId={placingSourceId}
+          selectedSourceId={aimingSourceId || placingSourceId}
           tool={tool}
           onMapClick={mapClick}
           onSourceSelect={setPlacingSourceId}
@@ -805,25 +837,61 @@ export function CalibrationModal({ source, store, zones, sources, onClose, onSav
   );
 }
 
-/** Placement + calibration for one camera, used by Setup › Cameras. */
+/** Placement + calibration for one camera, used by Setup › Cameras.
+ *
+ *  The map is here, not only on the Space tab. Direction and field of view are
+ *  spatial facts, and a slider with no picture next to it is guesswork: you set
+ *  a number, switch tabs to see what it did, and come back. So the same map
+ *  surface renders the *draft* placement, the wedge follows the sliders live,
+ *  and clicking the map aims the camera at that spot — which is how someone
+ *  actually thinks about it ("it points at the door"), rather than in degrees.
+ */
 export function CameraDetail({ source, store, zones, sources, onRefresh, notify }) {
   const [draft, setDraft] = useState(source.placement || null);
   const [busy, setBusy] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
+  const [mapTool, setMapTool] = useState("aim");
+  const svgRef = useRef(null);
   useEffect(() => { setDraft(source.placement || null); }, [source.id, source.placement]);
 
   const dirty = Boolean(source.placement && draft
     && (draft.rotation_deg !== source.placement.rotation_deg
-      || draft.fov_deg !== source.placement.fov_deg));
+      || draft.fov_deg !== source.placement.fov_deg
+      || draft.x !== source.placement.x
+      || draft.y !== source.placement.y));
 
-  const savePlacement = async () => {
+  // Every camera stays visible for context — you aim at the space, not at an
+  // abstract compass — but this one carries the unsaved draft.
+  const previewSources = sources.map((item) => (
+    item.id === source.id ? { ...item, placement: draft } : item));
+
+  const mapClick = async (event) => {
+    const point = eventPoint(event, svgRef.current);
+    if (!point) return;
+    if (!source.placement) {
+      // Nothing to discard yet, so the first click commits rather than opening
+      // an edit the user then has to remember to save.
+      await write({ x: point.x, y: point.y, rotation_deg: 0, fov_deg: DEFAULT_FOV_DEG },
+                  "Camera placed", `Now aim ${source.name}`);
+      return;
+    }
+    if (mapTool === "move") {
+      setDraft((current) => ({ ...current, x: point.x, y: point.y }));
+      return;
+    }
+    const rotation = aimDegrees(draft, point);
+    if (rotation !== null) setDraft((current) => ({ ...current, rotation_deg: rotation }));
+  };
+
+  const write = async (placement, title, detail) => {
     setBusy(true);
     try {
-      await api.put(`/sources/${source.id}/placement`, draft);
+      await api.put(`/sources/${source.id}/placement`, placement);
       await onRefresh();
-      notify("Camera updated", source.name);
+      notify(title, detail);
     } catch (err) { notify("Couldn't save", err.message, "error"); } finally { setBusy(false); }
   };
+  const savePlacement = () => write(draft, "Camera updated", source.name);
   const clearPlacement = async () => {
     if (!window.confirm(`Remove ${source.name} from the map?`)) return;
     try {
@@ -836,10 +904,42 @@ export function CameraDetail({ source, store, zones, sources, onRefresh, notify 
   const index = sources.findIndex((item) => item.id === source.id) + 1;
   return (
     <div className="camera-detail stack">
+      <div className="workbench-status" role="status">
+        <Crosshair size={15} aria-hidden="true" />
+        <span>
+          {!source.placement
+            ? `Click the map to put ${source.name} where it is in the space.`
+            : mapTool === "aim"
+              ? `Click the map to point ${source.name} at that spot.`
+              : `Click the map to move ${source.name} there.`}
+        </span>
+        {source.placement && (
+          <div className="workbench-toolbar" role="group" aria-label="Map action">
+            <button className={mapTool === "aim" ? "active" : ""}
+                    aria-pressed={mapTool === "aim"} onClick={() => setMapTool("aim")}>
+              <Crosshair size={14} aria-hidden="true" /> Aim
+            </button>
+            <button className={mapTool === "move" ? "active" : ""}
+                    aria-pressed={mapTool === "move"} onClick={() => setMapTool("move")}>
+              <MousePointer2 size={14} aria-hidden="true" /> Move
+            </button>
+          </div>
+        )}
+      </div>
+      <MapSurface
+        store={store}
+        zones={zones}
+        sources={previewSources}
+        selectedSourceId={source.id}
+        svgRef={svgRef}
+        onMapClick={mapClick}
+        className="camera-aim-map"
+        tourId={null}
+      />
       {!source.placement ? (
-        <EmptyState title="Not on the map yet">
-          Place this camera on the floor map in the Space tab, then calibrate it here.
-        </EmptyState>
+        <p className="muted">
+          Once it is on the map, aim it and set how wide it sees, then calibrate it.
+        </p>
       ) : (
         <>
           <label className="range-field">
@@ -850,8 +950,10 @@ export function CameraDetail({ source, store, zones, sources, onRefresh, notify 
                    }))} />
           </label>
           <label className="range-field">
-            <span>Field of view <strong>{Math.round(draft?.fov_deg ?? 70)}°</strong></span>
-            <input type="range" min="20" max="160" value={draft?.fov_deg ?? 70}
+            <span>
+              Field of view <strong>{Math.round(draft?.fov_deg ?? DEFAULT_FOV_DEG)}°</strong>
+            </span>
+            <input type="range" min="20" max="160" value={draft?.fov_deg ?? DEFAULT_FOV_DEG}
                    onChange={(event) => setDraft((current) => ({
                      ...current, fov_deg: Number(event.target.value),
                    }))} />
@@ -861,6 +963,12 @@ export function CameraDetail({ source, store, zones, sources, onRefresh, notify 
                     disabled={!dirty || busy}>
               <Save size={14} aria-hidden="true" /> Save
             </button>
+            {dirty && (
+              <button className="button button-ghost"
+                      onClick={() => setDraft(source.placement)} disabled={busy}>
+                <RotateCcw size={14} aria-hidden="true" /> Discard
+              </button>
+            )}
             <button
               className="button button-primary"
               data-demo-tour={`camera-calibrate-${index}`}
