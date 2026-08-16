@@ -82,6 +82,15 @@ observed zero. Prefer the SDK sample builder. Legacy detection rows plus a match
 workers; partial or count-mismatched samples do not replace current state. **Missing data
 changes freshness, never scene value: no fresh complete sample means unknown, not zero.**
 
+A successful response means the sample is durably stored, along with the submitting
+source's current state. Cross-camera fusion is scheduled separately and runs at most every
+10 ms from each source's freshest sample, so a worker submitting faster than that may find
+several of its frames represented in history but only the newest in the combined view.
+Those are **coalesced live updates**, not dropped observations: every accepted sample stays
+queryable. Reads of fused state are never stale — they run any pending fusion first.
+Submitting at full camera rate is supported; local detection may still run faster than
+central submission.
+
 ## Geometry and multiview
 
 Canonical zones are metric GeoJSON Polygon/MultiPolygon. Zone views are camera-specific

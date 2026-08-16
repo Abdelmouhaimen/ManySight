@@ -69,6 +69,7 @@ node --test dashboard/tests/live-state.test.mjs       # one dashboard test file
 bash scripts/smoke_test.sh                            # API smoke check against a running server
 python -m pytest -q tests/test_agent_surface.py tests/test_agent_operability.py
 python evals/agent_operability/check_transcript.py <scenario> <recorded-run.json>
+python scripts/load_test_realtime.py --cameras 4 --fps 60 --duration 30   # not part of pytest
 ```
 
 No formatter, linter, or type checker is configured. Match surrounding Python/React style.
@@ -115,30 +116,50 @@ Details and rationale in [`docs/agent-surface.md`](docs/agent-surface.md).
 
 ### The single ingestion pipeline
 
-Everything funnels through `server/routers/observations.py::_process_observations`, run off the
-event loop with `asyncio.to_thread`:
+Everything funnels through `server/routers/observations.py::_process_observations`. Steps 1-4
+run in **one** transaction and are complete before the HTTP response returns:
 
 1. validate (idempotent `observation_id` dedupe, `sample_id` timestamp/marker consistency,
    rejected kinds) →
 2. `services/enrich.py::enrich_one` — the **only** geometry implementation: representative
    point → projection surface → homography → zone-view match → canonical zone → geometry
-   revision bookkeeping. Legacy `/events` and `/observations/batch` both call it →
-3. append-only insert into `events` →
+   revision bookkeeping. Legacy `/events` and `/observations/batch` both call it. The zone,
+   calibration, surface and view structures come from `services/config_cache.py`, not a
+   per-batch re-read →
+3. append-only insert into `events`, capturing each row id →
 4. `services/current_state.py::materialize_affected` — completion-gated read model; a sample
    commits only when its detection count matches its marker. Partial samples stay as raw
-   evidence but never replace current scene state →
-5. `services/multiview.py::process_completed_samples` — deliberately downstream of complete
-   samples, imported lazily →
-6. `services/alert_engine.py::evaluate_batch` →
+   evidence but never replace current scene state. A sample that arrived whole in this batch
+   materializes from the rows just inserted; anything else re-reads, so split delivery works →
+5. `services/realtime.py::coordinator.publish` — in-memory only: newest sample per source,
+   affected groups marked dirty →
+6. `services/alert_engine.py::evaluate_batch`, in its own short transaction and skipped
+   entirely when no rule is enabled →
 7. `services/enrich.py::publish_batch` → SSE broker (`services/sse.py`), which fans out both
-   legacy and current event names and is partitioned by database path.
+   legacy and current event names, is partitioned by database path, and builds nothing when
+   the workspace has no subscriber.
+
+Cross-camera fusion is **not** in this path. `services/realtime.py` runs a monotonic
+scheduler at most every `STORELENS_LIVE_TICK_INTERVAL_S` (10 ms) over dirty groups only,
+calling `services/multiview.py::run_group_tick` with each source's freshest sample. Missed
+deadlines are counted and dropped, never queued. Every read of fused state
+(`/multiview/current`, `/multiview/occupancy`, a `fused_entity` query, the alert poll loop)
+drains pending ticks first via `multiview.refresh_freshness`, so no API consumer sees stale
+combined state — a test reading `fused_*` from SQLite directly must call
+`helpers.sync_live_state()`. Live latest-state is process-local: **one process owns a
+workspace database**. Full rules in [`docs/realtime-pipeline.md`](docs/realtime-pipeline.md).
+
+A camera-sized batch is processed on the event loop; a bulk batch goes to the single
+pipeline thread in `services/realtime.py`, which also runs fusion ticks.
 
 `POST /api/v1/detection-samples` is the preferred worker entry point; it expands one envelope
 into that batch and content-hashes the sample so a replay is a `duplicate`, while a conflicting
 reuse of a `sample_id` is a 409.
 
 Scene contents and freshness are independent: a stopped worker keeps its last complete sample
-and goes stale — elapsed wall time never fabricates an empty scene.
+and goes stale — elapsed wall time never fabricates an empty scene. Several frames from one
+source between two fusions are *coalesced live updates* — every one of them stays in `events`;
+never call them dropped observations.
 
 ### Derivation, queries, alerts
 
@@ -157,7 +178,14 @@ and goes stale — elapsed wall time never fabricates an empty scene.
 ### Storage
 
 `server/db.py` is plain `sqlite3` (WAL, dict rows) with helpers `q`/`q1`/`ex`/`exmany`/`jload`/
-`now`. There is no ORM and no migration framework: extend the `SCHEMA` string and add an
+`now`. Those helpers borrow a **pooled per-thread connection** — never close one, because
+closing the last connection to a WAL database runs a checkpoint. `transaction()` and a bare
+`ex`/`exmany` take a per-workspace write mutex so SQLite's busy handler never has to arbitrate
+between the pipeline thread and the event loop; `connect()` still hands out a dedicated
+connection that its caller owns. `ex`/`exmany` are also the invalidation hook for
+`services/config_cache.py` — a raw-connection write path must call `config_cache.invalidate()`
+itself. `STORELENS_SQLITE_SYNCHRONOUS` defaults to `NORMAL`; `FULL` is roughly 5 ms per commit.
+There is no ORM and no migration framework: extend the `SCHEMA` string and add an
 additive `PRAGMA table_info`-guarded `ALTER TABLE` inside `init_db()`. Raw observations are
 append-only; current/fused state are bounded read models rebuilt via
 `current_state.rebuild_from_history()` at startup. Every observation records
@@ -167,10 +195,13 @@ geometry cannot contaminate current state.
 ### Request middleware and workspace isolation
 
 In `server/app.py`, order matters (Starlette runs the last-registered middleware first): CORS
-must stay outermost so key-protected deployments answer preflights. `api_key_guard` enforces
+must stay outermost so key-protected deployments answer preflights. Both custom guards are
+**pure ASGI middleware classes**, not `@app.middleware("http")` — `BaseHTTPMiddleware` pipes
+request and response bodies through a child task and cost about a third of ingestion
+throughput at camera rate. `ApiKeyGuard` enforces
 the optional `STORELENS_API_KEY`, exempting `/health` and the header-only source-connection
 endpoint, which has its own stronger `STORELENS_CREDENTIAL_ACCESS_KEY` check.
-`demo_workspace_guard` routes any request carrying `X-StoreLens-Demo-Session` into an isolated
+`DemoWorkspaceGuard` routes any request carrying `X-StoreLens-Demo-Session` into an isolated
 temporary SQLite database through `db.using_database()` (a `ContextVar`), so demo sessions never
 touch the real workspace. Temporary paths are never returned publicly; promotion copies a strict
 setup allowlist in one transaction.

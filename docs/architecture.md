@@ -66,6 +66,25 @@ Scene contents and freshness are independent. If a worker stops, ManySight retai
 last complete sample and marks it stale; elapsed wall time never fabricates an empty
 scene.
 
+## Live state and raw history
+
+Raw history favours completeness; live state favours freshness. Accepted raw evidence
+and the submitting source's current state are committed in one transaction before the
+HTTP response returns, and no accepted sample is ever skipped. Cross-camera fusion is
+not part of that request: ingestion publishes the source's newest completed sample to
+an in-process coordinator, and a monotonic scheduler fuses each affected group at most
+every 10 ms from the freshest state available.
+
+If several frames from one camera arrive between two fusion ticks, all of them are in
+`events` and only the newest takes part in the next fusion — coalesced live updates,
+never dropped observations. Reads of fused state drain any pending tick first, so no
+API consumer can observe combined state older than the newest committed sample. One
+process owns a workspace database.
+
+See [the realtime pipeline](realtime-pipeline.md) for the scheduler's rules,
+configuration caching and invalidation, durability settings, metrics, and the load
+harness.
+
 ## Multiview association
 
 A multiview group explicitly lists calibrated sources in one world frame. Fusion is
@@ -117,7 +136,8 @@ allows it.
 - Multiview fusion is geometry-first active-track association, not long-term ReID.
 
 These limits are not production-readiness claims. See [Development](development.md),
-[Workers](workers.md), [Geometry](geometry.md), and [Multiview](multiview.md).
+[Workers](workers.md), [Geometry](geometry.md), [Multiview](multiview.md), and
+[the realtime pipeline](realtime-pipeline.md).
 
 ## Workspace isolation and revisions
 

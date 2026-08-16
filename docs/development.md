@@ -46,6 +46,11 @@ registry file path.
 | `STORELENS_CREDENTIAL_KEY` | URL-safe base64 encoding of exactly 32 random bytes for managed credential encryption. |
 | `STORELENS_CREDENTIAL_ACCESS_KEY` | Header-only key for privileged source-connection resolution; falls back to the API key if omitted. |
 | `STORELENS_ALERT_POLL_INTERVAL_S` | Periodic alert evaluation interval; defaults to 15 seconds. |
+| `STORELENS_LIVE_TICK_INTERVAL_S` | Maximum live fusion cadence; defaults to 0.01 s (100 Hz). A tick only runs for groups with new source state. |
+| `STORELENS_LIVE_SCHEDULER` | `0` disables the background fusion scheduler; reads still drain pending ticks. |
+| `STORELENS_SQLITE_SYNCHRONOUS` | `NORMAL` (default) or `FULL`. See [the realtime pipeline](realtime-pipeline.md) for what each guarantees and what FULL costs. |
+| `STORELENS_INLINE_INGEST_MAX_OBSERVATIONS` | Batches at or below this size are processed on the event loop; larger ones go to the pipeline thread. Defaults to 64. |
+| `STORELENS_INLINE_INGEST_LOCK_WAIT_S` | How long an inline batch waits for the write lock before offloading itself; defaults to 0.25 s. |
 | `STORELENS_DEMO_ASSET_DIR` | Optional local path to extracted NVIDIA `datasets/mtmc_12cam` assets. The demo uses cameras 1-4. |
 | `STORELENS_DEMO_STREAM_PORT` | Loopback port for the post-promotion synchronized demo stream supervisor; defaults to 8765. |
 | `STORELENS_ENDPOINT_CONFIG` | Optional path to an endpoint registry JSON file. |
@@ -93,6 +98,20 @@ npm run build --prefix dashboard
 There is no configured repository-wide formatter, linter, static type checker, or
 documentation build at present. The test suite uses temporary databases and restores
 environment state through `tests/conftest.py`.
+
+Performance is measured separately, because it needs a running server and takes
+minutes rather than seconds:
+
+```powershell
+python scripts/load_test_realtime.py --cameras 4 --fps 60 --duration 30
+python scripts/load_test_realtime.py --scenario asymmetric
+python scripts/load_test_realtime.py --scenario stop-camera
+python scripts/load_test_realtime.py --scenario overload
+```
+
+Each run reports sustained input, live-scheduler behaviour, latency percentiles, and
+verifies that every accepted sample is durably stored; see
+[the realtime pipeline](realtime-pipeline.md).
 
 After starting the server, verify `/`, `/docs`, `/openapi.json`,
 `/api/v1/platform-config`, and `/api/v1/health`. `scripts/smoke_test.sh` is a macOS/Linux

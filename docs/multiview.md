@@ -40,8 +40,15 @@ member evidence remains.
 `GET /api/v1/multiview/current` returns anonymous fused tracks and per-group freshness.
 `GET /api/v1/multiview/occupancy` returns a zone count with `known`, `partial`, or
 `unknown` quality. A complete zero sample is evidence of zero for that source; a stale or
-missing sample is not. Historical occupancy snapshots are recorded when source samples
-advance and are available through a time-grouped `fused_entity` query.
+missing sample is not. Historical occupancy snapshots are recorded when a group is fused
+and are available through a time-grouped `fused_entity` query.
+
+Fusion is scheduled, not synchronous with ingestion: a group is fused at most every
+10 ms, from the freshest completed sample of each of its sources. Both reads above drain
+any pending fusion before answering, so neither can return state older than the newest
+committed sample. At camera rates several frames from one source may arrive between two
+fusions; all of them remain durable raw evidence, and the newest is the one that decides
+the combined view. See [the realtime pipeline](realtime-pipeline.md).
 
 Live defaults to fused mode and offers source-local debug mode. Member evidence is shown
 for inspection, but the UI must not describe fused IDs as recognized or identified people.
