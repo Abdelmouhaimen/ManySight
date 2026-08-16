@@ -83,10 +83,19 @@ returns a single `action`:
 | `restart_or_repair` | samples exist but are stale |
 | `perception_missing` | no complete sample has ever arrived |
 
-Per source it reports state, freshness, last detection count, observed submission rate,
-`local_fps` from heartbeat metrics, whether detections carry a source-local `entity_id`,
-which spatial evidence they carry, and the latest worker heartbeat. It also reports
-multiview readiness and any compatible existing job.
+Per source it reports state, freshness, last detection count, observed submission rate, the
+`source_fps`/`processing_fps`/`device` the worker reports in heartbeat metrics, whether
+detections carry a source-local `entity_id`, which spatial evidence they carry, and the
+latest worker heartbeat. It also reports multiview readiness and any compatible existing
+job.
+
+`performance` is a **separate axis from availability**. A worker tracking at 4 FPS is
+producing real observations, so it stays `healthy`; the rate shows up as `below_target`
+with the likely causes, and as a reason in the response. That distinction is the point:
+occasional arriving samples must not be read as a healthy tracking rate, and a slow worker
+must not be read as missing perception. `readiness_axes` names the three independent
+questions — camera available, perception runnable, performance capable — so a missing GPU
+is never reported as an unusable camera.
 
 There is no capability registry table. Everything is derived from existing source, job,
 worker, and observation records, so capability status cannot drift away from reality — and
@@ -103,16 +112,34 @@ Two semantics matter:
 
 Returns the preferred endpoint and envelope (with its field list read from the live
 `DetectionSample` model), empty-frame semantics, identity rules, spatial point meaning,
-forbidden worker output, sampling guidance, lifecycle and heartbeat expectations, the
-managed-connection workflow, multiview prerequisites, the SDK helper, and how to verify.
+forbidden worker output, the rate plan, acceleration and environment guidance, lifecycle
+and heartbeat expectations, the managed-connection workflow, multiview prerequisites, the
+SDK helper, and how to verify.
 
 It exists because an agent that finds an old demo worker on disk will otherwise treat that
 file as the protocol. The recipe is generated at request time, so it cannot fall behind.
 
-Sampling is explicitly *not* a fixed number: local detection and tracking may run at full
-camera FPS while central submission runs at a lower, task-chosen rate. The recipe states
-the trade-offs and asks the worker to report `local_fps` and `submission_hz` in heartbeat
-metrics.
+`sampling` separates three rates that are easy to conflate — source FPS, local processing
+FPS, and central submission Hz — and computes a plan for each requested source from what is
+actually known about it (`source_fps` from the query, a worker heartbeat, or the source's
+metadata, in that order; unknown stays unknown rather than becoming an assumed 30).
+
+For tracking workloads the plan targets **at least 15 processing FPS per camera**, preferring
+30 or source-native where the source supplies it, because tracker association — and
+therefore dwell, visits, flow and fusion — degrades with the gap between frames. Submission
+Hz stays a separate, lower, task-chosen rate. A source slower than the floor gets its native
+rate with `source_limited` set, rather than a recommendation it cannot meet.
+
+`acceleration` and `local_environment` are decision procedures, not detections: ManySight
+runs no models and may not even be on the worker's machine, so it describes the checks
+(`nvidia-smi`, `torch.cuda` **inside the interpreter that will run the worker**, existing
+virtualenv/conda environments) and the SDK's `probe_perception_runtime()` executes them
+locally. CUDA is an optimization with a supported CPU fallback, never a connection
+prerequisite.
+
+The recipe asks the worker to report `source_fps`, `processing_fps`, `submission_hz`,
+`device` and `precision` in heartbeat metrics, which is what lets `inspect_perception`
+score achieved rate against target.
 
 ## `preview_zone` / `commit_zone` — approval before persistence
 

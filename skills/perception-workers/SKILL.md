@@ -1,6 +1,6 @@
 ---
 name: perception-workers
-description: Use for any worker that submits perception — tracked detections (presence, heatmaps, visits, dwell, flow), numeric measurements (queue length, population counts), or categorical states (fridge open/closed). Covers reuse-before-start, the current submission contract, sampling rate, local environment, and verification.
+description: Use for any worker that submits perception — tracked detections (presence, heatmaps, visits, dwell, flow), numeric measurements (queue length, population counts), or categorical states (fridge open/closed). Covers reuse-before-start, the current submission contract, tracking frame rate, GPU/CUDA readiness, local environment, and verification.
 ---
 
 # Perception workers
@@ -17,10 +17,10 @@ entities, and posts raw evidence. ManySight derives everything else.
    already have healthy perception is a defect, not thoroughness.
 2. If coverage is partial, extend the missing sources rather than replacing what works.
 3. Check the sources you need are configured and calibrated (`inspect_source`).
-4. **`get_worker_recipe(entity_type, tracking, source_ids)`** for the current contract.
-5. Inspect your **own** local environment before building anything: an existing project
-   virtualenv or conda environment, CUDA and PyTorch availability, model weights already on
-   disk. Reuse a compatible environment; do not create a new one by reflex.
+4. **Inspect your own machine** — see [Hardware and environment](#hardware-and-environment).
+   Do this before writing the worker, not after it underperforms.
+5. **`get_worker_recipe(entity_type, tracking, source_ids, source_fps)`** for the current
+   contract and the rate plan for the source you actually have.
 
 > **Authority.** The recipe, `GET /api/v1/observations/contract`, and `/openapi.json` are
 > the contract. An example script, a demo worker, or an older worker file found in a
@@ -57,19 +57,82 @@ for compatibility, but new workers must not author that internal completion conc
 must not prefer it over the sample envelope. Do not call `time.time()` separately for
 detections belonging to one sample.
 
-## Sampling rate
+## Three rates, not one
 
-Local decode, detection, and tracking may run at **full camera FPS** — 30-40 FPS on a
-modern GPU is normal and desirable for tracker stability. The **central submission rate is
-a separate choice** and is usually lower; submitting every decoded frame is rarely
-necessary.
+| rate | what it is | who decides |
+|---|---|---|
+| **source FPS** | what the camera, stream, or file delivers | the source |
+| **processing FPS** | frames the detector *and tracker* actually consume | you, from hardware |
+| **submission Hz** | complete `DetectionSample` envelopes posted to ManySight | you, from the task |
+
+Conflating them produces a worker that looks fine and tracks badly. A tracker is a
+temporal algorithm: association degrades with the gap between consecutive frames, and no
+amount of central derivation recovers an identity swap. Dwell, visits, flow and multiview
+association all rest on that continuity.
+
+**Tracking workloads — person detection + tracking, YOLO + ByteTrack or equivalent,
+multiview person tracking — process at least 15 FPS per camera** when the source supplies
+that and the machine sustains it. Prefer **30 FPS or source-native** where they are
+available. At 5 FPS someone crossing an aisle moves about a metre between frames, wider
+than the default fusion spatial gate.
+
+- **Never** silently configure a tracking worker at 1-5 FPS on a source and machine capable
+  of substantially more.
+- **Source below 15 FPS:** use the source-native rate and report the limitation. Do not
+  claim the floor was met.
+- **Machine cannot sustain 15 FPS:** do not fake compliance. Report the measured rate and
+  recommend the acceleration path (see below).
+- **Never hard-code a sleep that caps a capable GPU worker** below the target.
+
+The **submission rate is separate and usually lower** — submitting every decoded frame is
+rarely necessary. Gate submission; do not slow the tracker to achieve it. `SubmissionGate`
+in the SDK exists for exactly this.
 
 - Current occupancy and zone presence: a few Hz is normally sufficient.
 - Dwell and visit boundaries: raise the rate until visit edges are stable.
 - Fast movement or tight spatial gates: match the multiview time tolerance.
-- There is no globally correct rate. Choose it from the task, state what you chose and
-  why, and report `local_fps` and `submission_hz` in heartbeat metrics so
-  `inspect_perception` can show them.
+- There is no globally correct submission rate. Choose it from the task and say why.
+
+`get_worker_recipe(..., source_fps=...)` returns all of this computed as
+`sampling.recommendation`: `target_processing_fps`, `target_submission_hz`,
+`minimum_processing_fps`, and the rationale.
+
+Report `source_fps`, `processing_fps`, `submission_hz`, `device` and `precision` in
+heartbeat metrics so `inspect_perception` can score achieved against target.
+
+## Hardware and environment
+
+ManySight runs no models and cannot see your machine, so **you** determine this — never ask
+the user "do you have CUDA?", "which conda environment?", or "please start the worker" when
+a shell can answer it or do it.
+
+```python
+import sys; sys.path.insert(0, "sdk/python")
+from manysight import probe_perception_runtime
+print(probe_perception_runtime())
+```
+
+One call reports the interpreter and environment kind, `nvidia-smi` presence, driver and
+device names, torch version and CUDA build, `torch.cuda.is_available()`, the device name
+and compute capability, a recommended device, and whether FP16 is worth enabling. It never
+raises — "no GPU here" is an answer, not a failure. Run it **with the interpreter that will
+run the worker**: a base environment answering "yes" proves nothing about the venv you are
+about to start.
+
+- **Reuse first.** An existing project virtualenv or conda environment that already has the
+  accelerated dependencies and weights beats a new one. Do not assume the base interpreter
+  is the right one, and do not build a fresh environment by reflex.
+- **GPU first when it is there.** Select the CUDA device for supported models. Enable FP16
+  only on a CUDA device with compute capability ≥ 7.0, and only after validating output —
+  never on a CPU path or an unvalidated runtime.
+- **Reuse the worker's existing model and runtime.** Do not introduce another ML framework
+  to enable acceleration.
+- **CPU is a supported fallback,** not a failure. Target the best rate you can actually
+  sustain, measure it, and warn plainly if it is below 15 FPS.
+
+Camera availability, perception runnability, and performance capability are **three
+separate questions**. A missing GPU lowers the achievable rate. It never makes a camera
+unusable, and never justifies telling a user their camera cannot be used.
 
 ## Measurements — a number over time
 
@@ -114,18 +177,31 @@ supervisor. Never register a worker you did not start.
 
 ## Verify — do not assume
 
-1. `inspect_perception(...)` — heartbeat, complete samples, freshness, submission rate.
-2. `GET /api/v1/observations/latest-frames` — the current complete sample per source, with
-   the projection and zone ManySight assigned.
-3. `GET /api/v1/multiview/current` — fused entities with member evidence, if fusing.
-4. `run_query(...)` — the actual question, with its quality.
+Starting the process is not the finish line, and occasional samples are not health.
 
-Claiming a worker is healthy without checking its heartbeat, or claiming observations are
-flowing without reading them back, is the failure mode this section exists to prevent.
+1. The process is still alive locally, and no frame or submission backlog is growing.
+2. `inspect_perception(...)` — heartbeat, complete samples, freshness, submission rate, and
+   `performance`: achieved processing FPS against target.
+3. `GET /api/v1/observations/latest-frames` — the current complete sample per source, with
+   the projection and zone ManySight assigned. Confirm detections carry `entity_id` when
+   tracking is enabled, and that empty complete frames are accepted as known zero.
+4. `GET /api/v1/multiview/current` — fused entities with member evidence, if fusing.
+5. `run_query(...)` — the actual question, with its quality.
+
+If `performance.state` is `below_target` — tracking below the target rate while the source
+supplies more — surface it as a readiness warning with the concrete cause. The usual ones,
+in order: CPU inference while a GPU sits idle, CUDA unavailable in the interpreter that
+actually started, the wrong environment, too heavy a model, inference configuration, or a
+capture/decode bottleneck rather than inference at all.
+
+Claiming a worker is healthy without checking its heartbeat, claiming observations are
+flowing without reading them back, or calling a 4 FPS tracker fine because samples arrive,
+are the failure modes this section exists to prevent.
 
 ## Pitfalls
 
-- Unstable tracker IDs destroy dwell and flow semantics.
+- Unstable tracker IDs destroy dwell and flow semantics — and the commonest cause is
+  processing too few frames per second, not the tracker's configuration.
 - A torso projected through a floor homography is usually wrong; use feet or a named plane.
 - Missing samples mean stale/unknown evidence, never observed zero.
 - Geometry-only multiview association is not biometric ReID and can switch at close

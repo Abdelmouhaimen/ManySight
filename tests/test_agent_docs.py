@@ -110,13 +110,22 @@ def test_perception_skill_prevents_the_stale_script_failure():
     assert "get_worker_recipe" in content
     assert "may predate the current api" in content
     assert "if a file on disk disagrees with the recipe, the recipe is right" in content
-    assert "full camera fps" in content
-    assert "there is no globally correct rate" in content
     assert "detections=[] is a real observed zero" in content
     assert "must not author that internal completion concept" in content
+    # Three rates, and a real floor for the one tracking depends on.
+    assert "process at least 15 fps per camera" in content
+    assert "30 fps or source-native" in content
+    assert "there is no globally correct submission rate" in content
+    assert "gate submission; do not slow the tracker" in content
+    assert "hard-code a sleep" in content
+    # Hardware is the agent's own machine to inspect, and CPU is not a failure.
+    assert "probe_perception_runtime" in content
     assert "conda" in content, "reuse an existing local environment"
+    assert "cpu is a supported fallback" in content
+    assert "never makes a camera unusable" in content
     # Verification, not assumption.
     assert "claiming a worker is healthy without checking its heartbeat" in content
+    assert "occasional samples are not health" in content
 
 
 def test_geometry_skill_teaches_the_preview_approve_commit_flow():

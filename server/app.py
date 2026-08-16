@@ -278,9 +278,15 @@ complete low-level interface; `/openapi.json` is authoritative.
    Never infer it from an example, demo, or older worker script found in a repository.
 5. Resolve camera access in the worker with the privileged source-connection endpoint or an
    external environment/keychain reference. Normal source reads never reveal secrets.
-6. Register a job, then register a worker and heartbeat every 5-15 seconds, reporting
-   `local_fps` and `submission_hz` in metrics.
-7. For every processed detection frame, submit one atomic
+6. Before starting a tracking worker, inspect your own machine: existing virtualenv/conda
+   environments, `nvidia-smi`, and `torch.cuda` in the interpreter that will run it
+   (`manysight.probe_perception_runtime()`). Prefer GPU; CPU is a supported fallback and
+   never makes a camera unusable. Process at least 15 FPS per camera for tracking when the
+   source and machine allow it — source FPS, processing FPS, and submission Hz are three
+   different rates.
+7. Register a job, then register a worker and heartbeat every 5-15 seconds, reporting
+   `source_fps`, `processing_fps`, `submission_hz` and `device` in metrics.
+8. For every processed detection frame, submit one atomic
    `POST {endpoints["rest_url"]}/detection-samples` envelope with one exact timestamp,
    opaque `sample_id`, and zero or more detections. `detections=[]` is a known empty frame.
    Prefer the SDK sample builder; never create a fake detection for an empty frame. Local
@@ -289,7 +295,8 @@ complete low-level interface; `/openapi.json` is authoritative.
    observation kinds exist — `detection`, `measurement`, `state`; never send zone_id/zone or
    compute zone entry/exit, dwell, occupancy, movement, or a state change. See
    `GET {endpoints["rest_url"]}/observations/contract`.
-8. Verify with `GET {endpoints["rest_url"]}/agent/perception`,
+9. Verify with `GET {endpoints["rest_url"]}/agent/perception` — including the achieved
+   processing rate against target, not only that samples arrived —
    `GET {endpoints["rest_url"]}/observations/latest-frames`, and
    `GET {endpoints["rest_url"]}/multiview/current`. Preview a deterministic query, save it
    with `POST {endpoints["rest_url"]}/queries`, and reference it from a generated dashboard

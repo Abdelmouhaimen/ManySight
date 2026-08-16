@@ -9,14 +9,19 @@ zone_id/zone, or calculate zone entry/exit, dwell, occupancy, state changes, or
 durations — see get_observation_contract()/GET /api/v1/observations/contract.
 
 Typical worker loop:
-    from manysight import ManySight, CentroidTracker
+    from manysight import (ManySight, CentroidTracker, SubmissionGate, capture_fps,
+                           probe_perception_runtime)
+    runtime = probe_perception_runtime()   # cuda or cpu, decided here, not by ManySight
     sl = ManySight("http://localhost:8000")
     src = sl.source(1)  # safe source metadata; managed credentials remain redacted
     job = sl.register_job("Checkout presence", event_types=["detection"])
     worker = sl.register_worker("checkout-worker", version="1")
     cap = sl.open_capture(src)
+    recipe = sl.worker_recipe(source_ids=[src["id"]], source_fps=capture_fps(cap))
+    gate = SubmissionGate(recipe["sampling"]["recommendation"]["target_submission_hz"])
     ...
-    command = sl.heartbeat(metrics={"fps": fps})
+    command = sl.heartbeat(metrics={"processing_fps": fps, "submission_hz": hz,
+                                    "device": runtime["recommended_device"]})
     if command["should_stop"]:
         break
     sample = sl.begin_detection_sample(src["id"], "person", ts=time.time())
@@ -28,11 +33,191 @@ Typical worker loop:
 import atexit
 import json
 import os
+import shutil
+import subprocess
+import sys
 import time
 import uuid
 from urllib.parse import quote, urlsplit, urlunsplit
 
 import requests
+
+# FP16 is only worth enabling from Volta onwards, where tensor cores make it a
+# real speed-up rather than a precision loss for nothing.
+FP16_MIN_COMPUTE_CAPABILITY = (7, 0)
+
+
+def probe_perception_runtime() -> dict:
+    """What this machine can actually run a detector on. Local only, no HTTP.
+
+    Call this before starting a tracking worker instead of asking the user
+    whether they have CUDA. It reports what it found and never raises: a machine
+    with no NVIDIA driver, no torch, or a broken CUDA build is a valid answer
+    ("run on CPU and expect a lower rate"), not an error.
+
+    Run it with the interpreter that will actually run the worker — a base
+    environment answering "yes" proves nothing about the venv you are about to
+    start.
+    """
+    result = {
+        "python_executable": sys.executable,
+        "environment": _python_environment(),
+        "nvidia_smi": _probe_nvidia_smi(),
+        "torch": _probe_torch(),
+        "recommended_device": "cpu",
+        "fp16_supported": False,
+        "notes": [],
+    }
+    torch_info, smi = result["torch"], result["nvidia_smi"]
+    if torch_info["cuda_available"]:
+        result["recommended_device"] = "cuda"
+        capability = torch_info.get("compute_capability")
+        result["fp16_supported"] = bool(capability and tuple(capability) >= FP16_MIN_COMPUTE_CAPABILITY)
+        if not result["fp16_supported"]:
+            result["notes"].append(
+                "CUDA is available but the device is older than compute capability "
+                f"{FP16_MIN_COMPUTE_CAPABILITY[0]}.{FP16_MIN_COMPUTE_CAPABILITY[1]}; keep FP32.")
+    elif smi["present"] and smi["devices"]:
+        result["notes"].append(
+            "An NVIDIA GPU is present but this interpreter cannot use it: "
+            f"{torch_info.get('error') or 'torch reports CUDA unavailable'}. Check that the "
+            "worker's environment has a CUDA build of torch matching the driver.")
+    elif not torch_info["installed"]:
+        result["notes"].append(
+            "torch is not installed in this interpreter — this is not the worker environment, "
+            "or the accelerated dependencies are missing.")
+    else:
+        result["notes"].append(
+            "No NVIDIA GPU visible. CPU inference is supported; measure the sustained rate and "
+            "report it honestly rather than assuming the tracking target is met.")
+    return result
+
+
+def _python_environment() -> dict:
+    """Which interpreter this is, so a wrong-environment mistake is visible."""
+    conda = os.environ.get("CONDA_PREFIX")
+    if conda and sys.prefix.startswith(conda):
+        return {"kind": "conda", "name": os.environ.get("CONDA_DEFAULT_ENV") or
+                os.path.basename(conda), "prefix": sys.prefix}
+    if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
+        return {"kind": "venv", "name": os.path.basename(sys.prefix), "prefix": sys.prefix}
+    return {"kind": "system", "name": os.path.basename(sys.prefix), "prefix": sys.prefix}
+
+
+def _probe_nvidia_smi() -> dict:
+    info = {"present": False, "driver_version": None, "devices": [], "error": None}
+    binary = shutil.which("nvidia-smi")
+    if not binary:
+        info["error"] = "nvidia-smi not on PATH"
+        return info
+    info["present"] = True
+    try:
+        output = subprocess.run(
+            [binary, "--query-gpu=name,driver_version", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=15, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:   # a driver can hang or be half-installed
+        info["error"] = f"{type(exc).__name__}: {exc}"
+        return info
+    if output.returncode != 0:
+        info["error"] = (output.stderr or output.stdout or "").strip()[:300]
+        return info
+    for line in output.stdout.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if parts and parts[0]:
+            info["devices"].append(parts[0])
+            if len(parts) > 1 and not info["driver_version"]:
+                info["driver_version"] = parts[1]
+    return info
+
+
+def _probe_torch() -> dict:
+    info = {"installed": False, "version": None, "cuda_build": None, "cuda_available": False,
+            "device_count": 0, "device_name": None, "compute_capability": None, "error": None}
+    try:
+        import torch
+    except Exception as exc:      # ImportError, but a broken install can raise anything
+        info["error"] = f"{type(exc).__name__}: {exc}"
+        return info
+    info["installed"] = True
+    info["version"] = getattr(torch, "__version__", None)
+    info["cuda_build"] = getattr(getattr(torch, "version", None), "cuda", None)
+    try:
+        info["cuda_available"] = bool(torch.cuda.is_available())
+        if info["cuda_available"]:
+            info["device_count"] = int(torch.cuda.device_count())
+            info["device_name"] = torch.cuda.get_device_name(0)
+            info["compute_capability"] = list(torch.cuda.get_device_capability(0))
+    except Exception as exc:      # a mismatched driver raises here, not at import
+        info["cuda_available"] = False
+        info["error"] = f"{type(exc).__name__}: {exc}"
+    return info
+
+
+def capture_fps(capture, measure_frames: int = 0) -> float | None:
+    """The source's frame rate, or None when it cannot be trusted.
+
+    `cv2.CAP_PROP_FPS` returns 0 for many network streams and occasionally a
+    container timebase such as 90000, so an implausible value becomes an honest
+    unknown instead of a wrong rate plan. Pass `measure_frames` to time real
+    decoded frames when the property is unusable.
+
+    This is the *source's* rate, a property of the camera or file. Your own
+    processing rate is a separate choice you control in the worker loop — pass
+    this value to `worker_recipe(source_fps=...)` to get both planned.
+    """
+    declared = _plausible_fps(capture.get(_CAP_PROP_FPS)) if hasattr(capture, "get") else None
+    if declared is not None or measure_frames <= 0:
+        return declared
+    started, decoded = time.monotonic(), 0
+    for _ in range(measure_frames):
+        ok, _frame = capture.read()
+        if not ok:
+            break
+        decoded += 1
+    elapsed = time.monotonic() - started
+    return _plausible_fps(decoded / elapsed) if decoded >= 2 and elapsed > 0 else None
+
+
+_CAP_PROP_FPS = 5   # cv2.CAP_PROP_FPS, inlined so this helper does not import cv2
+
+
+def _plausible_fps(value) -> float | None:
+    try:
+        rate = float(value)
+    except (TypeError, ValueError):
+        return None
+    return rate if rate == rate and 0 < rate <= 1000 else None
+
+
+class SubmissionGate:
+    """Submit at a chosen rate while the tracker keeps running at full speed.
+
+    The mistake this exists to prevent is sleeping the capture loop down to the
+    submission rate: that starves the tracker of the frames it needs for
+    association and caps a perfectly capable GPU worker at a few FPS. Process
+    every frame; ask the gate whether this one is also due for submission.
+
+        gate = SubmissionGate(recipe["sampling"]["recommendation"]["target_submission_hz"])
+        while True:
+            frame = read(); tracks = track(detect(frame))
+            if gate.due():
+                client.submit_detection_sample(...)
+    """
+
+    def __init__(self, hz: float):
+        if not hz or hz <= 0:
+            raise ValueError("submission rate must be positive")
+        self.interval = 1.0 / float(hz)
+        self._next = None
+
+    def due(self, now: float | None = None) -> bool:
+        now = time.monotonic() if now is None else now
+        if self._next is None or now >= self._next:
+            # Anchored to now, not to the previous deadline: a worker that paused
+            # must not then submit a burst catching up on missed slots.
+            self._next = now + self.interval
+            return True
+        return False
 
 
 class DetectionSample:
@@ -164,6 +349,34 @@ class ManySight:
             body["reset_token"] = reset_token
         return self._req("POST", "/workspace/reset-cameras", body)
 
+    def worker_recipe(self, entity_type: str = "person", tracking: bool = True,
+                      source_ids=None, source_fps: float | None = None) -> dict:
+        """The current submission contract and rate plan, from the running platform.
+
+        Authoritative: read this rather than copying an older worker script. Pass
+        `source_fps` once you have measured it (see `capture_fps`) so the returned
+        `sampling.recommendation` is computed for the source you actually have.
+        """
+        params = {"entity_type": entity_type, "tracking": str(tracking).lower()}
+        if source_ids:
+            params["source_ids"] = ",".join(str(value) for value in source_ids)
+        if source_fps is not None:
+            params["source_fps"] = source_fps
+        return self._req("GET", "/agent/worker-recipe", params=params)
+
+    def perception(self, entity_type: str = "person", source_ids=None,
+                   require_tracking: bool = True) -> dict:
+        """Does usable perception already exist, and is it performing?
+
+        Call before starting a worker to avoid duplicating one, and after to
+        verify: freshness, submission rate, and the achieved processing rate
+        against target.
+        """
+        params = {"entity_type": entity_type, "require_tracking": str(require_tracking).lower()}
+        if source_ids:
+            params["source_ids"] = ",".join(str(value) for value in source_ids)
+        return self._req("GET", "/agent/perception", params=params)
+
     def store_map(self) -> dict:
         m = self._req("GET", "/store")
         m["zones"] = self.zones()
@@ -241,7 +454,13 @@ class ManySight:
 
     def heartbeat(self, status: str = "running", metrics=None, last_error: str = "") -> dict:
         """Report liveness and receive cooperative stop/restart commands.
-        Call every 5-15 seconds and exit when `should_stop` is true."""
+        Call every 5-15 seconds and exit when `should_stop` is true.
+
+        `metrics` is free-form, but report the rates the platform asks for so
+        inspect_perception can tell a healthy worker from a slow one:
+        `source_fps` (what the camera delivers), `processing_fps` (what the
+        detector and tracker actually consume — the rate tracking quality
+        depends on), `submission_hz`, `device` ("cuda"/"cpu") and `precision`."""
         if self.worker_instance_id is None:
             raise RuntimeError("register_worker before heartbeat")
         return self._req("POST", f"/workers/{self.worker_instance_id}/heartbeat",

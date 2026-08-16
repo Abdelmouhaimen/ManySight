@@ -91,6 +91,27 @@ queryable. Reads of fused state are never stale — they run any pending fusion 
 Submitting at full camera rate is supported; local detection may still run faster than
 central submission.
 
+### Tracking rate and local hardware
+
+Source FPS, local processing FPS, and central submission Hz are three different rates. A
+tracking workload — person detection plus tracking, YOLO + ByteTrack or equivalent,
+multiview person tracking — **processes at least 15 FPS per camera** when the source
+supplies that and the machine sustains it, preferring 30 or source-native. Tracker
+association degrades with the gap between frames, so a 1-5 FPS tracker on capable hardware
+is a defect even though every sample it sends is valid. A source below 15 FPS gets its
+native rate with the limitation reported. Never hard-code a sleep that caps a capable GPU
+worker; gate submission instead.
+
+Before starting a heavy worker, inspect the local machine yourself — existing
+virtualenv/conda environments, `nvidia-smi`, and `torch.cuda` inside the interpreter that
+will actually run the worker (`manysight.probe_perception_runtime()` does all of it). Reuse
+a compatible environment rather than creating one. Prefer GPU where present, with FP16 only
+on a validated CUDA path. CUDA is an optimization, not a connection prerequisite: CPU is a
+supported fallback, and a missing GPU never makes a camera unusable. If the target rate
+cannot be met, report the measured limitation instead of claiming compliance.
+`GET /api/v1/agent/worker-recipe` computes the plan; `GET /api/v1/agent/perception` scores
+the achieved rate against it.
+
 ## Geometry and multiview
 
 Canonical zones are metric GeoJSON Polygon/MultiPolygon. Zone views are camera-specific

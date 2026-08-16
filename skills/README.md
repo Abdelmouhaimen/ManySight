@@ -17,7 +17,7 @@ They are discoverable three ways:
 | [manysight-core](manysight-core/SKILL.md) | **load first** — platform boundary, atomic samples, identity, geometry, quality, where authority lives |
 | [sources-and-cameras](sources-and-cameras/SKILL.md) | onboarding cameras/streams/sensors, credential safety, inspecting a camera view, freshness |
 | [geometry-and-zones](geometry-and-zones/SKILL.md) | canonical zones, camera zone views, projection surfaces, calibration, preview→approve→commit |
-| [perception-workers](perception-workers/SKILL.md) | detection, measurement, and state workers — reuse first, current contract, sampling rate, verification |
+| [perception-workers](perception-workers/SKILL.md) | detection, measurement, and state workers — reuse first, current contract, tracking frame rate, GPU/CUDA readiness, verification |
 | [multiview-fusion](multiview-fusion/SKILL.md) | calibrated camera groups, anonymous fused tracks, cross-camera counting |
 | [queries-dashboards-alerts](queries-dashboards-alerts/SKILL.md) | deterministic questions, query-backed widgets, exact comparison operators, quality-aware alerts |
 | [guided-demo](guided-demo/SKILL.md) | the isolated playable demo, its boundaries, and its promotion rules |

@@ -214,7 +214,7 @@ def test_perception_reports_healthy_capability_with_rate_and_worker(client):
         "name": "Person tracking", "source_ids": [source_id]}).json()
     worker = client.post("/api/v1/workers", json={"job_id": job["id"], "name": "yolo"}).json()
     client.post(f"/api/v1/workers/{worker['id']}/heartbeat", json={
-        "status": "running", "metrics": {"local_fps": 35.0, "submission_hz": 10.0}})
+        "status": "running", "metrics": {"processing_fps": 35.0, "submission_hz": 10.0}})
     now = db.now()
     for index in range(11):
         submit_sample(client, source_id, f"s{index}", now - 1 + index * 0.1, [("a", 3.0, 2.0)])
@@ -225,7 +225,7 @@ def test_perception_reports_healthy_capability_with_rate_and_worker(client):
     assert "do not start another worker" in body["next"]
     item = body["sources"][0]
     assert item["tracking"] is True
-    assert item["local_fps"] == 35.0
+    assert item["processing_fps"] == 35.0
     assert item["submission_hz"] is not None
     assert item["worker"]["effective_status"] == "running"
     assert body["compatible_jobs"][0]["job_id"] == job["id"]
@@ -310,11 +310,12 @@ def test_worker_recipe_is_the_current_contract_not_a_script(client):
     for forbidden in ("zone_id", "zone_enter", "occupancy", "fused identity"):
         assert forbidden in body["forbidden_worker_output"]
     assert "full camera FPS" in body["sampling"]["principle"]
-    assert "no globally correct rate" in " ".join(body["sampling"]["guidance"])
-    assert body["sampling"]["report_in_heartbeat"] == ["local_fps", "submission_hz"]
+    assert "no globally correct submission rate" in " ".join(body["sampling"]["guidance"])
+    assert set(body["sampling"]["report_in_heartbeat"]) >= {"processing_fps", "submission_hz"}
     assert body["skill"] == "perception-workers"
     assert "Do NOT infer it from an example" in body["authority"]
-    assert any("conda" in item or "virtualenv" in item for item in body["local_environment"])
+    assert any("conda" in item or "virtualenv" in item
+               for item in body["local_environment"]["order"])
     assert client.get("/api/v1/agent/worker-recipe",
                       params={"source_ids": "1,x"}).status_code == 422
 

@@ -97,6 +97,18 @@ mcp = build_server(
         "for the current contract — never infer it from an example, demo, or older worker script "
         "you find in a repository; those may predate the current API.\n"
         "\n"
+        "TRACKING RATE AND HARDWARE. A tracking worker processes at least 15 frames/sec per "
+        "camera when the source supplies that and the machine sustains it; prefer 30 or "
+        "source-native. Never quietly configure person tracking at 1-5 FPS on capable hardware. "
+        "Local processing FPS and central submission Hz are different rates — submission is "
+        "normally lower, and gating submission is not a reason to slow the tracker. Before "
+        "starting a heavy worker, inspect the local machine yourself: existing virtualenv/conda "
+        "environments, nvidia-smi, and torch.cuda inside the interpreter that will run the "
+        "worker (manysight.probe_perception_runtime() does all of it). Prefer GPU when it is "
+        "there; CPU is a valid fallback and never makes a camera unusable. Do not ask the user "
+        "whether they have CUDA or which environment to use when you can find out. After "
+        "starting, verify the achieved rate, not just that samples arrived.\n"
+        "\n"
         "IDENTITY. entity_id is an opaque source-local tracker ID, not a person. Fused multiview "
         "IDs are anonymous physical-track estimates from geometry, time, and topology — not "
         "identity, not appearance ReID. Never join tracker IDs across cameras yourself; "
@@ -347,32 +359,57 @@ def commit_zone(views: list[dict], approved: bool = False, zone_name: str = "",
 
 @mcp.tool()
 def inspect_perception(entity_type: str = "person", source_ids: list[int] | None = None,
-                       require_tracking: bool = True, require_spatial: bool = True) -> dict:
+                       require_tracking: bool = True, require_spatial: bool = True,
+                       source_fps: float | None = None) -> dict:
     """Can ManySight already answer a question about `entity_type` on these
     sources? Returns per-source availability, healthy/stale/unavailable state,
     observed central submission rate, worker heartbeat, tracking and spatial
     output, multiview readiness, any compatible existing job, and an `action` of
     reuse | extend_coverage | restart_or_repair | perception_missing.
 
+    Also returns `performance`: the achieved processing FPS each worker reports
+    against the rate its workload needs. That is a SEPARATE axis from
+    availability — a worker tracking at 4 FPS is still healthy perception, but it
+    is a readiness warning you must surface rather than calling the worker fine
+    because some samples arrived. `readiness_axes` spells out the three
+    independent questions: camera available, perception runnable, performance
+    capable. Missing CUDA affects only the third.
+
     Call it BEFORE starting any worker so you reuse healthy perception instead of
     starting a duplicate, and again afterwards to verify the worker is really
-    producing complete fresh samples. Do not inspect OS processes or repository
-    files to answer this. A stale or missing source means unknown, never zero."""
+    producing complete fresh samples at the right rate. Do not inspect OS
+    processes or repository files to answer this. A stale or missing source means
+    unknown, never zero."""
     return _req("GET", "/agent/perception" + _qs({
         "entity_type": entity_type, "source_ids": _ids(source_ids),
         "require_tracking": str(require_tracking).lower(),
         "require_spatial": str(require_spatial).lower(),
+        "source_fps": source_fps,
     }))
 
 
 @mcp.tool()
 def get_worker_recipe(entity_type: str = "person", tracking: bool = True,
-                      source_ids: list[int] | None = None) -> dict:
+                      source_ids: list[int] | None = None,
+                      source_fps: float | None = None) -> dict:
     """The CURRENT worker integration contract, generated from the running
     platform: preferred submission endpoint and envelope, empty-frame semantics,
     source-local identity rules, spatial point meaning, forbidden worker output,
-    sampling guidance, registration/heartbeat/stop behaviour, managed-connection
-    workflow, multiview prerequisites, the SDK helper, and how to verify.
+    the rate plan, acceleration and environment guidance,
+    registration/heartbeat/stop behaviour, managed-connection workflow, multiview
+    prerequisites, the SDK helper, and how to verify.
+
+    `sampling` separates three rates that are easy to conflate: source FPS, local
+    processing FPS, and central submission Hz. For tracking workloads it
+    recommends a `target_processing_fps` of at least 15 per camera when the
+    source supplies it — never quietly configure a tracker at 1-5 FPS on capable
+    hardware, and never hard-code a sleep that caps a GPU worker below the
+    target. Pass `source_fps` once you have measured it so the plan is computed
+    for the real source; a source slower than the floor gets its native rate and
+    the limitation reported. `acceleration` is the local GPU/CUDA check to run
+    yourself before starting a heavy worker — ManySight cannot see your machine,
+    so probe it rather than asking the user whether they have CUDA. CPU is a
+    valid fallback, never a reason to call a camera unusable.
 
     Call it before writing or adapting any worker. It is authoritative — do NOT
     infer the contract from an example script, a demo worker, or an older file
@@ -380,7 +417,7 @@ def get_worker_recipe(entity_type: str = "person", tracking: bool = True,
     the detector, tracker, and local environment are yours."""
     return _req("GET", "/agent/worker-recipe" + _qs({
         "entity_type": entity_type, "tracking": str(tracking).lower(),
-        "source_ids": _ids(source_ids),
+        "source_ids": _ids(source_ids), "source_fps": source_fps,
     }))
 
 
@@ -889,8 +926,9 @@ def register_worker(job_id: int, name: str = "", version: str = "",
 
 def heartbeat_worker(worker_id: int, status: str = "running",
                      metrics: dict | None = None, last_error: str = "") -> dict:
-    """One lifecycle heartbeat. The worker process owns this; report local_fps and
-    submission_hz in metrics so inspect_perception can show them."""
+    """One lifecycle heartbeat. The worker process owns this; report source_fps,
+    processing_fps, submission_hz, device and precision in metrics so
+    inspect_perception can tell a healthy worker from a slow one."""
     return _req("POST", f"/workers/{worker_id}/heartbeat", {
         "status": status, "metrics": metrics or {}, "last_error": last_error,
     })

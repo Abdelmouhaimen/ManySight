@@ -19,7 +19,8 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from .. import db
-from ..services import agent_workflows, current_state, homography, zone_geometry
+from ..services import (agent_workflows, current_state, homography, worker_runtime,
+                        zone_geometry)
 from . import analytics_query, geometry as geometry_router, jobs, zones as zones_router
 
 router = APIRouter(tags=["agent"])
@@ -112,6 +113,56 @@ def _submission_hz(source_id: int, entity_type: str, now: float) -> float | None
         return None
     span = float(row["hi"]) - float(row["lo"])
     return round((count - 1) / span, 2) if span > 0 else None
+
+
+def _reported_rates(worker: dict | None) -> dict:
+    """The rates a worker reports about itself, from heartbeat metrics.
+
+    `processing_fps` is the canonical key. `local_fps`/`fps` are read too, because
+    a worker started before that name existed is still running and its rate is
+    still worth knowing; nothing here writes the older names back.
+    """
+    metrics = (worker or {}).get("metrics") or {}
+    if not isinstance(metrics, dict):
+        return {"source_fps": None, "processing_fps": None, "submission_hz": None,
+                "device": None, "precision": None}
+    processing = next((metrics.get(key) for key in ("processing_fps", "local_fps", "fps")
+                       if metrics.get(key) is not None), None)
+    device = metrics.get("device")
+    return {
+        "source_fps": worker_runtime.clean_fps(metrics.get("source_fps")),
+        "processing_fps": worker_runtime.clean_fps(processing),
+        "submission_hz": worker_runtime.clean_fps(metrics.get("submission_hz")),
+        "device": str(device).lower() if device else None,
+        "precision": metrics.get("precision"),
+    }
+
+
+def _source_fps(row: dict, reported: dict, requested: float | None) -> tuple[float | None, str]:
+    """The best available source rate, and where it came from.
+
+    ManySight never opens a feed, so it can only know this if someone told it:
+    the caller measured it, a worker reported it, or it was recorded on the
+    source. An unknown rate stays unknown rather than becoming an assumed 30.
+    """
+    if worker_runtime.clean_fps(requested) is not None:
+        return worker_runtime.clean_fps(requested), "requested"
+    if reported.get("source_fps") is not None:
+        return reported["source_fps"], "worker_heartbeat"
+    metadata = db.jload(row.get("metadata_json"), {}) or {}
+    recorded = worker_runtime.clean_fps(metadata.get("source_fps"))
+    if recorded is not None:
+        return recorded, "source_metadata"
+    return None, "unknown"
+
+
+def _group_time_tolerance(source_id: int) -> float | None:
+    """The tightest enabled fusion tolerance this source must keep up with."""
+    tolerances = []
+    for group in db.q("SELECT source_ids_json,time_tolerance_s FROM multiview_groups WHERE enabled=1"):
+        if source_id in [int(value) for value in db.jload(group["source_ids_json"], [])]:
+            tolerances.append(float(group["time_tolerance_s"]))
+    return min(tolerances) if tolerances else None
 
 
 def _latest_worker(source_id: int) -> dict | None:
@@ -376,6 +427,9 @@ def inspect_source(source_id: int, entity_type: str = "person"):
     views = db.q("SELECT id,zone_id,revision,membership_rule,projection_surface_id FROM zone_views "
                  "WHERE source_id=? ORDER BY id", (source_id,))
     zone_names = {z["id"]: z["name"] for z in db.q("SELECT id,name FROM zones")}
+    worker = _latest_worker(source_id)
+    reported = _reported_rates(worker)
+    rate, rate_origin = _source_fps(row, reported, None)
     return {
         "id": row["id"], "name": row["name"], "kind": row["kind"],
         "connection": {
@@ -407,8 +461,12 @@ def inspect_source(source_id: int, entity_type: str = "person"):
             "entity_type": entity_type,
             **_freshness(source_id, entity_type, now),
             "submission_hz": _submission_hz(source_id, entity_type, now),
+            "source_fps": rate,
+            "source_fps_origin": rate_origin,
+            "processing_fps": reported["processing_fps"],
+            "device": reported["device"],
             "evidence": _sample_geometry(source_id, entity_type),
-            "worker": _latest_worker(source_id),
+            "worker": worker,
         },
         "visual_inspection": "GET /api/v1/agent/sources/{id}/frame-capture-plan",
     }
@@ -477,11 +535,17 @@ def inspect_perception(
                           Query(description="Comma-separated source IDs; omit for all")] = None,
     require_tracking: bool = True,
     require_spatial: bool = True,
+    source_fps: Annotated[float | None,
+                          Query(description="Measured source rate, if you know it")] = None,
 ):
     """Answer 'can ManySight already answer this?' before starting any worker.
 
     Derived entirely from existing job/worker/observation records — there is no
     separate capability registry to drift out of sync with reality.
+
+    Availability and performance are reported separately. A worker tracking at 4
+    FPS is producing real observations, so it stays `healthy`; its rate shows up
+    under `performance`, which is where a readiness warning belongs.
     """
     now = db.now()
     if source_ids:
@@ -504,7 +568,12 @@ def inspect_perception(
         worker = _latest_worker(source_id)
         if worker:
             workers[worker["job_id"]] = worker
-        metrics = (worker or {}).get("metrics") or {}
+        reported = _reported_rates(worker)
+        rate, origin = _source_fps(row, reported, source_fps)
+        plan = worker_runtime.rate_plan(
+            source_fps=rate, tracking=require_tracking,
+            multiview_time_tolerance_s=_group_time_tolerance(source_id))
+        observed_hz = _submission_hz(source_id, entity_type, now)
         per_source.append({
             "source_id": source_id, "name": row["name"],
             "state": freshness["state"],
@@ -513,10 +582,20 @@ def inspect_perception(
             "last_sample_at": freshness["last_sample_at"],
             "age_s": freshness["age_s"],
             "last_detection_count": freshness["last_detection_count"],
-            "submission_hz": _submission_hz(source_id, entity_type, now),
-            # Local decode/inference rate is the worker's own business; ManySight
-            # only knows it if the worker reports it in heartbeat metrics.
-            "local_fps": metrics.get("local_fps") or metrics.get("fps"),
+            # Three different rates. submission_hz is measured centrally from the
+            # arriving samples; the other two are the worker's own business and are
+            # only known here if it reports them in heartbeat metrics.
+            "submission_hz": observed_hz,
+            "source_fps": rate,
+            "source_fps_origin": origin,
+            "processing_fps": reported["processing_fps"],
+            "device": reported["device"],
+            "precision": reported["precision"],
+            "rate_plan": plan,
+            "performance": worker_runtime.assess(
+                plan, reported["processing_fps"],
+                submission_hz=reported["submission_hz"] or observed_hz,
+                device=reported["device"]),
             "tracking": evidence["tracking"],
             "current_sample_empty": evidence["current_sample_empty"],
             "output": {"bbox_px": evidence["bbox_px"], "point_px": evidence["point_px"],
@@ -579,9 +658,33 @@ def inspect_perception(
             "These sources are not in one enabled multiview group, so cross-camera counting would "
             "double-count. Use configure-multiview before occupancy questions.")
 
+    # Performance is scored only where perception exists at all: telling an agent
+    # that an absent worker is slow would bury the fact that there is no worker.
+    scored = [item for item in per_source if item["state"] != "unavailable"]
+    below = [item["source_id"] for item in scored
+             if item["performance"]["state"] == "below_target"]
+    limited = [item["source_id"] for item in scored
+               if item["performance"]["state"] == "source_limited"]
+    unreported = [item["source_id"] for item in scored
+                  if item["performance"]["state"] == "unreported"]
+    if below:
+        reasons.append(
+            f"Sources {below} are delivering samples but tracking below their target processing "
+            "rate — see performance.likely_causes. Arriving samples do not prove a healthy "
+            "tracking rate.")
+    if limited:
+        reasons.append(
+            f"Sources {limited} are limited by the source rate itself, not by the worker; "
+            f"{worker_runtime.TRACKING_MIN_PROCESSING_FPS:g} FPS is unreachable for them.")
+    if unreported and require_tracking:
+        reasons.append(
+            f"Sources {unreported} do not report processing_fps in heartbeat metrics, so their "
+            "tracking rate is unverified.")
+
     return {
         "request": {"entity_type": entity_type, "source_ids": wanted,
-                    "require_tracking": require_tracking, "require_spatial": require_spatial},
+                    "require_tracking": require_tracking, "require_spatial": require_spatial,
+                    "source_fps": worker_runtime.clean_fps(source_fps)},
         "capability": {
             "entity_type": entity_type, "task": "detection_tracking",
             "state": capability_state, "action": action,
@@ -603,8 +706,24 @@ def inspect_perception(
         },
         "observed_entity_types": [row["entity_type"] for row in db.q(
             "SELECT DISTINCT entity_type FROM source_current_samples ORDER BY entity_type")],
+        "performance": {
+            "state": ("below_target" if below
+                      else "source_limited" if limited
+                      else "unverified" if unreported
+                      else "ok" if scored else "unknown"),
+            "tracking_minimum_processing_fps": worker_runtime.TRACKING_MIN_PROCESSING_FPS,
+            "preferred_processing_fps": worker_runtime.TRACKING_PREFERRED_PROCESSING_FPS,
+            "below_target_source_ids": below,
+            "source_limited_source_ids": limited,
+            "unreported_source_ids": unreported,
+            "note": ("Separate from availability. A slow worker still produces real "
+                     "observations; it is a readiness warning, never a missing capability."),
+        },
+        "readiness_axes": worker_runtime.readiness_axes(),
         "reasons": reasons,
         "next": ("Reuse the existing perception; do not start another worker."
+                 + (" Its tracking rate is below target — fix that rather than starting a second "
+                    "worker." if below else "")
                  if action == "reuse" else
                  "Call get_worker_recipe for the current contract, then run a local worker."),
     }
@@ -616,11 +735,14 @@ def inspect_perception(
 
 @router.get("/agent/worker-recipe", summary="The current worker integration contract")
 def worker_recipe(entity_type: str = "person", tracking: bool = True,
-                  source_ids: str | None = None):
+                  source_ids: str | None = None,
+                  source_fps: Annotated[float | None,
+                                        Query(description="Measured source rate, if known")] = None):
     """The authoritative answer to 'how do I submit perception to ManySight now?'.
 
     Generated from the running platform, so it cannot fall behind the way a demo
-    or example script in a repository can.
+    or example script in a repository can. When `source_ids` are given, the rate
+    plan is computed per source from what is actually known about each one.
     """
     from .observations import DetectionSampleIn  # local import: heavy module
 
@@ -631,6 +753,29 @@ def worker_recipe(entity_type: str = "person", tracking: bool = True,
         except ValueError as exc:
             raise HTTPException(422, "source_ids must be comma-separated integers") from exc
     fields = sorted(DetectionSampleIn.model_fields)
+
+    known = {row["id"]: row for row in _source_rows()}
+    per_source = []
+    for source_id in wanted:
+        row = known.get(source_id)
+        if not row:
+            raise HTTPException(404, f"unknown source id: {source_id}")
+        reported = _reported_rates(_latest_worker(source_id))
+        rate, origin = _source_fps(row, reported, source_fps)
+        per_source.append({
+            "source_id": source_id, "name": row["name"], "kind": row["kind"],
+            "source_fps_origin": origin,
+            **worker_runtime.rate_plan(
+                source_fps=rate, tracking=tracking,
+                multiview_time_tolerance_s=_group_time_tolerance(source_id)),
+        })
+    # With exactly one source named there is a single right answer, so the headline
+    # recommendation is that source's plan rather than a weaker generic one.
+    if len(per_source) == 1:
+        default_plan = {key: value for key, value in per_source[0].items()
+                        if key not in {"source_id", "name", "kind"}}
+    else:
+        default_plan = worker_runtime.rate_plan(source_fps=source_fps, tracking=tracking)
     return {
         "authority": (
             "This recipe plus GET /observations/contract and /openapi.json are the current "
@@ -669,17 +814,35 @@ def worker_recipe(entity_type: str = "person", tracking: bool = True,
             ["zone_id", "zone", "zone_enter", "zone_exit", "zone_dwell", "state_change", "count",
              "dwell", "occupancy", "visits", "transitions", "fused identity"]),
         "sampling": {
-            "principle": ("Local detection and tracking may run at full camera FPS. The central "
-                          "submission rate is a separate, task-driven choice — submitting every "
-                          "decoded frame is usually unnecessary."),
+            "principle": ("Source FPS, local processing FPS, and central submission Hz are three "
+                          "different rates. Local detection and tracking may run at full camera "
+                          "FPS; the central submission rate is a separate, task-driven choice — "
+                          "submitting every decoded frame is usually unnecessary."),
+            "rates": worker_runtime.RATE_DEFINITIONS,
+            "tracking_minimum_processing_fps": worker_runtime.TRACKING_MIN_PROCESSING_FPS,
+            "preferred_processing_fps": worker_runtime.TRACKING_PREFERRED_PROCESSING_FPS,
+            "recommendation": default_plan,
+            "per_source": per_source,
             "guidance": [
-                "Current occupancy and zone presence: a few Hz is normally sufficient.",
-                "Dwell and visit boundaries: raise the rate until visit edges are stable.",
+                f"Tracking workloads (person detection + tracking, YOLO + ByteTrack or "
+                f"equivalent, multiview person tracking) process at least "
+                f"{worker_runtime.TRACKING_MIN_PROCESSING_FPS:g} FPS per camera when the source "
+                f"supplies it and the machine sustains it; prefer "
+                f"{worker_runtime.TRACKING_PREFERRED_PROCESSING_FPS:g} FPS or source-native.",
+                "Never configure a tracker at 1-5 FPS on a source and machine capable of "
+                "substantially more, and never hard-code a sleep that caps a capable GPU worker "
+                "below the target.",
+                "A source slower than the tracking floor gets its own native rate, and the "
+                "limitation is reported rather than papered over.",
+                "Current occupancy and zone presence: a few Hz of submission is normally enough.",
+                "Dwell and visit boundaries: raise the submission rate until visit edges are stable.",
                 "Fast movement or tight spatial gates: match the multiview time tolerance.",
-                "There is no globally correct rate; state the rate you chose and why.",
+                "There is no globally correct submission rate; state the rate you chose and why.",
             ],
-            "report_in_heartbeat": ["local_fps", "submission_hz"],
+            "report_in_heartbeat": worker_runtime.HEARTBEAT_METRICS,
         },
+        "acceleration": worker_runtime.acceleration_plan(),
+        "readiness_axes": worker_runtime.readiness_axes(),
         "lifecycle": {
             "register_job": "POST /api/v1/jobs before submitting",
             "register_worker": "POST /api/v1/workers for the process you actually started",
@@ -695,20 +858,22 @@ def worker_recipe(entity_type: str = "person", tracking: bool = True,
             "resolve": "GET /api/v1/sources/{id}/connection with X-ManySight-Credential-Key",
             "rules": ["in memory only", "never logged, persisted, or echoed into observations"],
         },
-        "local_environment": [
-            "Reuse an existing project virtualenv or conda environment before creating one.",
-            "Verify CUDA/PyTorch and model weights in that environment rather than assuming.",
-            "This is guidance for your own shell; ManySight executes nothing on your behalf.",
-        ],
+        "local_environment": worker_runtime.environment_plan(),
         "multiview_prerequisites": [
             "Every fused source calibrated into the same metric world frame.",
             "Complete samples from each source inside the group's time tolerance.",
             "An explicit enabled multiview group.",
         ],
         "verify": [
-            "GET /api/v1/agent/perception — worker heartbeat, freshness, submission rate.",
-            "GET /api/v1/observations/latest-frames — the current complete sample per source.",
+            "GET /api/v1/agent/perception — worker heartbeat, freshness, submission rate, and "
+            "the achieved processing rate against target. Starting the process is not the "
+            "finish line and occasional samples are not health.",
+            "GET /api/v1/observations/latest-frames — the current complete sample per source, "
+            "including that empty complete frames are accepted and that detections carry "
+            "entity_id when tracking is enabled.",
             "GET /api/v1/multiview/current — fused entities with member evidence.",
+            "Locally: the process is still alive, and its submission queue or frame backlog is "
+            "not growing.",
         ],
         "skill": "perception-workers",
         "contract_endpoint": "GET /api/v1/observations/contract",

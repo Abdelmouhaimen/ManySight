@@ -150,14 +150,25 @@ WORKFLOWS: dict[str, dict] = {
         "sequence": [
             "inspect_perception for the entity type and sources you need. If it reports "
             "action=reuse, stop: the data already exists.",
-            "get_worker_recipe for the CURRENT submission contract. Never infer the contract "
-            "from an example or demo script found in a repository.",
-            "Inspect your own local environment (existing venv/conda env, CUDA, PyTorch, model "
-            "weights) and reuse a compatible one rather than building a new environment.",
-            "Write or adapt the worker against the recipe and the Python SDK, run it locally, "
-            "and let it register its job/worker and heartbeat itself.",
-            "Verify with inspect_perception: worker heartbeat, complete samples, freshness, and "
-            "observed submission rate.",
+            "inspect_source for the cameras involved: configuration, calibration, and the "
+            "source frame rate if it is already known.",
+            "Inspect your OWN machine before building anything: existing virtualenv/conda "
+            "environments with the accelerated dependencies and weights already installed, "
+            "nvidia-smi, and torch.cuda inside the interpreter that will actually run the "
+            "worker. manysight.probe_perception_runtime() does all of it in one call. Reuse a "
+            "compatible environment rather than creating one, and do not ask the user what you "
+            "can determine yourself.",
+            "get_worker_recipe for the CURRENT submission contract, passing source_fps once you "
+            "have measured it. Never infer the contract from an example or demo script found in "
+            "a repository.",
+            "Configure detector and tracker for the recipe's target_processing_fps, on GPU when "
+            "one is available, and gate submission separately at target_submission_hz.",
+            "Write or adapt the worker against the recipe and the Python SDK, and start it "
+            "yourself in the chosen environment — do not ask the user to run it for you. Let it "
+            "register its job/worker and heartbeat, reporting source_fps, processing_fps, "
+            "submission_hz and device.",
+            "Verify with inspect_perception: worker heartbeat, complete samples, freshness, "
+            "observed submission rate, AND the achieved processing rate against target.",
             "Verify downstream: projection, zone membership, and fused state.",
         ],
         "invariants": [
@@ -166,13 +177,23 @@ WORKFLOWS: dict[str, dict] = {
             "No completed fresh sample means unknown or stale, NOT zero.",
             "Workers submit detection/measurement/state only — never zones, dwell, occupancy, "
             "visits, transitions, or fused identity.",
-            "Local detection and tracking may run at full camera FPS; central submission is "
-            "normally a lower, task-chosen rate.",
+            "Source FPS, local processing FPS and central submission Hz are three different "
+            "rates. Tracking processes at least 15 FPS per camera where the source and machine "
+            "allow it, preferring 30 or source-native; submission is normally lower and never "
+            "higher. A source below 15 FPS gets its native rate and the limitation is reported.",
+            "Never hard-code a sleep that caps a capable GPU worker below the processing target, "
+            "and never slow the tracker just to reduce the submission rate.",
+            "CUDA is an optimization, not a prerequisite. CPU is a supported fallback; a missing "
+            "GPU lowers the achievable rate and never makes a camera unusable. If the rate "
+            "cannot be met, report the measured limitation instead of claiming compliance.",
+            "Starting the process is not success. Occasional samples are not health.",
             "entity_id is a source-local tracker ID, not an identity.",
         ],
-        "tools": ["inspect_perception", "get_worker_recipe", "request_worker_state",
-                  "get_source_connection"],
-        "done_when": "inspect_perception reports state=healthy for every required source.",
+        "tools": ["inspect_perception", "inspect_source", "get_worker_recipe",
+                  "request_worker_state", "get_source_connection"],
+        "done_when": ("inspect_perception reports state=healthy for every required source, with "
+                      "an achieved processing rate at target or an explicitly reported "
+                      "limitation."),
     },
     "configure-multiview": {
         "title": "Fuse overlapping cameras into anonymous physical tracks",

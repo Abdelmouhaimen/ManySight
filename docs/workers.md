@@ -8,29 +8,62 @@ preprocessing. ManySight owns geometry enrichment and derived analytics.
 
 `GET /api/v1/agent/worker-recipe` returns the current integration contract, generated
 from the running platform: preferred endpoint and envelope, empty-frame semantics,
-identity rules, forbidden output, sampling guidance, lifecycle expectations, and how to
-verify. Fetch it — and `GET /api/v1/agent/perception` to check whether compatible
-perception already exists — before building anything.
+identity rules, forbidden output, the rate plan, acceleration and environment guidance,
+lifecycle expectations, and how to verify. Fetch it — and `GET /api/v1/agent/perception` to
+check whether compatible perception already exists — before building anything.
 
 **Do not infer the contract from an example or demo script in a repository.** Files on
 disk may predate the current API; the recipe, `GET /api/v1/observations/contract`, and
 `/openapi.json` are authoritative.
+
+## Frame rate and hardware
+
+Three rates are independent and must not be conflated:
+
+| rate | what it is |
+|---|---|
+| source FPS | what the camera, stream, or file delivers |
+| processing FPS | frames the local detector **and tracker** actually consume |
+| submission Hz | complete `DetectionSample` envelopes posted to ManySight |
+
+Only the third is a ManySight concern, and it is normally the lowest. The second is the one
+tracking quality depends on: association degrades with the gap between consecutive frames,
+and an identity swap cannot be recovered centrally.
+
+**A tracking workload processes at least 15 FPS per camera** when the source supplies that
+and the machine sustains it; 30 or source-native is preferred. A source below 15 FPS gets
+its native rate and the limitation is reported rather than papered over. Gate submission
+separately — `SubmissionGate` in the SDK — instead of sleeping the capture loop, which
+would starve the tracker and cap a capable GPU worker.
+
+Hardware is the worker's own machine to inspect. `manysight.probe_perception_runtime()`
+reports the interpreter and environment, `nvidia-smi`, torch's CUDA build and availability,
+the device name and compute capability, a recommended device, and whether FP16 is worth
+enabling — run it with the interpreter that will run the worker. Prefer an existing
+environment that already has the accelerated dependencies. CUDA is an optimization with a
+supported CPU fallback: if the sustained rate is below the target, measure it and say so
+rather than claiming compliance, and never report a camera as unusable for want of a GPU.
+
+`GET /api/v1/agent/worker-recipe?source_fps=…` returns this as a computed plan, and
+`GET /api/v1/agent/perception` scores the achieved rate against it.
 
 ## Worker lifecycle
 
 1. Read the source and geometry needed for the task.
 2. Resolve source access with the SDK or privileged connection endpoint.
 3. Register a job describing the purpose, source IDs, and observation kinds.
-4. Register a worker instance and heartbeat every 5–15 seconds. Report `local_fps` and
-   `submission_hz` in heartbeat metrics so capability inspection can show them.
+4. Register a worker instance and heartbeat every 5–15 seconds. Report `source_fps`,
+   `processing_fps`, `submission_hz`, `device` and `precision` in heartbeat metrics so
+   capability inspection can score the achieved rate against target.
 5. Submit one atomic `DetectionSample` per processed frame. Local detection and tracking
    may run at full camera FPS; the central submission rate is a separate, task-driven
    choice and is normally lower. For non-detection kinds, submit observations in batches
    of at most 5,000 rows; batches of 100–500 every 1–5 seconds are a practical default.
 6. Check each heartbeat response for a cooperative stop or restart request.
 7. Verify source-local and, where configured, fused current state — heartbeat, freshness,
-   complete samples, projection, and zone assignment. Create a saved query and dashboard
-   widget only after the observations are correct.
+   complete samples, projection, zone assignment, and the achieved processing rate.
+   Starting the process is not success and occasional samples are not health. Create a
+   saved query and dashboard widget only after the observations are correct.
 
 A job is metadata. A worker instance is heartbeat-backed runtime state. ManySight does
 not start or relaunch arbitrary worker scripts.
@@ -131,9 +164,10 @@ perform their own camera calibration or zone assignment.
 ## Examples
 
 - `examples/heatmap_tracker.py`: YOLO when installed, with a motion-subtraction
-  fallback; submits detections and zero-capable frame counts.
-- `examples/dwell_zones.py`: tracked detections and per-processed-frame counts used
-  for platform-derived visits and dwell.
+  fallback; probes the local runtime, tracks every decoded frame, gates submission
+  separately, and warns when the achieved rate falls below target.
+- `examples/dwell_zones.py`: tracked detections used for platform-derived visits and
+  dwell, on the same rate discipline.
 - `examples/fridge_state.py`: repeated open/closed state samples.
 - `examples/simulate_children_counts.py`: synthetic measurement series for UI and
   contract testing.
