@@ -120,12 +120,13 @@ class ApiKeyGuard:
         path, method = scope["path"], scope["method"]
         if not path.startswith("/api/") or path == "/api/v1/health":
             return await self.app(scope, receive, send)
-        # The connection-resolution endpoint has its own stronger, header-only
-        # credential access check. Do not make a distinct credential key also
-        # satisfy the general API-key middleware.
-        if method == "GET" and path.startswith("/api/v1/sources/") and path.endswith("/connection"):
-            return await self.app(scope, receive, send)
-        if PUBLIC_READS and method in {"GET", "HEAD", "OPTIONS"}:
+        # Resolving a source connection returns usable credentials, so it is
+        # never an ordinary read: opening the GET surface to the public must not
+        # open that one route with it. It carries no separate key of its own —
+        # the API key guards it, like every other write-equivalent request.
+        resolves_credentials = (method == "GET" and path.startswith("/api/v1/sources/")
+                                and path.endswith("/connection"))
+        if PUBLIC_READS and not resolves_credentials and method in {"GET", "HEAD", "OPTIONS"}:
             return await self.app(scope, receive, send)
         supplied = (Headers(scope=scope).get("x-api-key")
                     or QueryParams(scope["query_string"]).get("api_key"))
@@ -170,7 +171,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-ManySight-Credential-Key",
+    allow_headers=["Authorization", "Content-Type", "X-API-Key",
                    "X-ManySight-Demo-Session", "MCP-Protocol-Version"],
 )
 
@@ -184,7 +185,6 @@ def health():
         "auth_required": bool(API_KEY),
         "public_reads": PUBLIC_READS,
         "managed_credentials_configured": bool(os.environ.get("MANYSIGHT_CREDENTIAL_KEY")),
-        "credential_access_configured": bool(os.environ.get("MANYSIGHT_CREDENTIAL_ACCESS_KEY") or API_KEY),
         "endpoint_profile": resolve_platform_config()["profile"],
         "guided_demo_assets_available": demo_runtime.asset_status()["available"],
         "demo_stream_supervisor": demo_media.status(),

@@ -44,7 +44,6 @@ registry file path.
 | `MANYSIGHT_API_KEY` | Optional API key for `/api/*`; clients normally send `X-API-Key`. Browser SSE and protected media URLs use the compatibility query parameter. |
 | `MANYSIGHT_PUBLIC_READS` | Allows unauthenticated read requests when true; credential resolution remains protected. |
 | `MANYSIGHT_CREDENTIAL_KEY` | URL-safe base64 encoding of exactly 32 random bytes for managed credential encryption. |
-| `MANYSIGHT_CREDENTIAL_ACCESS_KEY` | Header-only key for privileged source-connection resolution; falls back to the API key if omitted. |
 | `MANYSIGHT_ALERT_POLL_INTERVAL_S` | Periodic alert evaluation interval; defaults to 15 seconds. |
 | `MANYSIGHT_LIVE_TICK_INTERVAL_S` | Maximum live fusion cadence; defaults to 0.01 s (100 Hz). A tick only runs for groups with new source state. |
 | `MANYSIGHT_LIVE_SCHEDULER` | `0` disables the background fusion scheduler; reads still drain pending ticks. |

@@ -41,7 +41,6 @@ def app(isolated_db, monkeypatch):
     before importing (see test_api_auth.py) since app.py reads it at import time."""
     monkeypatch.setenv("MANYSIGHT_API_KEY", "")
     monkeypatch.delenv("MANYSIGHT_CREDENTIAL_KEY", raising=False)
-    monkeypatch.delenv("MANYSIGHT_CREDENTIAL_ACCESS_KEY", raising=False)
     # server.app runs db.init_db() and mounts dashboard/dist at import time;
     # importing it fresh each test would re-run module-level side effects
     # against whatever DATA_DIR is active *right now* (already monkeypatched

@@ -84,8 +84,8 @@ capture = client.open_capture(source)
 ```
 
 For a managed webcam, the SDK can open the non-secret `device_index` directly. Other
-managed source kinds use the privileged connection endpoint and need
-`MANYSIGHT_CREDENTIAL_ACCESS_KEY` (or the configured API key fallback). For an
+managed source kinds resolve through `GET /sources/{id}/connection`, which needs no
+configuration beyond the server's `MANYSIGHT_API_KEY` if one is set. For an
 external-secret source, `open_capture` resolves `source.locator.local_secret_ref` from
 the worker environment. Passing `local_connection=` explicitly is a supported
 worker-local override and takes precedence over both modes.

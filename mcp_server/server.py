@@ -19,7 +19,6 @@ Register with Codex CLI:   see codex.config.example.toml at the repo root.
 Env:
   MANYSIGHT_URL      base URL of the platform (default http://localhost:8000)
   MANYSIGHT_API_KEY  only if the server enforces one
-  MANYSIGHT_CREDENTIAL_ACCESS_KEY  privileged managed-connection resolution key
   MANYSIGHT_SKILLS   path to the skills/ folder (default: sibling of this file's parent)
   MANYSIGHT_MCP_TRANSPORT  stdio (default) | streamable-http
   MANYSIGHT_MCP_HOST / MANYSIGHT_MCP_PORT  remote transport bind settings
@@ -46,7 +45,6 @@ REST_BASE = os.environ.get(
     BASE + PLATFORM_ENDPOINTS["paths"].get("rest", "/api/v1"),
 ).rstrip("/")
 API_KEY = os.environ.get("MANYSIGHT_API_KEY", "")
-CREDENTIAL_ACCESS_KEY = os.environ.get("MANYSIGHT_CREDENTIAL_ACCESS_KEY", API_KEY)
 SKILLS_DIR = os.environ.get(
     "MANYSIGHT_SKILLS",
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills"),
@@ -134,16 +132,11 @@ mcp = build_server(
 )
 
 
-def _req(method: str, path: str, body: dict | None = None, raw: bool = False,
-         privileged: bool = False):
+def _req(method: str, path: str, body: dict | None = None, raw: bool = False):
     url = REST_BASE + path
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json"}
-    if privileged:
-        if not CREDENTIAL_ACCESS_KEY:
-            raise RuntimeError("MANYSIGHT_CREDENTIAL_ACCESS_KEY is required to resolve managed connections")
-        headers["X-ManySight-Credential-Key"] = CREDENTIAL_ACCESS_KEY
-    elif API_KEY:
+    if API_KEY:
         headers["X-API-Key"] = API_KEY
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     with urllib.request.urlopen(req, timeout=30) as res:
@@ -292,15 +285,15 @@ def configure_source(name: str = "", source_id: int | None = None, kind: str | N
 @mcp.tool()
 def get_source_connection(source_id: int) -> dict:
     """Explicitly resolve a source's connection material for a local worker that is
-    about to open it. Requires MANYSIGHT_CREDENTIAL_ACCESS_KEY and may return
-    secrets.
+    about to open it. May return secrets, and needs no configuration beyond the
+    server's own API key if one is set.
 
     Use it ONLY inside the authorized local process that opens the feed, and pass
     the result straight into capture code in memory. Never log, print, display,
     persist, or copy it into observations, zone metadata, job metadata, generated
     code, or your reply. Ordinary source reads (inspect_source, inspect_workspace)
     are redacted and are what you should use for everything else."""
-    return _req("GET", f"/sources/{source_id}/connection", privileged=True)
+    return _req("GET", f"/sources/{source_id}/connection")
 
 
 @mcp.tool()

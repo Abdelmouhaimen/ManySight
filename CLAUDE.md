@@ -198,9 +198,10 @@ In `server/app.py`, order matters (Starlette runs the last-registered middleware
 must stay outermost so key-protected deployments answer preflights. Both custom guards are
 **pure ASGI middleware classes**, not `@app.middleware("http")` — `BaseHTTPMiddleware` pipes
 request and response bodies through a child task and cost about a third of ingestion
-throughput at camera rate. `ApiKeyGuard` enforces
-the optional `MANYSIGHT_API_KEY`, exempting `/health` and the header-only source-connection
-endpoint, which has its own stronger `MANYSIGHT_CREDENTIAL_ACCESS_KEY` check.
+throughput at camera rate. `ApiKeyGuard` enforces the optional `MANYSIGHT_API_KEY`,
+exempting `/health`. Source-connection resolution has no key of its own — the API key
+covers it — but it is excluded from the `MANYSIGHT_PUBLIC_READS` bypass, because it is the
+one GET that returns usable credentials.
 `DemoWorkspaceGuard` routes any request carrying `X-ManySight-Demo-Session` into an isolated
 temporary SQLite database through `db.using_database()` (a `ContextVar`), so demo sessions never
 touch the real workspace. Temporary paths are never returned publicly; promotion copies a strict

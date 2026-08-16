@@ -259,7 +259,7 @@ def test_the_recipe_points_at_the_current_sdk_contract(client):
     assert body["submission"]["preferred_endpoint"] == "POST /api/v1/detection-samples"
     assert body["submission"]["envelope_fields"] == sorted(DetectionSampleIn.model_fields)
     assert "Do NOT infer it from an example" in body["authority"]
-    assert "X-ManySight-Credential-Key" in body["source_access"]["resolve"]
+    assert "GET /api/v1/sources/{id}/connection" in body["source_access"]["resolve"]
     assert body["skill"] == "perception-workers"
 
 
@@ -391,21 +391,24 @@ def test_the_worker_guidance_never_names_the_retired_project(client):
         assert not LEGACY.search(text), f"{name} still names the previous project"
 
 
-def test_the_worker_guidance_uses_the_current_credential_names(client):
-    """New guidance is exactly where a stale env var or header would creep back in."""
-    env_names = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_CREDENTIAL_[A-Z0-9_]+\b")
-    headers = re.compile(r"\bX-[A-Za-z]+-Credential-Key\b")
+def test_the_worker_guidance_asks_for_no_credential_access_key(client):
+    """Guidance is where a removed prerequisite lingers longest.
 
-    seen = set()
-    for name, text in guidance_surfaces(client).items():
-        for match in env_names.findall(text):
-            assert match.startswith("MANYSIGHT_"), f"{name} references {match}"
-            seen.add(match)
-        for match in headers.findall(text):
-            assert match == "X-ManySight-Credential-Key", f"{name} references {match}"
-            seen.add(match)
-    assert {"MANYSIGHT_CREDENTIAL_ACCESS_KEY", "X-ManySight-Credential-Key"} <= seen, \
-        "the audit only proves something if the guidance really names these"
+    An agent told to set a variable the server no longer reads will conclude the
+    setup is incomplete and stop, so the removal has to reach the prose as well
+    as the code.
+    """
+    # Assembled, so this audit is not itself a match for what it forbids.
+    access_key = re.compile(r"\b[A-Z][A-Z0-9_]*CREDENTIAL_" + r"ACCESS_KEY\b")
+    dedicated_header = re.compile(r"\bX-[A-Za-z]+-Credential-Key\b")
+
+    surfaces = guidance_surfaces(client)
+    for name, text in surfaces.items():
+        assert not access_key.search(text), f"{name} still asks for a credential access key"
+        assert not dedicated_header.search(text), f"{name} still sends a dedicated header"
+    # Not vacuous: the guidance really does cover resolving a managed connection.
+    assert "/connection" in surfaces["worker-recipe"]
+    assert "sources/{id}/connection" in surfaces["worker-recipe"]
 
 
 # ---------------------------------------------------------------------------

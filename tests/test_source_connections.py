@@ -39,18 +39,34 @@ def test_managed_credentials_are_encrypted_and_hidden(client, isolated_db, monke
     assert "operator" not in str(client.get(f"/api/v1/sources/{source['id']}").json())
 
 
-def test_privileged_resolution_is_header_only_and_ignores_public_reads(client, monkeypatch):
+def test_managed_credentials_resolve_without_a_second_access_key(client, monkeypatch):
+    """A local deployment needs no key beyond the one guarding the API itself.
+
+    The property that still matters is *which operation* returns secrets, not
+    how many keys guard it: resolution hands back the stored username and
+    password, and nothing else does. `test_api_auth` covers the case where an
+    API key is configured, including that public reads never reach this route.
+    """
     monkeypatch.setenv("MANYSIGHT_CREDENTIAL_KEY", KEY)
-    monkeypatch.setenv("MANYSIGHT_CREDENTIAL_ACCESS_KEY", "resolve-only")
     source = client.post("/api/v1/sources", json=managed_rtsp()).json()
-    path = f"/api/v1/sources/{source['id']}/connection"
-    assert client.get(path).status_code == 401
-    assert client.get(path + "?api_key=resolve-only").status_code == 401
-    assert client.get(path, headers={"X-ManySight-Credential-Key": "wrong"}).status_code == 401
-    resolved = client.get(path, headers={"X-ManySight-Credential-Key": "resolve-only"})
+    resolved = client.get(f"/api/v1/sources/{source['id']}/connection")
     assert resolved.status_code == 200
     assert resolved.json()["connection"]["username"] == "operator"
     assert resolved.json()["connection"]["password"] == "camera-pass"
+    assert resolved.json()["connection_management"] == "manysight_managed"
+
+
+def test_managed_auth_type_none_resolves_the_url_directly(client):
+    """No stored secret, so nothing to decrypt — and no encryption key needed."""
+    source = client.post("/api/v1/sources", json={
+        "name": "Open camera", "kind": "http", "connection_management": "manysight_managed",
+        "connection": {"url": "http://cam.internal/stream.mjpg", "auth_type": "none"},
+    }).json()
+    assert source["credential_status"]["configured"] is False
+    resolved = client.get(f"/api/v1/sources/{source['id']}/connection")
+    assert resolved.status_code == 200
+    assert resolved.json()["connection"] == {
+        "url": "http://cam.internal/stream.mjpg", "auth_type": "none"}
 
 
 def test_missing_encryption_key_fails_closed_without_partial_source(client, isolated_db, monkeypatch):
@@ -62,41 +78,34 @@ def test_missing_encryption_key_fails_closed_without_partial_source(client, isol
 
 def test_edit_preserves_replaces_and_clears_credentials(client, monkeypatch):
     monkeypatch.setenv("MANYSIGHT_CREDENTIAL_KEY", KEY)
-    monkeypatch.setenv("MANYSIGHT_CREDENTIAL_ACCESS_KEY", "resolve")
     source = client.post("/api/v1/sources", json=managed_rtsp()).json()
     sid = source["id"]
-    headers = {"X-ManySight-Credential-Key": "resolve"}
 
     assert client.put(f"/api/v1/sources/{sid}", json={"name": "Renamed"}).status_code == 200
-    assert client.get(f"/api/v1/sources/{sid}/connection", headers=headers).json()["connection"]["password"] == "camera-pass"
+    assert client.get(f"/api/v1/sources/{sid}/connection").json()["connection"]["password"] == "camera-pass"
     assert client.put(f"/api/v1/sources/{sid}", json={"credentials": {"username": "new", "password": "new-pass"}}).status_code == 200
-    assert client.get(f"/api/v1/sources/{sid}/connection", headers=headers).json()["connection"]["password"] == "new-pass"
+    assert client.get(f"/api/v1/sources/{sid}/connection").json()["connection"]["password"] == "new-pass"
     cleared = client.put(f"/api/v1/sources/{sid}", json={"clear_credentials": True})
     assert cleared.json()["credential_status"] == {"configured": False, "username_configured": False}
-    assert "password" not in client.get(f"/api/v1/sources/{sid}/connection", headers=headers).json()["connection"]
+    assert "password" not in client.get(f"/api/v1/sources/{sid}/connection").json()["connection"]
 
 
 def test_invalid_edit_does_not_destroy_existing_credentials(client, monkeypatch):
     monkeypatch.setenv("MANYSIGHT_CREDENTIAL_KEY", KEY)
-    monkeypatch.setenv("MANYSIGHT_CREDENTIAL_ACCESS_KEY", "resolve")
     source = client.post("/api/v1/sources", json=managed_rtsp()).json()
     sid = source["id"]
     bad = client.put(f"/api/v1/sources/{sid}", json={"connection": {"host": "rtsp://bad"}, "clear_credentials": True})
     assert bad.status_code == 422
-    resolved = client.get(f"/api/v1/sources/{sid}/connection", headers={"X-ManySight-Credential-Key": "resolve"}).json()
+    resolved = client.get(f"/api/v1/sources/{sid}/connection").json()
     assert resolved["connection"]["password"] == "camera-pass"
 
 
-def test_external_secret_mode_remains_supported(client, monkeypatch):
-    monkeypatch.setenv("MANYSIGHT_CREDENTIAL_ACCESS_KEY", "resolve")
+def test_external_secret_mode_remains_supported(client):
     source = client.post("/api/v1/sources", json={
         "name": "External", "kind": "http", "connection_management": "external_secret",
         "locator": {"local_secret_ref": "CAMERA_URL"},
     }).json()
-    resolved = client.get(
-        f"/api/v1/sources/{source['id']}/connection",
-        headers={"X-ManySight-Credential-Key": "resolve"},
-    ).json()
+    resolved = client.get(f"/api/v1/sources/{source['id']}/connection").json()
     assert resolved["connection"] == {"local_secret_ref": "CAMERA_URL"}
 
 
@@ -109,13 +118,9 @@ def test_source_delete_removes_ciphertext(client, isolated_db, monkeypatch):
 
 def test_wrong_encryption_key_cannot_decrypt_existing_credentials(client, monkeypatch):
     monkeypatch.setenv("MANYSIGHT_CREDENTIAL_KEY", KEY)
-    monkeypatch.setenv("MANYSIGHT_CREDENTIAL_ACCESS_KEY", "resolve")
     source = client.post("/api/v1/sources", json=managed_rtsp()).json()
     monkeypatch.setenv("MANYSIGHT_CREDENTIAL_KEY", base64.urlsafe_b64encode(b"x" * 32).decode())
-    response = client.get(
-        f"/api/v1/sources/{source['id']}/connection",
-        headers={"X-ManySight-Credential-Key": "resolve"},
-    )
+    response = client.get(f"/api/v1/sources/{source['id']}/connection")
     assert response.status_code == 500
     assert "camera-pass" not in response.text
 
@@ -148,15 +153,11 @@ def test_malformed_managed_connections_are_rejected(client, body):
 
 def test_host_path_update_preserves_credentials(client, monkeypatch):
     monkeypatch.setenv("MANYSIGHT_CREDENTIAL_KEY", KEY)
-    monkeypatch.setenv("MANYSIGHT_CREDENTIAL_ACCESS_KEY", "resolve")
     source = client.post("/api/v1/sources", json=managed_rtsp()).json()
     updated = client.put(f"/api/v1/sources/{source['id']}", json={
         "connection": {"host": "10.0.0.9", "port": 8554, "path": "/new", "transport": "udp"},
     })
     assert updated.status_code == 200
-    resolved = client.get(
-        f"/api/v1/sources/{source['id']}/connection",
-        headers={"X-ManySight-Credential-Key": "resolve"},
-    ).json()
+    resolved = client.get(f"/api/v1/sources/{source['id']}/connection").json()
     assert resolved["connection"]["host"] == "10.0.0.9"
     assert resolved["connection"]["password"] == "camera-pass"

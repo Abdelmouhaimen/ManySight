@@ -1,17 +1,15 @@
 """Logical observation sources, managed connection metadata, and geometry.
 
 ManySight never opens or proxies an operational source. The isolated guided demo serves
-only its allowlisted local sample media. Workers may explicitly resolve a managed
-connection through a separately authenticated endpoint; ordinary source reads remain
-safe to display and never contain credentials.
+only its allowlisted local sample media. Workers explicitly resolve a managed connection
+through one dedicated endpoint; every ordinary source read remains safe to display and
+never contains credentials.
 """
-import hmac
 import json
-import os
 import re
 from urllib.parse import parse_qsl, urlsplit
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from .. import db
@@ -367,22 +365,24 @@ def update_source(source_id: int, body: SourcePatch):
     return serialize(_get(source_id))
 
 
-def _require_credential_access(request: Request):
-    expected = os.environ.get("MANYSIGHT_CREDENTIAL_ACCESS_KEY") or os.environ.get("MANYSIGHT_API_KEY")
-    if not expected:
-        raise HTTPException(503, "credential resolution is disabled; configure MANYSIGHT_CREDENTIAL_ACCESS_KEY")
-    supplied = request.headers.get("x-manysight-credential-key") or request.headers.get("x-api-key")
-    if not supplied or not hmac.compare_digest(supplied, expected):
-        raise HTTPException(401, "invalid or missing credential access key")
-
-
 @router.get(
     "/sources/{source_id}/connection",
     summary="Resolve a source connection for an authorized worker",
-    description="Sensitive, header-authenticated endpoint. Do not log or persist its response.",
+    description="Sensitive endpoint: the only one that returns usable connection material. "
+                "Do not log or persist its response.",
 )
-def get_source_connection(source_id: int, request: Request):
-    _require_credential_access(request)
+def get_source_connection(source_id: int):
+    """Return the connection a local worker needs to open this source itself.
+
+    Deliberately the *only* endpoint that does: normal source reads and every
+    inspection surface stay secret-free, which is the property that matters. It
+    carries no separate access key of its own — ManySight is a local, single-
+    workspace deployment, and a second key protecting one endpoint inside a
+    workspace the caller already has was ceremony, not a boundary. Whoever can
+    reach the API can reach this; `MANYSIGHT_API_KEY` guards both together, and
+    the request middleware keeps this route out of the public-reads bypass so
+    enabling open reads never opens credentials.
+    """
     row = _get(source_id)
     management = row.get("connection_management") or "external_secret"
     result = {

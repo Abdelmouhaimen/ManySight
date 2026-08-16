@@ -267,10 +267,11 @@ def test_build_server_accepts_no_transport_config():
     assert server.instructions == "hello"
 
 
-def test_managed_connection_tool_uses_privileged_request(monkeypatch):
+def test_managed_connection_tool_is_an_ordinary_request(monkeypatch):
+    """No separate key, so no separate request path — just the resolution route."""
     import mcp_server.server as m
 
     calls = []
     monkeypatch.setattr(m, "_req", lambda method, path, **kwargs: calls.append((method, path, kwargs)) or {})
     m.get_source_connection(9)
-    assert calls == [("GET", "/sources/9/connection", {"privileged": True})]
+    assert calls == [("GET", "/sources/9/connection", {})]

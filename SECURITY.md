@@ -19,8 +19,8 @@ ManySight can store managed source credentials encrypted with
 `MANYSIGHT_CREDENTIAL_KEY`. Operators must:
 
 - generate, store, rotate, and back up the encryption key separately from the database;
-- restrict `MANYSIGHT_CREDENTIAL_ACCESS_KEY` to workers and agents authorized to open
-  sources;
+- treat API access as connection access: `GET /sources/{id}/connection` returns usable
+  camera credentials to any caller the API accepts, so restrict who can reach the API;
 - protect API and MCP endpoints with appropriate authentication, TLS, network policy,
   and host/origin restrictions;
 - keep resolved credentials in worker memory and out of logs, exceptions, and telemetry;
@@ -31,7 +31,8 @@ ManySight can store managed source credentials encrypted with
 
 The general API accepts a query-string API key for browser SSE and protected-media
 compatibility. Prefer the `X-API-Key` header elsewhere and configure proxies not to log
-sensitive query strings. Managed source-connection resolution is always header-only.
+sensitive query strings. Managed source-connection resolution is never treated as a
+public read, so `MANYSIGHT_PUBLIC_READS` does not expose it.
 
 The current optional API key is not a multi-user authorization system. ManySight does
 not attest to worker code or model output, and cooperative worker controls require an

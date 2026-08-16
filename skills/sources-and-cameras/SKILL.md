@@ -28,8 +28,8 @@ guard working, not a bug: move it into a managed `connection` or a local secret 
 
 ## Credential rules
 
-- `get_source_connection(source_id)` is the only path to connection material. It is
-  separately authenticated with `MANYSIGHT_CREDENTIAL_ACCESS_KEY`.
+- `get_source_connection(source_id)` is the only path to connection material, and the
+  only call that returns it. It needs no key of its own.
 - Call it **only inside the authorized local process that opens the feed**, and pass the
   result straight into capture code in memory.
 - Never log, print, display, persist, or echo it — not into observations, zone metadata,

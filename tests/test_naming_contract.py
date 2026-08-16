@@ -10,11 +10,12 @@ from __future__ import annotations
 import base64
 import importlib
 import os
+import subprocess
 import sys
 
 import pytest
 
-from test_branding_audit import spelling
+from test_branding_audit import ROOT, spelling
 
 KEY = base64.urlsafe_b64encode(b"k" * 32).decode()
 # The retired managed-connection value, assembled so this file does not
@@ -105,17 +106,28 @@ def test_the_credential_key_variable_is_manysight_named(monkeypatch):
 # HTTP headers
 # ---------------------------------------------------------------------------
 
-def test_privileged_connection_resolution_uses_the_manysight_header(client, monkeypatch):
-    monkeypatch.setenv("MANYSIGHT_CREDENTIAL_ACCESS_KEY", "resolve-me")
+def test_the_credential_access_key_mechanism_is_gone(client):
+    """Removed, not renamed: no env var, no header, no separate gate.
+
+    A leftover would be worse than the original, because it would gate the
+    endpoint on a variable nothing documents any more.
+    """
+    from server.routers import sources as sources_router
+
     source_id = client.post("/api/v1/sources", json={
         "name": "Managed", "kind": "http", "connection_management": "manysight_managed",
         "connection": {"url": "http://cam.internal/stream.mjpg"}}).json()["id"]
+    resolved = client.get(f"/api/v1/sources/{source_id}/connection")
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["connection"]["url"] == "http://cam.internal/stream.mjpg"
 
-    assert client.get(f"/api/v1/sources/{source_id}/connection").status_code == 401
-    allowed = client.get(f"/api/v1/sources/{source_id}/connection",
-                         headers={"X-ManySight-Credential-Key": "resolve-me"})
-    assert allowed.status_code == 200
-    assert allowed.json()["connection"]["url"] == "http://cam.internal/stream.mjpg"
+    # Case-sensitive and assembled: the env var and the header were the whole
+    # mechanism, and spelling either one here would make this audit match itself.
+    for forbidden in ("CREDENTIAL_" + "ACCESS_KEY", "X-ManySight-" + "Credential-Key"):
+        tracked = subprocess.run(["git", "grep", "-l", forbidden],
+                                 cwd=ROOT, capture_output=True, text=True)
+        assert tracked.stdout == "", f"{forbidden} still appears in:\n{tracked.stdout}"
+    assert not hasattr(sources_router, "_require_credential_access")
 
 
 def test_the_demo_session_header_is_manysight_named(client, tmp_path, monkeypatch):
@@ -199,18 +211,15 @@ def test_the_sdk_module_and_class_are_manysight_named():
     assert manysight.ManySight.__name__ == "ManySight"
     client = manysight.ManySight("http://localhost:8000", api_key="k")
     assert client.base == "http://localhost:8000/api/v1"
-    # The credential access key falls back to the API key, from the ManySight variable.
-    assert client.credential_access_key == "k"
+    assert client.session.headers["X-API-Key"] == "k"
     assert not hasattr(manysight, spelling(case=str.title)), \
         "no compatibility alias may survive"
     assert not os.path.exists(f"sdk/python/{spelling()}.py")
 
 
-def test_the_sdk_credential_header_is_manysight_named(monkeypatch):
+def test_the_sdk_sends_only_the_manysight_api_key_header(monkeypatch):
     sys.path.insert(0, "sdk/python")
     from manysight import ManySight
-
-    sent = {}
 
     class FakeResponse:
         ok = True
@@ -220,10 +229,8 @@ def test_the_sdk_credential_header_is_manysight_named(monkeypatch):
         def json():
             return {"connection": {}}
 
-    client = ManySight(credential_access_key="resolve")
-    monkeypatch.setattr(client.session, "get",
-                        lambda url, headers=None, timeout=None: sent.update(headers or {})
-                        or FakeResponse())
+    client = ManySight(api_key="k")
+    monkeypatch.setattr(client.session, "get", lambda url, timeout=None: FakeResponse())
     client.get_source_connection(1)
-    assert "X-ManySight-Credential-Key" in sent
-    assert sent["X-ManySight-Credential-Key"] == "resolve"
+    assert dict(client.session.headers)["X-API-Key"] == "k"
+    assert not any("credential" in name.lower() for name in client.session.headers)

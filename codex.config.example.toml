@@ -7,10 +7,9 @@ args = ["/workspace/mcp_server/server.py"]
 
 [mcp_servers.manysight.env]
 MANYSIGHT_URL = "http://localhost:8000"
-# Only needed if you started the server with MANYSIGHT_API_KEY set:
+# Only needed if you started the server with MANYSIGHT_API_KEY set. The same key
+# covers resolving managed source connections; there is no second key for that.
 # MANYSIGHT_API_KEY = "..."
-# Only grant this to an MCP client authorized to resolve managed source connections:
-# MANYSIGHT_CREDENTIAL_ACCESS_KEY = "..."
 
 # For a hosted deployment, Codex can connect directly to the separately running
 # Streamable HTTP MCP service. The bearer value stays in an environment variable:

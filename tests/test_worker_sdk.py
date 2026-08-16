@@ -145,7 +145,7 @@ def test_frame_count_rejects_fractional_or_boolean_values():
 def test_open_capture_prefers_explicit_override(monkeypatch):
     opened = []
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=lambda target: opened.append(target) or target))
-    client = ManySight(credential_access_key="resolve")
+    client = ManySight()
     monkeypatch.setattr(client, "get_source_connection", lambda _sid: (_ for _ in ()).throw(AssertionError("must not resolve")))
     client.open_capture({"id": 1, "kind": "rtsp", "connection_management": "manysight_managed"}, "override")
     assert opened == ["override"]
@@ -160,7 +160,7 @@ def test_open_capture_resolves_managed_rtsp_without_logging_secret(monkeypatch, 
         options_during_open.append(__import__("os").environ.get("OPENCV_FFMPEG_CAPTURE_OPTIONS"))
         return target
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=open_capture))
-    client = ManySight(credential_access_key="resolve")
+    client = ManySight()
     monkeypatch.setattr(client, "get_source_connection", lambda _sid: {
         "kind": "rtsp", "connection_management": "manysight_managed",
         "connection": {"host": "camera.local", "port": 8554, "path": "/live", "scheme": "rtsp", "transport": "tcp",
@@ -185,8 +185,9 @@ def test_open_capture_resolves_external_reference(monkeypatch):
     assert opened == ["http://127.0.0.1/video"]
 
 
-def test_get_source_connection_uses_dedicated_header(monkeypatch):
-    client = ManySight(api_key="normal", credential_access_key="privileged")
+def test_get_source_connection_needs_no_key_beyond_the_api_key(monkeypatch):
+    """Resolution rides the client's ordinary session; there is no second key."""
+    client = ManySight(api_key="normal")
     seen = {}
 
     class Response:
@@ -196,13 +197,25 @@ def test_get_source_connection_uses_dedicated_header(monkeypatch):
         def json(self):
             return {"connection": {}}
 
-    def fake_get(url, headers, timeout):
-        seen.update(url=url, headers=headers, timeout=timeout)
+    def fake_get(url, timeout):
+        seen.update(url=url, timeout=timeout)
         return Response()
 
     monkeypatch.setattr(client.session, "get", fake_get)
     client.get_source_connection(7)
-    assert seen["headers"] == {"X-ManySight-Credential-Key": "privileged"}
+    assert seen["url"].endswith("/sources/7/connection")
+    assert client.session.headers["X-API-Key"] == "normal"
+    assert not [name for name in vars(client) if "access_key" in name], \
+        "no dedicated resolution key survives on the client"
+
+
+def test_a_client_with_no_api_key_still_resolves(monkeypatch):
+    """The local-only default: no keys configured anywhere, and it works."""
+    client = ManySight()
+    monkeypatch.setattr(client.session, "get", lambda url, timeout: type(
+        "R", (), {"ok": True, "status_code": 200, "json": staticmethod(
+            lambda: {"connection": {"url": "http://cam/s.mjpg"}})})())
+    assert client.get_source_connection(3)["connection"]["url"] == "http://cam/s.mjpg"
 
 
 def test_open_capture_resolves_managed_webcam(monkeypatch):
@@ -217,7 +230,7 @@ def test_open_capture_resolves_managed_webcam(monkeypatch):
 def test_open_capture_resolves_managed_http_basic(monkeypatch):
     opened = []
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=lambda target: opened.append(target) or target))
-    client = ManySight(credential_access_key="resolve")
+    client = ManySight()
     monkeypatch.setattr(client, "get_source_connection", lambda _sid: {
         "kind": "http", "connection": {"url": "http://camera.local/video?x=1", "auth_type": "basic",
                                         "username": "user name", "password": "p@ss"},
@@ -229,7 +242,7 @@ def test_open_capture_resolves_managed_http_basic(monkeypatch):
 def test_open_capture_resolves_managed_file(monkeypatch):
     opened = []
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=lambda target: opened.append(target) or target))
-    client = ManySight(credential_access_key="resolve")
+    client = ManySight()
     monkeypatch.setattr(client, "get_source_connection", lambda _sid: {
         "kind": "file", "connection": {"path": r"C:\videos\demo.mp4"},
     })
@@ -239,7 +252,7 @@ def test_open_capture_resolves_managed_file(monkeypatch):
 
 def test_open_capture_configuration_error_redacts_resolved_values(monkeypatch):
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=lambda target: target))
-    client = ManySight(credential_access_key="resolve")
+    client = ManySight()
     monkeypatch.setattr(client, "get_source_connection", lambda _sid: {
         "kind": "rtsp", "connection": {"password": "must-not-leak"},
     })

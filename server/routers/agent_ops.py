@@ -494,7 +494,8 @@ def frame_capture_plan(source_id: int):
                 "pixels. Run this plan in your own shell and open the saved image."),
         "prerequisites": [
             "The camera must be reachable from the machine running the plan.",
-            "MANYSIGHT_CREDENTIAL_ACCESS_KEY must be set for a manysight_managed source."
+            "A manysight_managed source resolves through GET /sources/{id}/connection; no "
+            "extra configuration is needed."
             if management == "manysight_managed"
             else "Resolve locator.local_secret_ref from your own environment or keychain.",
         ],
@@ -855,7 +856,8 @@ def worker_recipe(entity_type: str = "person", tracking: bool = True,
         },
         "source_access": {
             "owner": "the local worker",
-            "resolve": "GET /api/v1/sources/{id}/connection with X-ManySight-Credential-Key",
+            "resolve": ("GET /api/v1/sources/{id}/connection — the only endpoint that returns "
+                        "usable connection material, and the only one that needs to."),
             "rules": ["in memory only", "never logged, persisted, or echoed into observations"],
         },
         "local_environment": worker_runtime.environment_plan(),

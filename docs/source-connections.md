@@ -34,12 +34,15 @@ malformed configuration fails closed for credential writes and reads. Rotating t
 currently requires decrypting and re-encrypting credentials under controlled operator
 tooling; changing it directly makes existing ciphertext unreadable.
 
-`MANYSIGHT_CREDENTIAL_ACCESS_KEY` protects
-`GET /api/v1/sources/{source_id}/connection`. This endpoint is header-only
-(`X-ManySight-Credential-Key`), remains protected when public reads are enabled, and does
-not accept query-string credentials. If the dedicated key is absent, an explicitly
-configured `MANYSIGHT_API_KEY` is the compatibility fallback; with neither configured,
-resolution is disabled.
+`GET /api/v1/sources/{source_id}/connection` is the one endpoint that returns usable
+connection material. It carries no access key of its own: ManySight is a local,
+single-workspace deployment, and a second key protecting one route inside a workspace the
+caller already reaches was ceremony rather than a boundary. `MANYSIGHT_API_KEY` guards it
+along with the rest of the API, and it stays protected when `MANYSIGHT_PUBLIC_READS`
+opens the ordinary read surface — enabling open reads never opens credentials.
+
+The boundary that matters is which *operation* returns secrets, and that is unchanged:
+only this explicit resolution does.
 
 Normal source list/get responses include only safe configuration and
 `credential_status.configured`. They never contain plaintext credentials or ciphertext.
@@ -57,11 +60,10 @@ an automated key-rotation command.
 The Python SDK resolves capture input in this order:
 
 1. explicit `local_connection` passed by worker code;
-2. a managed webcam's public device index, or privileged managed resolution for other kinds;
+2. a managed webcam's public device index, or managed resolution for other kinds;
 3. an external `local_secret_ref` environment value.
 
-Set `MANYSIGHT_CREDENTIAL_ACCESS_KEY` only for workers that are authorized to resolve
-managed connections. Never log the resolution response or assembled camera URL.
+Never log the resolution response or the assembled camera URL.
 
 The SDK's normal worker flow is:
 

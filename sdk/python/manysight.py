@@ -255,15 +255,11 @@ class DetectionSample:
 
 class ManySight:
     def __init__(self, base_url: str = "http://localhost:8000", api_key: str = "",
-                 batch_size: int = 200, credential_access_key: str | None = None):
+                 batch_size: int = 200):
         self.base = base_url.rstrip("/") + "/api/v1"
         self.session = requests.Session()
         if api_key:
             self.session.headers["X-API-Key"] = api_key
-        self.credential_access_key = (
-            credential_access_key if credential_access_key is not None
-            else os.environ.get("MANYSIGHT_CREDENTIAL_ACCESS_KEY", api_key)
-        )
         self.batch_size = batch_size
         self.job_id = None
         self.worker_instance_id = None
@@ -288,21 +284,15 @@ class ManySight:
     def get_source_connection(self, source_id: int) -> dict:
         """Resolve sensitive connection material for immediate worker use.
 
-        The returned dictionary must not be logged or persisted. This call uses the
-        dedicated credential access key rather than relying on public source reads.
+        The one call that returns usable credentials — every other source read
+        stays safe to display. Needs no configuration beyond the API key this
+        client already carries: hold the result in memory, and never log or
+        persist it.
         """
-        if not self.credential_access_key:
-            raise RuntimeError(
-                "MANYSIGHT_CREDENTIAL_ACCESS_KEY is required to resolve a managed source"
-            )
-        response = self.session.get(
-            self.base + f"/sources/{source_id}/connection",
-            headers={"X-ManySight-Credential-Key": self.credential_access_key},
-            timeout=30,
-        )
+        response = self.session.get(self.base + f"/sources/{source_id}/connection", timeout=30)
         if not response.ok:
             raise RuntimeError(
-                f"source {source_id} credential resolution failed with HTTP {response.status_code}"
+                f"source {source_id} connection resolution failed with HTTP {response.status_code}"
             )
         return response.json()
 
