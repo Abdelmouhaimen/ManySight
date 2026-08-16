@@ -213,7 +213,7 @@ def test_the_agent_surface_document_lists_the_real_tool_set():
     content = read(os.path.join(ROOT, "docs", "agent-surface.md"))
     for tool in CURATED_PUBLIC_TOOLS:
         assert f"`{tool}`" in content, f"docs/agent-surface.md omits {tool}"
-    assert "18 tools" in content
+    assert "19 tools" in content
     assert "STORELENS_MCP_LEGACY_TOOLS=1" in content
     assert "59" in content, "the legacy count must be stated"
     assert "no language model runs" in content.lower()

@@ -8,7 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import { ExternalLink, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
-import { api, apiKey, formatDateTime } from "./api.js";
+import { api, apiKey, demoSessionId, formatDateTime } from "./api.js";
 import { routeHref } from "./routes.js";
 import {
   calibrationStatus, combinedTrackingStatus, countLabel, dataHealth, placementStatus,
@@ -520,6 +520,136 @@ function DeveloperSection({ notify }) {
   );
 }
 
+/* Reset cameras — the only reset that removes the cameras themselves, so it is
+ * the only one that shows the user what will go before asking them to confirm.
+ * The preview is a real server dry run, not a guess assembled in the browser. */
+function ResetCamerasBlock({ onReset, notify }) {
+  const [impact, setImpact] = useState(null);
+  const [confirmation, setConfirmation] = useState("");
+  const [busy, setBusy] = useState(false);
+  // Inside the guided demo every request is routed into the demo's own
+  // workspace, so this would wipe the prepared demo instead of the user's
+  // cameras. The server refuses it too; this just says so before they click.
+  const [inDemo, setInDemo] = useState(Boolean(demoSessionId()));
+  useEffect(() => {
+    const sync = () => setInDemo(Boolean(demoSessionId()));
+    window.addEventListener("storelens-demo-session", sync);
+    return () => window.removeEventListener("storelens-demo-session", sync);
+  }, []);
+
+  const openPreview = async () => {
+    setBusy(true);
+    try {
+      const preview = await api.post("/workspace/reset-cameras", { dry_run: true });
+      setImpact(preview.impact);
+      setConfirmation("");
+    } catch (error) { notify?.("Couldn't check what would be removed", error.message, "error"); }
+    finally { setBusy(false); }
+  };
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      const result = await api.post("/workspace/reset-cameras", {
+        dry_run: false, confirmation, reset_token: impact.reset_token,
+      });
+      setImpact(null);
+      setConfirmation("");
+      const disabled = result.alert_rules_disabled?.length || 0;
+      notify?.(
+        result.removed.cameras === 1 ? "1 camera removed"
+          : `${result.removed.cameras} cameras removed`,
+        disabled
+          ? `The floor plan and zones were kept. ${countLabel(disabled, "alert rule")} turned off.`
+          : "The floor plan and your zones were kept.",
+      );
+      await onReset?.();
+    } catch (error) { notify?.("That didn't work", error.message, "error"); }
+    finally { setBusy(false); }
+  };
+
+  const rows = impact ? [
+    ["Cameras", impact.cameras],
+    ["Saved connections", impact.stored_credentials],
+    ["Calibrations", impact.calibrations + impact.imported_calibrations],
+    ["Camera views of zones", impact.zone_views],
+    ["Camera observations", impact.observations],
+    ["Combined tracking groups", impact.multiview_groups],
+  ] : [];
+
+  return (
+    <div className="danger-block">
+      <h3>Reset cameras</h3>
+      <p>
+        Remove all cameras and camera-specific setup so you can configure cameras again from
+        scratch. Your floor plan and zones stay as they are.
+      </p>
+      <button className="button danger" disabled={busy || inDemo} onClick={openPreview}>
+        <Trash2 size={14} aria-hidden="true" /> Reset cameras…
+      </button>
+      {inDemo && <p className="muted">Exit the demo before resetting your cameras.</p>}
+      {impact && (
+        <Modal
+          title="Reset cameras"
+          description="This cannot be undone."
+          onClose={() => setImpact(null)}
+          footer={(
+            <>
+              <button className="button button-secondary" onClick={() => setImpact(null)}>
+                Cancel
+              </button>
+              <button className="button danger"
+                      disabled={busy || confirmation !== "RESET CAMERAS" || !impact.cameras}
+                      onClick={run}>
+                <Trash2 size={14} aria-hidden="true" />
+                {" "}
+                {impact.cameras === 1 ? "Remove 1 camera" : `Remove ${impact.cameras} cameras`}
+              </button>
+            </>
+          )}
+        >
+          {impact.cameras === 0 ? (
+            <p>There are no cameras to remove.</p>
+          ) : (
+            <>
+              <p><strong>This removes</strong></p>
+              <DefinitionList rows={rows} />
+              <p>
+                Also removed: camera placements, projection surfaces, and the combined tracking
+                history those cameras produced.
+              </p>
+              <p><strong>This keeps</strong> your floor plan, the size of the space, and your
+                {" "}
+                {countLabel(impact.preserved.canonical_zones, "zone")} — the zones lose their
+                camera views until you set cameras up again.
+              </p>
+              {impact.alert_rules_to_disable?.length > 0 && (
+                <p>
+                  {countLabel(impact.alert_rules_to_disable.length, "alert rule")} will be turned
+                  off because it relies on these cameras:{" "}
+                  {impact.alert_rules_to_disable.map((rule) => rule.name).join(", ")}. The rule is
+                  kept so you can point it at new cameras later.
+                </p>
+              )}
+              {impact.workers_to_stop?.length > 0 && (
+                <p>
+                  {countLabel(impact.workers_to_stop.length, "detector")} will be asked to stop.
+                  ManySight can ask, but cannot close a program it did not start.
+                </p>
+              )}
+              <label className="field field-full">
+                <span>Type RESET CAMERAS to confirm</span>
+                <input value={confirmation}
+                       onChange={(event) => setConfirmation(event.target.value)} />
+              </label>
+            </>
+          )}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function DangerZone({ onReset, notify }) {
   const [spaceConfirmation, setSpaceConfirmation] = useState("");
   const [observationConfirmation, setObservationConfirmation] = useState("");
@@ -587,6 +717,7 @@ function DangerZone({ onReset, notify }) {
           <Trash2 size={14} aria-hidden="true" /> Clear all observations
         </button>
       </div>
+      <ResetCamerasBlock onReset={onReset} notify={notify} />
     </Collapsible>
   );
 }

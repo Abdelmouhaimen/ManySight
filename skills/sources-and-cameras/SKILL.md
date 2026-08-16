@@ -61,3 +61,28 @@ observed submission rate, and the latest worker heartbeat.
   current scene; staleness is reported separately and never turns into an observed zero.
 - Reachability is a property of the worker machine. StoreLens does not test operational
   feeds; its guided demo serves only bundled local sample media.
+
+## Removing cameras
+
+`reset_cameras` removes **every** camera in the workspace and everything that exists only
+because of a camera: connections and stored credentials, placement, calibration,
+projection surfaces, camera zone views, all camera observations and current state,
+multiview groups, and fused and occupancy state and history.
+
+It preserves the workspace, the floor plan, the space dimensions and the canonical zones.
+A zone is a physical region, so it survives — with zero camera views until new cameras are
+configured. Saved queries, dashboards and alert-rule definitions survive too, but an
+enabled rule that could no longer fire is disabled, and affected saved queries are
+reported as having stale references rather than silently rewritten.
+
+Rules for using it:
+
+- Only when the user has **explicitly** asked to remove or reset their cameras. Never
+  infer it from a setup, calibration, or troubleshooting request.
+- Never as a way to tidy up sources that look stale. Not selecting a source and deleting
+  it are different decisions; use `inspect_workspace` to choose, not this.
+- Always preview first (`confirmed=false`), show the impact counts, and pass the preview's
+  `reset_token` when executing so a camera added in between makes the reset fail instead
+  of disappearing unannounced.
+- StoreLens can ask a registered worker to stop through its heartbeat, but cannot
+  terminate a process it never started. Report any the user has to stop themselves.

@@ -235,7 +235,7 @@ Three interfaces, three jobs:
 | interface | role |
 |---|---|
 | REST + SDK | the complete low-level platform interface; `/openapi.json` is authoritative |
-| MCP | a small semantic surface for coding agents — 18 tools, not one per endpoint |
+| MCP | a small semantic surface for coding agents — 19 tools, not one per endpoint |
 | [`skills/`](skills/README.md) | the workflow knowledge behind those tools |
 
 An agent starts with `inspect_workspace()` for one snapshot of sources, calibration, zones,

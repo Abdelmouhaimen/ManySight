@@ -142,6 +142,28 @@ class StoreLens:
     def update_source(self, source_id: int, **patch) -> dict:
         return self._req("PUT", f"/sources/{source_id}", patch)
 
+    def preview_reset_cameras(self) -> dict:
+        """What a camera reset would remove. Mutates nothing.
+
+        Carry the returned `impact.reset_token` into `reset_cameras` so the
+        execution fails if the camera set changed after the preview.
+        """
+        return self._req("POST", "/workspace/reset-cameras", {"dry_run": True})
+
+    def reset_cameras(self, confirm: bool = False, reset_token: str | None = None) -> dict:
+        """DESTRUCTIVE. Remove every camera and its camera-specific setup.
+
+        Keeps the workspace, floor plan, dimensions and canonical zones; disables
+        alert rules that could no longer fire. Without `confirm=True` this only
+        previews, so it is safe to call first.
+        """
+        if not confirm:
+            return self.preview_reset_cameras()
+        body = {"dry_run": False, "confirmation": "RESET CAMERAS"}
+        if reset_token:
+            body["reset_token"] = reset_token
+        return self._req("POST", "/workspace/reset-cameras", body)
+
     def store_map(self) -> dict:
         m = self._req("GET", "/store")
         m["zones"] = self.zones()

@@ -31,6 +31,8 @@ CURATED_PUBLIC_TOOLS = {
     "configure_multiview_group",
     # analytics
     "run_query", "configure_saved_query", "configure_dashboard", "configure_alert",
+    # destructive workspace operation
+    "reset_cameras",
 }
 
 
@@ -40,7 +42,7 @@ def test_curated_public_tool_surface_is_exactly_as_designed():
     tools = asyncio.run(m.mcp.list_tools())
     names = {t.name for t in tools}
     assert names == CURATED_PUBLIC_TOOLS
-    assert len(tools) == 18
+    assert len(tools) == 19
     assert set(m.PUBLIC_TOOLS) == CURATED_PUBLIC_TOOLS, \
         "PUBLIC_TOOLS documents the advertised surface and must match it"
 
@@ -79,7 +81,7 @@ def test_legacy_compatibility_mode_re_advertises_the_low_level_tools(monkeypatch
         names = {t.name for t in asyncio.run(legacy.mcp.list_tools())}
         assert CURATED_PUBLIC_TOOLS <= names
         assert "list_sources" in names and "query_data" in names
-        assert len(names) == 18 + 59
+        assert len(names) == 19 + 59
     finally:
         monkeypatch.delenv("STORELENS_MCP_LEGACY_TOOLS", raising=False)
         importlib.reload(m)

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import db
-from ..services import config_cache, realtime
+from ..services import camera_reset, config_cache, realtime
 
 router = APIRouter(tags=["workspace"])
 
@@ -19,6 +19,17 @@ class SpaceResetIn(BaseModel):
 
 class ObservationResetIn(BaseModel):
     confirmation: str
+
+
+class CameraResetIn(BaseModel):
+    # Preview by default. This is the only reset that removes the cameras
+    # themselves, so the impact has to be seeable before it is possible.
+    dry_run: bool = True
+    confirmation: str = ""
+    # Optional guard carried from a preview: if the camera set changed since
+    # then, the reset is refused instead of removing something the user never
+    # saw listed.
+    reset_token: str | None = None
 
 
 def _snapshot(con) -> dict:
@@ -151,3 +162,41 @@ def reinitialize_observations(body: ObservationResetIn):
         # holding snapshots of samples that no longer exist.
         realtime.coordinator.reset()
     return {"reinitialized": True, "space_revision_id": db.current_space_revision_id()}
+
+
+@router.post(
+    "/workspace/reset-cameras",
+    summary="Remove every camera and its camera-specific setup",
+    description=(
+        "Destructive, and distinct from the two reinitialize operations: this removes the "
+        "cameras themselves along with their connections, stored credentials, placement, "
+        "calibration, projection surfaces, camera zone views, camera observations and "
+        "combined-tracking state. The workspace, floor plan, dimensions and canonical zones "
+        "are preserved. Defaults to a dry run that only reports the impact."
+    ),
+)
+def reset_cameras(body: CameraResetIn):
+    """Preview by default; execute only on exact confirmation."""
+    if camera_reset.in_isolated_demo_workspace():
+        raise HTTPException(409, "exit the guided demo before resetting your cameras")
+    if body.dry_run:
+        return {
+            "reset": False, "dry_run": True,
+            "confirmation_required": camera_reset.CONFIRMATION,
+            "impact": camera_reset.impact(),
+            "preserves": ["the workspace and its floor plan", "the space dimensions",
+                          "canonical zones (their camera views are removed)",
+                          "saved queries, dashboards and alert-rule definitions"],
+            "note": ("Alert rules that could no longer fire are disabled, not deleted. Saved "
+                     "queries are kept and reported as having stale references."),
+        }
+    if body.confirmation != camera_reset.CONFIRMATION:
+        raise HTTPException(422, f"type {camera_reset.CONFIRMATION} to confirm")
+    if body.reset_token and body.reset_token != camera_reset.reset_token():
+        raise HTTPException(409, {
+            "message": "the camera list changed since this preview was taken",
+            "reason": "stale_preview",
+            "current_reset_token": camera_reset.reset_token(),
+            "next_steps": ["Preview the reset again and confirm against the new impact."],
+        })
+    return camera_reset.execute()

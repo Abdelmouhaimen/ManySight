@@ -5,7 +5,7 @@ coding agents operate the platform badly.
 
 ```text
 REST + SDK   complete low-level platform interface     /openapi.json is authoritative
-MCP          curated semantic interface for agents     18 tools, shaped for a context window
+MCP          curated semantic interface for agents     19 tools, shaped for a context window
 skills       the workflow knowledge behind the tools   skills/*/SKILL.md
 evaluation   proof the correct path is discoverable    evals/agent_operability/
 ```
@@ -17,7 +17,7 @@ nearest operator, and stale example scripts get mistaken for the protocol.
 
 ## The curated MCP tools
 
-Eighteen tools, grouped by job:
+Nineteen tools, grouped by job:
 
 | group | tools |
 |---|---|
@@ -27,6 +27,7 @@ Eighteen tools, grouped by job:
 | perception | `inspect_perception`, `get_worker_recipe`, `request_worker_state` |
 | multiview | `configure_multiview_group` |
 | analytics | `run_query`, `configure_saved_query`, `configure_dashboard`, `configure_alert` |
+| destructive workspace operations | `reset_cameras` |
 
 Each is backed by a real REST endpoint, because the MCP server holds no business logic:
 
@@ -40,6 +41,7 @@ Each is backed by a real REST endpoint, because the MCP server holds no business
 | `get_worker_recipe` | `GET /api/v1/agent/worker-recipe` |
 | `preview_zone` | `POST /api/v1/agent/zone-preview` |
 | `commit_zone` | `POST /api/v1/agent/zone-commit` |
+| `reset_cameras` | `POST /api/v1/workspace/reset-cameras` |
 
 The rest map onto existing source, multiview, query, dashboard, and alert-rule routes.
 `get_skill` reads `skills/` from disk and prefixes the deployment's resolved endpoints.
@@ -165,7 +167,7 @@ A deployment that still drives the old tool names can re-advertise all of them:
 STORELENS_MCP_LEGACY_TOOLS=1 python mcp_server/server.py
 ```
 
-That yields 77 tools (18 curated + 59 legacy) and is a migration path, not a
+That yields 78 tools (19 curated + 59 legacy) and is a migration path, not a
 recommendation. REST and the SDK are unchanged, so no capability was removed from the
 platform — only from the default agent surface.
 

@@ -20,7 +20,7 @@ Three interfaces, three jobs:
 | interface | role |
 |---|---|
 | REST + SDK | the complete low-level platform interface (`/openapi.json` is authoritative) |
-| MCP | a curated semantic surface for coding agents — 18 tools, not 60 |
+| MCP | a curated semantic surface for coding agents — 19 tools, not 60 |
 | skills | the workflow knowledge behind those tools |
 
 See [docs/agent-surface.md](docs/agent-surface.md) for the exact tool list and the
@@ -134,7 +134,11 @@ infer zero because a required camera went stale.
 | [`queries-dashboards-alerts`](skills/queries-dashboards-alerts/SKILL.md) | questions, views, exact thresholds |
 | [`guided-demo`](skills/guided-demo/SKILL.md) | the isolated playable demo and its boundaries |
 
-Space and observation reinitialization are destructive, exact-confirmation operations.
-Never invoke them without an explicit user request. A retained historical observation
+Space reinitialization, observation reinitialization, and camera reset are destructive,
+exact-confirmation operations. Never invoke them without an explicit user request.
+`reset_cameras` removes every camera and its connections, calibration, camera views,
+observations and combined-tracking state; it keeps the floor plan and canonical zones,
+and disables alert rules that could no longer fire. Preview it first (`confirmed=false`)
+and never infer permission for it from an unrelated setup request. A retained historical observation
 belongs to its recorded `space_revision_id`; deleted-zone query references stay
 unresolved and must not be matched by name.

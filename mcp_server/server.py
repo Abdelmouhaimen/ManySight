@@ -577,6 +577,37 @@ def configure_alert(name: str, query_id: int | None = None, operator: str = "",
     return _req("PUT", f"/alert-rules/{rule_id}", body)
 
 
+@mcp.tool()
+def reset_cameras(confirmed: bool = False, reset_token: str = "") -> dict:
+    """DESTRUCTIVE. Remove EVERY camera in the workspace, plus everything that
+    exists only because of a camera: connections and stored credentials,
+    placement, calibration, projection surfaces, camera zone views, all camera
+    observations and current state, multiview groups, and fused and occupancy
+    state and history.
+
+    It preserves the workspace, the floor plan, the space dimensions, the
+    canonical zones, and the definitions of saved queries, dashboards and alert
+    rules — but any alert rule that could no longer fire is disabled, and
+    affected saved queries are reported as having stale references.
+
+    Use it ONLY when the user has explicitly asked to remove or reset their
+    cameras and set them up again from scratch. Never infer permission from an
+    unrelated setup, calibration, or troubleshooting request, and never use it to
+    tidy up sources that merely look stale — removing a camera is a different
+    decision from not selecting it.
+
+    Defaults to a dry run. Call it first with confirmed=false, show the user the
+    impact counts, and only call it with confirmed=true after they agree. Pass
+    the preview's `reset_token` so a camera added in between makes the reset fail
+    instead of silently removing something the user never saw."""
+    body: dict = {"dry_run": not confirmed}
+    if confirmed:
+        body["confirmation"] = "RESET CAMERAS"
+        if reset_token:
+            body["reset_token"] = reset_token
+    return _req("POST", "/workspace/reset-cameras", body)
+
+
 # ===========================================================================
 # LEGACY / INTERNAL HANDLERS
 #
@@ -1126,6 +1157,7 @@ PUBLIC_TOOLS = [
     "inspect_perception", "get_worker_recipe", "request_worker_state",
     "configure_multiview_group",
     "run_query", "configure_saved_query", "configure_dashboard", "configure_alert",
+    "reset_cameras",
 ]
 
 if LEGACY_TOOL_MODE:
