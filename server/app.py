@@ -20,7 +20,8 @@ from fastapi.staticfiles import StaticFiles
 from . import db
 from .platform_config import resolve as resolve_platform_config
 from .routers import agent_ops, alerts, analytics, analytics_query, analyses, calibrations, dashboards, demo, events, geometry, jobs, multiview, observations, queries, sources, store, workspace, zones
-from .services import alert_engine, current_state, demo_media, demo_runtime, multiview as multiview_service
+from .services import alert_engine, config_cache, current_state, demo_media, demo_runtime, multiview as multiview_service, realtime
+from .services.metrics import registry as metrics_registry
 from .services.sse import broker
 
 ALERT_POLL_INTERVAL_S = float(os.environ.get("STORELENS_ALERT_POLL_INTERVAL_S", "15"))
@@ -34,9 +35,10 @@ async def _alert_poll_loop():
     while True:
         try:
             demo_runtime.cleanup_expired()
+            # Also drains any live group tick the scheduler has not run yet, so
+            # ongoing conditions are evaluated against current fused state.
             multiview_service.refresh_freshness(db.now())
-            zone_names = {z["id"]: z["name"] for z in db.q("SELECT id, name FROM zones")}
-            alerts_fired = alert_engine.evaluate_ongoing(db.now(), zone_names)
+            alerts_fired = alert_engine.evaluate_ongoing(db.now(), config_cache.zone_names())
             for a in alerts_fired:
                 broker.publish("alert", a)
                 broker.publish("alert.created", a)
@@ -52,10 +54,22 @@ async def lifespan(_app: FastAPI):
         demo_runtime.resume_promoted_media()
     except Exception:
         logging.getLogger("storelens.demo").exception("demo runtime recovery failed")
+    # Live bookkeeping is in-process, so a restart rebuilds it from the persisted
+    # current samples and marks every group for one reconciliation tick. Cameras
+    # do not have to send a new frame for fused state to become coherent again.
+    model = realtime.execution_model()
+    if model["warning"]:
+        logging.getLogger("storelens.realtime").warning(model["warning"])
+    try:
+        realtime.coordinator.reconcile()
+    except Exception:
+        logging.getLogger("storelens.realtime").exception("live state reconciliation failed")
+    realtime.coordinator.start()
     task = asyncio.create_task(_alert_poll_loop())
     try:
         yield
     finally:
+        await realtime.coordinator.stop()
         await demo_runtime.shutdown()
         demo_media.stop()
         task.cancel()
@@ -140,6 +154,24 @@ def health():
         "endpoint_profile": resolve_platform_config()["profile"],
         "guided_demo_assets_available": demo_runtime.asset_status()["available"],
         "demo_stream_supervisor": demo_media.status(),
+    }
+
+
+@app.get("/api/v1/realtime/metrics", tags=["platform"])
+def realtime_metrics():
+    """Process-local pipeline instrumentation: ingestion, live scheduler, fusion.
+
+    Observability only — nothing in the pipeline reads these back. Counters are
+    cumulative since process start and durations are percentiles over a bounded
+    ring of recent samples, so this endpoint is safe to poll during a load test.
+    `raw_evidence_dropped` is structural: nothing can increment it.
+    """
+    snapshot = metrics_registry.snapshot()
+    return {
+        "coordinator": realtime.coordinator.status(),
+        "execution_model": realtime.execution_model(),
+        "raw_evidence_dropped": 0,
+        **snapshot,
     }
 
 

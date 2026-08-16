@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import db
+from ..services import config_cache, realtime
 
 router = APIRouter(tags=["workspace"])
 
@@ -116,6 +117,11 @@ def reinitialize_space(body: SpaceResetIn):
         raise
     finally:
         con.close()
+        # This transaction rewrites geometry and groups on a raw connection, so
+        # it bypasses the db.ex configuration-cache hook; the live coordinator's
+        # in-memory snapshots refer to a space revision that no longer exists.
+        config_cache.invalidate("space_reinitialized")
+        realtime.coordinator.reset()
     return {
         "reinitialized": True, "history": body.history,
         "previous_space_revision_id": old_revision_id,
@@ -141,4 +147,7 @@ def reinitialize_observations(body: ObservationResetIn):
         raise
     finally:
         con.close()
+        # Cleared current state must not be resurrected by a pending live tick
+        # holding snapshots of samples that no longer exist.
+        realtime.coordinator.reset()
     return {"reinitialized": True, "space_revision_id": db.current_space_revision_id()}

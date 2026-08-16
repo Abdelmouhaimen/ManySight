@@ -3,6 +3,20 @@ module — imported directly (`from helpers import make_detection`), which works
 because pytest adds `tests/` to sys.path for rootless test packages."""
 
 
+def sync_live_state():
+    """Run any pending live fusion tick now.
+
+    Cross-camera fusion is scheduled, not synchronous with ingestion: submitting
+    a sample marks its groups dirty and the coordinator fuses from the newest
+    state on its own clock. Every API read of fused state drains first, so tests
+    that go through the API need nothing. A test that reads `fused_*` or
+    `zone_current_occupancy` straight from SQLite has bypassed that guarantee and
+    must ask for the same synchronization explicitly.
+    """
+    from server.services.realtime import coordinator
+    coordinator.drain()
+
+
 def make_detection(source_id, observation_id, ts, entity_id="e1", point_px=None, **extra):
     body = {
         "schema_version": 2, "observation_id": observation_id, "kind": "detection",

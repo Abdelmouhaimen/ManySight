@@ -26,30 +26,15 @@ ALL_EVENT_TYPES = OBSERVATION_KINDS | LEGACY_DERIVED_KINDS | {"transition", "cus
 
 def load_geometry_context():
     """Zones, floor calibrations, projection surfaces, and zone views as of now.
-    Load once per ingest batch, not once per event."""
-    zones = []
-    for z in db.q("SELECT id, name, polygon_json, geometry_json, revision FROM zones ORDER BY id"):
-        geometry = db.jload(z.get("geometry_json"), None)
-        if not geometry:
-            geometry = zone_geometry.as_geojson(
-                zone_geometry.polygon_from_points(db.jload(z["polygon_json"], [])))
-        zones.append({"id": z["id"], "name": z["name"], "revision": z["revision"],
-                      "polygon": db.jload(z["polygon_json"], []), "geometry": geometry})
-    cals = {}
-    for s in db.q("SELECT id, calibration_json, calibration_revision FROM sources"):
-        cal = db.jload(s["calibration_json"], None)
-        if cal and cal.get("H"):
-            cals[s["id"]] = {"H": cal["H"], "revision": s["calibration_revision"]}
-    surfaces = {r["id"]: {**r, "H": db.jload(r["homography_json"], None)}
-                for r in db.q("SELECT * FROM projection_surfaces")}
-    views_by_source, views_by_id = {}, {}
-    for r in db.q("SELECT * FROM zone_views ORDER BY id"):
-        view = {**r, "outer": db.jload(r["outer_polygon_json"], []),
-                "detection": db.jload(r["detection_polygon_json"], [])}
-        views_by_source.setdefault(r["source_id"], []).append(view)
-        views_by_id[r["id"]] = view
-    zone_by_name = {z["name"].lower(): z["id"] for z in zones}
-    return zones, cals, surfaces, views_by_source, views_by_id, zone_by_name
+
+    Configuration, not per-frame state: the shared cache in services/config_cache.py
+    builds this once and rebuilds it the moment a configuration write occurs, so a
+    high-rate worker does not re-select and re-decode every zone, calibration,
+    surface and view on every submitted frame. The returned structures are shared
+    and must be treated as read-only.
+    """
+    from . import config_cache
+    return config_cache.geometry_context()
 
 
 def view_score(view: dict, ev: dict, x_px: float | None, y_px: float | None) -> float:
@@ -194,7 +179,12 @@ def enrich_one(ev: dict, context, zone_by_id: dict) -> dict:
         assignment_method = f"zone_view:{matched_view['membership_rule']}"
     if zone_id is None and x_map is not None:
         for z in zones:
-            if zone_geometry.contains(z["geometry"], x_map, y_map):
+            # `prepared` is the same validated geometry with the same `covers`
+            # boundary semantics, built once per configuration revision.
+            prepared = z.get("prepared")
+            inside = (prepared.covers(x_map, y_map) if prepared is not None
+                      else zone_geometry.contains(z["geometry"], x_map, y_map))
+            if inside:
                 zone_id = z["id"]
                 assignment_method = "map_point"
                 break
@@ -230,6 +220,19 @@ INSERT_SQL = (
     " entity_type,value_kind,unit,confidence,identity_scope,identity_model_version,sample_id,space_revision_id)"
     " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 )
+
+
+def insert_rows(connection, enriched: list[dict], ingested_at: float) -> None:
+    """Insert enriched observations and stamp each with the row id SQLite assigned.
+
+    `executemany` cannot report per-row ids, and the source-current read model
+    needs them. Inserting row by row on the same connection costs the same
+    prepared statement and removes the re-read of the rows we just wrote.
+    """
+    for enriched_row in enriched:
+        cursor = connection.execute(INSERT_SQL, row_tuple(enriched_row, enriched_row["ts"], ingested_at))
+        enriched_row["id"] = cursor.lastrowid
+        enriched_row["created_at"] = ingested_at
 
 
 def update_counters(enriched: list[dict], job_id: int | None) -> None:

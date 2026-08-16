@@ -738,6 +738,9 @@ def init_db(path: str | None = None):
         con.commit()
     finally:
         con.close()
+    # init_db drives a raw connection, so it bypasses the `ex`/`exmany` hook.
+    from .services import config_cache
+    config_cache.invalidate("init_db")
 
 
 def current_space_revision_id() -> int:
@@ -855,6 +858,15 @@ def _migrate_insights_to_analyses(con: sqlite3.Connection):
         )
 
 
+def active_connection() -> sqlite3.Connection | None:
+    """The connection of an enclosing `transaction()`, if one is open.
+
+    Lets a service join the caller's single ingestion transaction instead of
+    opening and committing its own.
+    """
+    return _DB_CONNECTION_OVERRIDE.get()
+
+
 def q(sql: str, args=()) -> list[dict]:
     con = _DB_CONNECTION_OVERRIDE.get() or connect()
     owned = _DB_CONNECTION_OVERRIDE.get() is None
@@ -870,6 +882,19 @@ def q1(sql: str, args=()) -> dict | None:
     return rows[0] if rows else None
 
 
+def _note_write(sql: str) -> None:
+    """Single choke point for configuration-cache invalidation.
+
+    Every configuration mutation in the application reaches SQLite through `ex`
+    or `exmany`, so classifying the statement here means a new mutation endpoint
+    cannot forget to invalidate. The two paths that drive a raw connection
+    instead (`init_db` and the guided demo's promotion transaction) invalidate
+    explicitly. Imported lazily to keep `db` free of service imports.
+    """
+    from .services import config_cache
+    config_cache.note_write(sql)
+
+
 def ex(sql: str, args=()) -> int:
     con = _DB_CONNECTION_OVERRIDE.get() or connect()
     owned = _DB_CONNECTION_OVERRIDE.get() is None
@@ -879,6 +904,7 @@ def ex(sql: str, args=()) -> int:
             con.commit()
         return cur.lastrowid
     finally:
+        _note_write(sql)
         if owned:
             con.close()
 
@@ -892,6 +918,7 @@ def exmany(sql: str, seq) -> int:
             con.commit()
         return cur.rowcount
     finally:
+        _note_write(sql)
         if owned:
             con.close()
 

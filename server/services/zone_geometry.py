@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from shapely.geometry import MultiPolygon, Point, Polygon, mapping, shape
+from shapely.prepared import prep
 from shapely.validation import explain_validity
 
 
@@ -70,6 +71,38 @@ def legacy_exterior(geometry: dict) -> list[dict]:
 def contains(geometry: dict, x: float, y: float) -> bool:
     # ``covers`` includes a point exactly on the physical zone boundary.
     return from_geojson(geometry).covers(Point(float(x), float(y)))
+
+
+class PreparedZone:
+    """One zone's containment test, built once instead of per detection.
+
+    ``contains(geometry, x, y)`` above re-parses the GeoJSON, revalidates it, and
+    constructs a fresh Shapely geometry on every call — at 240 frames/second with
+    several detections each that dominated enrichment.  This holds the same
+    validated geometry with a Shapely prepared predicate, and answers the same
+    question with the same boundary semantics: ``covers`` includes a point exactly
+    on the physical boundary.  The bounding-box pre-check is an exact short circuit
+    (a point outside the envelope can never be covered), not an approximation.
+    """
+
+    __slots__ = ("geometry", "_prepared", "_min_x", "_min_y", "_max_x", "_max_y")
+
+    def __init__(self, geometry: dict) -> None:
+        shapely_geometry = from_geojson(geometry)
+        self.geometry = geometry
+        self._prepared = prep(shapely_geometry)
+        self._min_x, self._min_y, self._max_x, self._max_y = shapely_geometry.bounds
+
+    def covers(self, x: float, y: float) -> bool:
+        x = float(x)
+        y = float(y)
+        if x < self._min_x or x > self._max_x or y < self._min_y or y > self._max_y:
+            return False
+        return self._prepared.covers(Point(x, y))
+
+
+def prepare(geometry: dict) -> PreparedZone:
+    return PreparedZone(geometry)
 
 
 def component_count(geometry: dict) -> int:

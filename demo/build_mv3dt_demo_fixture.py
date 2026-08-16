@@ -32,7 +32,7 @@ from server.routers.observations import (
     _process_observations,
     detection_sample_batch,
 )
-from server.services import alert_engine, demo_runtime
+from server.services import alert_engine, demo_runtime, realtime
 
 
 DEFAULT_RAW = ROOT / "demo" / "fixtures" / "nvidia_mv3dt_yolo11n_bytetrack.jsonl"
@@ -137,9 +137,30 @@ def _cache_alert(alert: dict, video_time_s: float) -> dict:
     }
 
 
+def carry_media(previous: Path, raw_path: Path) -> dict:
+    """Reuse a previous cache's validated media block for the same raw fixture.
+
+    The media hashes describe the four source recordings. They are pinned to the
+    fixture through `raw_fixture_sha256`: if the fixture is byte-identical, the
+    videos it was derived from are the same files, and re-opening them adds no
+    information. This exists so a machine without the NVIDIA recordings can
+    rebuild the derived cache after a derivation-code change without silently
+    dropping media provenance. It refuses when the fixture differs.
+    """
+    cache = json.loads(previous.read_text(encoding="utf-8"))
+    metadata = cache.get("metadata", {})
+    if metadata.get("raw_fixture_sha256") != sha256_file(raw_path):
+        raise ValueError(
+            f"{previous} was derived from a different raw fixture; revalidate the videos")
+    media = metadata.get("media") or {}
+    if not media:
+        raise ValueError(f"{previous} carries no validated media block")
+    return media
+
+
 def build_cache(raw_path: Path = DEFAULT_RAW, recipe_path: Path = DEFAULT_RECIPE,
                 asset_root: Path | None = None, validate_media: bool = True,
-                max_samples: int | None = None) -> dict:
+                max_samples: int | None = None, media_from: Path | None = None) -> dict:
     metadata, records = load_raw(raw_path)
     recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
     sample_hz = float(recipe["replay"]["sample_rate_hz"])
@@ -159,10 +180,15 @@ def build_cache(raw_path: Path = DEFAULT_RAW, recipe_path: Path = DEFAULT_RECIPE
         if resolved_assets is None:
             raise ValueError("NVIDIA demo assets are unavailable; pass --asset-root")
         media = validate_videos(Path(resolved_assets), metadata)
+    elif media_from is not None:
+        media = carry_media(media_from, raw_path)
 
     with tempfile.TemporaryDirectory(prefix="storelens-derived-cache-") as temp_dir:
         workspace = Path(temp_dir) / "storelens.db"
         db.init_db(str(workspace))
+        # Derivation must not inherit live bookkeeping from an earlier build in
+        # the same process (the tests build two caches back to back).
+        realtime.coordinator.reset()
         with db.using_database(str(workspace)):
             _actions, setup = demo_runtime._setup_workspace(
                 workspace, "fixture-builder", "http://fixture.invalid")
@@ -205,6 +231,11 @@ def build_cache(raw_path: Path = DEFAULT_RAW, recipe_path: Path = DEFAULT_RECIPE
                     processed = _process_observations(ObservationBatch(observations=observations))
                     if processed[0]["rejected"] or processed[0]["completed_samples"] != len(frames):
                         raise RuntimeError(f"frame {frame_index}: StoreLens did not complete all source samples")
+                    # Ingestion publishes completed samples to the live
+                    # coordinator instead of fusing inline. Derivation runs the
+                    # same group tick the running platform schedules, just
+                    # driven by this loop instead of by a 100 Hz clock.
+                    realtime.coordinator.drain()
                     zone_names = {row["id"]: row["name"] for row in db.q("SELECT id,name FROM zones")}
                     with db.transaction():
                         fired = alert_engine.evaluate_ongoing(sample_ts, zone_names)
@@ -305,9 +336,13 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--asset-root", type=Path)
     parser.add_argument("--skip-video-validation", action="store_true")
+    parser.add_argument("--media-from", type=Path,
+                        help="reuse the media block of an existing cache built from the same "
+                             "raw fixture (only with --skip-video-validation)")
     args = parser.parse_args()
     cache = build_cache(args.raw, args.recipe, args.asset_root,
-                        validate_media=not args.skip_video_validation)
+                        validate_media=not args.skip_video_validation,
+                        media_from=args.media_from)
     write_cache(cache, args.output)
     print(json.dumps({
         "output": str(args.output),

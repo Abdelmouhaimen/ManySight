@@ -995,6 +995,10 @@ async def promote(session_id: str, base_url: str, include_observations: bool = F
         raise
     finally:
         con.close()
+        # Promotion writes sources, calibrations and groups through a raw
+        # connection, bypassing the db.ex configuration-cache hook.
+        from . import config_cache
+        config_cache.invalidate("demo_promotion")
     if include_observations and promoted_observations:
         from . import current_state, multiview as multiview_service
         with db.using_database(db.DB_PATH):

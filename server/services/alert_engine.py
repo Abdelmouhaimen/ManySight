@@ -25,6 +25,18 @@ from . import derive
 
 LEGACY_KINDS = {"dwell_exceeds", "occupancy_exceeds", "state_alert", "event_match"}
 ONGOING_KINDS = {"dwell_exceeds", "occupancy_exceeds", "state_alert", "analysis_condition", "query_condition"}
+# Rules driven by what just arrived. `analysis_condition`/`query_condition` are
+# deliberately absent: they evaluate a saved analysis over a trailing window and
+# belong to the periodic loop, which is where their `for_seconds` edge state is
+# tracked. Everything here stays synchronous with ingestion, so a realtime alert
+# is never delayed by the poll interval.
+BATCH_KINDS = LEGACY_KINDS
+
+
+def has_enabled_rules() -> bool:
+    """Whether this workspace has any enabled rule, without scanning the table."""
+    from . import config_cache
+    return config_cache.enabled_alert_rule_count() > 0
 
 
 def _fire(rule: dict, title: str, message: str, payload: dict, ts: float) -> dict:
@@ -62,8 +74,12 @@ def evaluate_batch(batch: list[dict], zone_names: dict[int, str]) -> list[dict]:
     (already persisted). Reacts to completed conditions in this batch; ongoing
     conditions are also checked here for immediate responsiveness, but do not
     rely on this being called again soon — evaluate_ongoing is the backstop."""
-    rules = db.q("SELECT * FROM alert_rules WHERE enabled=1")
-    if not rules or not batch:
+    if not batch:
+        return []
+    rules = db.q(
+        "SELECT * FROM alert_rules WHERE enabled=1 AND kind IN "
+        f"({','.join('?' for _ in BATCH_KINDS)})", tuple(sorted(BATCH_KINDS)))
+    if not rules:
         return []
     fired: list[dict] = []
     batch_max_ts = max(e["ts"] for e in batch)

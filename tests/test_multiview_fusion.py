@@ -1,5 +1,7 @@
 """Geometry-first multi-camera association, current occupancy, history, and quality."""
 
+from helpers import sync_live_state
+
 from server import db
 from server.services import alert_engine
 from server.services.multiview import minimum_cost_assignment, refresh_freshness
@@ -37,6 +39,9 @@ def post_sample(client, source_id, sample_id, ts, tracks, worker_id=None):
     response = client.post("/api/v1/observations/batch", json={"observations": observations})
     assert response.status_code == 200, response.text
     assert not response.json()["rejected"]
+    # Several assertions below read the fused tables directly rather than
+    # through an API that would drain the live scheduler for them.
+    sync_live_state()
 
 
 def setup_scene(client, calibrated_source):

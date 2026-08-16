@@ -23,7 +23,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import db
-from ..services import alert_engine, current_state, derive, enrich
+from ..services import alert_engine, current_state, derive, enrich, realtime
+from ..services.metrics import registry
 
 router = APIRouter(tags=["observations"])
 LATEST_LOOKBACK_S = 24 * 3600.0
@@ -318,15 +319,51 @@ def observation_contract():
 def _process_observations(batch: ObservationBatch):
     """Validate, persist, and derive one batch without blocking the event loop.
 
-    SQLite materialization and multiview association are synchronous. Keeping
-    them in a separate function lets the async HTTP ingestion boundary run that
-    work in a thread while publishing SSE messages back on the event-loop
-    thread, where asyncio queues are safe to use.
+    SQLite materialization is synchronous. Keeping it in a separate function lets
+    the async HTTP ingestion boundary run that work in a thread while publishing
+    SSE messages back on the event-loop thread, where asyncio queues are safe to
+    use.
+
+    Raw evidence and the source-current read model are committed together in one
+    transaction — every read below runs on the same connection, and SQLite only
+    takes the write lock at the first INSERT. Cross-camera fusion is *not* part of
+    this call any more: the completed samples are published to the realtime
+    coordinator (services/realtime.py), which fuses them on its own scheduler from
+    the newest state. Raw evidence is durable before this function returns.
     """
     if not batch.observations:
         return {"accepted": 0, "duplicates": 0, "rejected": []}, [], [], {}, []
     if len(batch.observations) > 5000:
         raise HTTPException(413, "batch too large — send at most 5000 observations per request")
+    with registry.timer("ingestion.process_duration_s"):
+        return _persist_and_derive(batch)
+
+
+def _persist_and_derive(batch: ObservationBatch):
+    with db.transaction() as connection:
+        result, enriched, zone_names, completed_samples = _persist_batch(batch, connection)
+    realtime.coordinator.publish(completed_samples)
+    alerts = _evaluate_batch_alerts(enriched, zone_names)
+    result["alerts"] = len(alerts)
+    return result, enriched, alerts, zone_names, completed_samples
+
+
+def _evaluate_batch_alerts(enriched: list[dict], zone_names: dict) -> list[dict]:
+    """Sample-driven alert rules, in their own short transaction.
+
+    Kept out of the raw-evidence transaction on purpose: accepted observations
+    must stay durable even if rule evaluation fails. Skipped entirely — no
+    connection, no transaction — when the workspace has no enabled rules, which
+    is the common case at 240 samples/second.
+    """
+    if not enriched or not alert_engine.has_enabled_rules():
+        return []
+    with registry.timer("ingestion.alert_evaluation_s"):
+        with db.transaction():
+            return alert_engine.evaluate_batch(enriched, zone_names)
+
+
+def _persist_batch(batch: ObservationBatch, connection):
     if batch.job_id is not None and not db.q1("SELECT id FROM jobs WHERE id=?", (batch.job_id,)):
         raise HTTPException(404, f"job {batch.job_id} not found — register a job first")
 
@@ -365,20 +402,25 @@ def _process_observations(batch: ObservationBatch):
     invalid_sample_keys = {
         key for key, timestamps in explicit_sample_times.items() if len(timestamps) != 1
     }
+    # One row per sample key answers both questions: does any stored row use a
+    # different timestamp, and did this sample exist at all before this batch.
+    prior_row_counts: dict[tuple[int, str], int] = {}
     for key, timestamps in explicit_sample_times.items():
-        if key in invalid_sample_keys:
-            continue
-        existing = db.q(
-            "SELECT DISTINCT ts FROM events WHERE source_id=? AND sample_id=? "
-            "AND space_revision_id=? LIMIT 2", (*key, db.current_space_revision_id()),
+        stored = db.q1(
+            "SELECT COUNT(*) n, MIN(ts) lo, MAX(ts) hi FROM events WHERE source_id=? "
+            "AND sample_id=? AND space_revision_id=?", (*key, db.current_space_revision_id()),
         )
-        if any(float(row["ts"]) != next(iter(timestamps)) for row in existing):
+        prior_row_counts[key] = int(stored["n"]) if stored else 0
+        if key in invalid_sample_keys or not prior_row_counts[key]:
+            continue
+        timestamp = next(iter(timestamps))
+        if float(stored["lo"]) != timestamp or float(stored["hi"]) != timestamp:
             invalid_sample_keys.add(key)
     marker_keys_seen: set[tuple[int, str, str]] = set()
 
     context = enrich.load_geometry_context()
     zone_by_id = {z["id"]: z for z in context[0]}
-    rejected, enriched, rows = [], [], []
+    rejected, enriched = [], []
     seen_in_batch = set()
     duplicates = 0
     for index, ob in enumerate(batch.observations):
@@ -396,11 +438,13 @@ def _process_observations(batch: ObservationBatch):
             continue
         if ob.kind == "measurement" and ob.name == current_state.FRAME_COUNT_NAME and ob.sample_id:
             marker_key = (ob.source_id, ob.sample_id, ob.label or "")
-            duplicate_marker = marker_key in marker_keys_seen or db.q1(
-                "SELECT id FROM events WHERE source_id=? AND sample_id=? AND event_type='measurement' "
-                "AND name=? AND COALESCE(label,'')=? AND space_revision_id=? LIMIT 1",
-                (ob.source_id, ob.sample_id, current_state.FRAME_COUNT_NAME, ob.label or "",
-                 db.current_space_revision_id()),
+            duplicate_marker = marker_key in marker_keys_seen or (
+                prior_row_counts.get(explicit_key, 0) > 0 and db.q1(
+                    "SELECT id FROM events WHERE source_id=? AND sample_id=? AND event_type='measurement' "
+                    "AND name=? AND COALESCE(label,'')=? AND space_revision_id=? LIMIT 1",
+                    (ob.source_id, ob.sample_id, current_state.FRAME_COUNT_NAME, ob.label or "",
+                     db.current_space_revision_id()),
+                )
             )
             if duplicate_marker:
                 rejected.append({
@@ -455,32 +499,29 @@ def _process_observations(batch: ObservationBatch):
             continue
         e["ts"] = ts
         enriched.append(e)
-        rows.append(enrich.row_tuple(e, ts, db.now()))
 
-    if rows:
-        with db.transaction():
-            db.exmany(enrich.INSERT_SQL, rows)
+    if enriched:
+        with registry.timer("ingestion.raw_transaction_s"):
+            enrich.insert_rows(connection, enriched, db.now())
             enrich.update_counters(enriched, batch.job_id)
-    completed_samples = current_state.materialize_affected(enriched) if enriched else []
-
-    # Fusion is deliberately downstream of complete-source-sample materialization.
-    # Import lazily so deployments that never configure multiview retain the same
-    # ingestion dependency surface.
-    if completed_samples:
-        from ..services import multiview
-        multiview.process_completed_samples(completed_samples)
+    # A sample with no stored rows before this batch is complete in memory, so
+    # the read model is materialized from the rows just inserted rather than by
+    # re-reading them. Everything else re-reads, preserving split delivery.
+    self_contained = frozenset(
+        key for key, count in prior_row_counts.items()
+        if count == 0 and key not in invalid_sample_keys
+    )
+    completed_samples = (current_state.materialize_affected(enriched, self_contained)
+                         if enriched else [])
 
     zone_names = {z["id"]: z["name"] for z in context[0]}
-    if enriched:
-        with db.transaction():
-            alerts = alert_engine.evaluate_batch(enriched, zone_names)
-    else:
-        alerts = []
+    registry.increment("ingestion.observations", len(enriched))
+    registry.increment("ingestion.completed_samples", len(completed_samples))
     result = {
-        "accepted": len(rows), "duplicates": duplicates, "rejected": rejected,
-        "alerts": len(alerts), "completed_samples": len(completed_samples),
+        "accepted": len(enriched), "duplicates": duplicates, "rejected": rejected,
+        "alerts": 0, "completed_samples": len(completed_samples),
     }
-    return result, enriched, alerts, zone_names, completed_samples
+    return result, enriched, zone_names, completed_samples
 
 
 @router.post(
