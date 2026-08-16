@@ -15,13 +15,13 @@ from server.services import agent_workflows
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILLS_DIR = os.path.join(ROOT, "skills")
 EXPECTED_SKILLS = {
-    "storelens-core", "sources-and-cameras", "geometry-and-zones", "perception-workers",
+    "manysight-core", "sources-and-cameras", "geometry-and-zones", "perception-workers",
     "multiview-fusion", "queries-dashboards-alerts", "guided-demo",
 }
 # Consolidated away by this milestone. Their content moved into the skills above;
 # leaving a stale copy behind is how an agent ends up following two contracts.
 RETIRED_SKILLS = {
-    "storelens-platform", "detection-tracking", "measurement", "state-observation",
+    "manysight-platform", "detection-tracking", "measurement", "state-observation",
     "geometry-calibration", "source-onboarding", "multiview", "analytics",
     "generated-dashboard", "alerts-workflows",
 }
@@ -78,14 +78,14 @@ def test_every_skill_declares_its_name_and_when_to_use_it(name):
     assert content.count("# ") >= 1
 
 
-@pytest.mark.parametrize("name", sorted(EXPECTED_SKILLS - {"storelens-core"}))
+@pytest.mark.parametrize("name", sorted(EXPECTED_SKILLS - {"manysight-core"}))
 def test_task_skills_point_back_at_the_core_skill(name):
-    assert "storelens-core" in skill(name), \
+    assert "manysight-core" in skill(name), \
         "every task skill must route the agent to the invariants first"
 
 
 def test_core_skill_teaches_the_non_negotiable_invariants():
-    content = flat("storelens-core")
+    content = flat("manysight-core")
     for phrase in (
         "observe locally, derive centrally",
         "`detections=[]` is a **known explicit zero**",
@@ -94,11 +94,11 @@ def test_core_skill_teaches_the_non_negotiable_invariants():
         "opaque **source-local tracker id**",
         "not identity and not appearance reid",
         "one physical region is one canonical zone, never one per camera",
-        "do not treat an arbitrary repository script as storelens protocol documentation",
+        "do not treat an arbitrary repository script as manysight protocol documentation",
         "agents never receive raw sql",
         "destructive, exact-confirmation operations",
     ):
-        assert phrase in content, f"storelens-core must state: {phrase}"
+        assert phrase in content, f"manysight-core must state: {phrase}"
     for forbidden in ("zone_enter", "zone_exit", "zone_dwell", "state_change"):
         assert forbidden in content, "the forbidden worker output must be enumerated"
     assert len(content.split()) < 1200, "the core skill must stay short enough to always load"
@@ -214,15 +214,15 @@ def test_the_agent_surface_document_lists_the_real_tool_set():
     for tool in CURATED_PUBLIC_TOOLS:
         assert f"`{tool}`" in content, f"docs/agent-surface.md omits {tool}"
     assert "19 tools" in content
-    assert "STORELENS_MCP_LEGACY_TOOLS=1" in content
+    assert "MANYSIGHT_MCP_LEGACY_TOOLS=1" in content
     assert "59" in content, "the legacy count must be stated"
     assert "no language model runs" in content.lower()
 
 
 def test_claude_md_points_at_the_current_skill_names():
     content = read(os.path.join(ROOT, "CLAUDE.md"))
-    assert "skills/storelens-core/SKILL.md" in content
-    assert "storelens-platform" not in content
+    assert "skills/manysight-core/SKILL.md" in content
+    assert "manysight-platform" not in content
     assert "docs/agent-surface.md" in content
 
 

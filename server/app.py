@@ -1,8 +1,8 @@
-"""StoreLens — spatial and temporal analytics from locally observed evidence.
+"""ManySight — spatial and temporal analytics from locally observed evidence.
 
 Run:  uvicorn server.app:app --host 0.0.0.0 --port 8000
 UI:   http://localhost:8000        API docs: http://localhost:8000/docs
-Auth: optional — set STORELENS_API_KEY to require X-API-Key on /api/*.
+Auth: optional — set MANYSIGHT_API_KEY to require X-API-Key on /api/*.
 The query-string key remains available for browser SSE compatibility; headers are
 preferred for other clients.
 """
@@ -25,7 +25,7 @@ from .services import alert_engine, config_cache, current_state, demo_media, dem
 from .services.metrics import registry as metrics_registry
 from .services.sse import broker
 
-ALERT_POLL_INTERVAL_S = float(os.environ.get("STORELENS_ALERT_POLL_INTERVAL_S", "15"))
+ALERT_POLL_INTERVAL_S = float(os.environ.get("MANYSIGHT_ALERT_POLL_INTERVAL_S", "15"))
 
 
 async def _alert_poll_loop():
@@ -54,17 +54,17 @@ async def lifespan(_app: FastAPI):
         demo_runtime.resume_active_sessions()
         demo_runtime.resume_promoted_media()
     except Exception:
-        logging.getLogger("storelens.demo").exception("demo runtime recovery failed")
+        logging.getLogger("manysight.demo").exception("demo runtime recovery failed")
     # Live bookkeeping is in-process, so a restart rebuilds it from the persisted
     # current samples and marks every group for one reconciliation tick. Cameras
     # do not have to send a new frame for fused state to become coherent again.
     model = realtime.execution_model()
     if model["warning"]:
-        logging.getLogger("storelens.realtime").warning(model["warning"])
+        logging.getLogger("manysight.realtime").warning(model["warning"])
     try:
         realtime.coordinator.reconcile()
     except Exception:
-        logging.getLogger("storelens.realtime").exception("live state reconciliation failed")
+        logging.getLogger("manysight.realtime").exception("live state reconciliation failed")
     realtime.coordinator.start()
     task = asyncio.create_task(_alert_poll_loop())
     try:
@@ -86,19 +86,19 @@ app = FastAPI(
     title="ManySight",
     version="1.0.0",
     description="Infrastructure for turning raw camera and sensor observations into spatial and "
-                "temporal analytics. StoreLens manages logical sources, protected connection configuration, mapped "
+                "temporal analytics. ManySight manages logical sources, protected connection configuration, mapped "
                 "geometry, heartbeat-backed workers, schema-v2 detection/measurement/state observations, derived "
                 "current/fused state, saved queries, generated dashboards, and alerts. Local workers open sources and run models; the platform "
                 "does not proxy operational feeds or execute worker code. An optional isolated guided demo presents allowlisted local media "
-                "and a provenance-hashed cache derived offline through the real StoreLens pipeline on one synchronized replay clock.",
+                "and a provenance-hashed cache derived offline through the real ManySight pipeline on one synchronized replay clock.",
     lifespan=lifespan,
 )
 
 db.init_db()
 current_state.rebuild_from_history()
 
-API_KEY = os.environ.get("STORELENS_API_KEY", "")
-PUBLIC_READS = os.environ.get("STORELENS_PUBLIC_READS", "false").lower() in {"1", "true", "yes"}
+API_KEY = os.environ.get("MANYSIGHT_API_KEY", "")
+PUBLIC_READS = os.environ.get("MANYSIGHT_PUBLIC_READS", "false").lower() in {"1", "true", "yes"}
 
 
 # Both guards are pure ASGI middleware rather than @app.middleware("http").
@@ -147,7 +147,7 @@ class DemoWorkspaceGuard:
         path = scope["path"]
         if not path.startswith("/api/v1/") or path.startswith("/api/v1/demo/"):
             return await self.app(scope, receive, send)
-        session_id = (Headers(scope=scope).get("x-storelens-demo-session")
+        session_id = (Headers(scope=scope).get("x-manysight-demo-session")
                       or QueryParams(scope["query_string"]).get("demo_session"))
         if not session_id:
             return await self.app(scope, receive, send)
@@ -170,8 +170,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-StoreLens-Credential-Key",
-                   "X-StoreLens-Demo-Session", "MCP-Protocol-Version"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-ManySight-Credential-Key",
+                   "X-ManySight-Demo-Session", "MCP-Protocol-Version"],
 )
 
 
@@ -179,12 +179,12 @@ app.add_middleware(
 def health():
     return {
         "ok": True,
-        "service": "storelens",
+        "service": "manysight",
         "ts": db.now(),
         "auth_required": bool(API_KEY),
         "public_reads": PUBLIC_READS,
-        "managed_credentials_configured": bool(os.environ.get("STORELENS_CREDENTIAL_KEY")),
-        "credential_access_configured": bool(os.environ.get("STORELENS_CREDENTIAL_ACCESS_KEY") or API_KEY),
+        "managed_credentials_configured": bool(os.environ.get("MANYSIGHT_CREDENTIAL_KEY")),
+        "credential_access_configured": bool(os.environ.get("MANYSIGHT_CREDENTIAL_ACCESS_KEY") or API_KEY),
         "endpoint_profile": resolve_platform_config()["profile"],
         "guided_demo_assets_available": demo_runtime.asset_status()["available"],
         "demo_stream_supervisor": demo_media.status(),
@@ -231,13 +231,13 @@ def platform_config(request: Request):
 def agent_guide(request: Request):
     endpoints = _endpoint_config(request)
     mcp_url = endpoints["mcp_url"]
-    return f"""# Use StoreLens from an agent
+    return f"""# Use ManySight from an agent
 
-StoreLens is an observation and analytics platform. It never opens or proxies an
+ManySight is an observation and analytics platform. It never opens or proxies an
 operational camera feed and never runs computer-vision models. Its optional guided demo
 serves only allowlisted local sample media and a cache derived offline through the real
 platform pipeline; runtime is neither a worker, live inference, nor live fusion.
-StoreLens can keep source credentials encrypted for
+ManySight can keep source credentials encrypted for
 explicitly privileged worker resolution; the worker still opens the feed locally and posts
 raw observations over HTTPS.
 
@@ -257,7 +257,7 @@ raw observations over HTTPS.
    and readiness. Over MCP this is `inspect_workspace()`. It never contains credentials.
 2. `GET {endpoints["rest_url"]}/agent/workflows` then `.../agent/workflows/{{name}}` — route
    the job you were asked to do to its prerequisites, sequence, invariants, and tools.
-3. Load the named skill (`get_skill` over MCP), starting with `storelens-core`.
+3. Load the named skill (`get_skill` over MCP), starting with `manysight-core`.
 4. Verify with real reads before reporting success.
 
 The MCP endpoint advertises a curated set of semantic tools. REST and the SDK remain the
@@ -265,7 +265,7 @@ complete low-level interface; `/openapi.json` is authoritative.
 
 ## Default workflow
 
-1. Reuse the requested logical source, or create one with either `storelens_managed`
+1. Reuse the requested logical source, or create one with either `manysight_managed`
    structured connection details or an `external_secret` locator with `local_secret_ref`.
 2. Place and calibrate the source before any geometry or fusion work. When a named region
    has no canonical zone, inspect the calibrated cameras first
@@ -296,16 +296,16 @@ complete low-level interface; `/openapi.json` is authoritative.
    only when requested. Agents never receive SQL access. Threshold words are exact: "more
    than 2" is `> 2` and "at least 2" is `>= 2`.
 
-Managed credentials are encrypted at rest with `STORELENS_CREDENTIAL_KEY` and are returned
+Managed credentials are encrypted at rest with `MANYSIGHT_CREDENTIAL_KEY` and are returned
 only by the header-authenticated connection endpoint. External-secret mode remains available.
-In either mode StoreLens is provenance and coordination, not a stream proxy.
+In either mode ManySight is provenance and coordination, not a stream proxy.
 """
 
 
 @app.get("/llms.txt", response_class=PlainTextResponse, include_in_schema=False)
 def llms_index(request: Request):
     endpoints = _endpoint_config(request)
-    return f"""# StoreLens
+    return f"""# ManySight
 > Spatial and temporal analytics from observations produced by local workers.
 
 - Agent instructions: {endpoints["agent_guide_url"]}
@@ -319,11 +319,11 @@ def llms_index(request: Request):
 """
 
 
-@app.get("/.well-known/storelens.json", include_in_schema=False)
-def storelens_discovery(request: Request):
+@app.get("/.well-known/manysight.json", include_in_schema=False)
+def manysight_discovery(request: Request):
     endpoints = _endpoint_config(request)
     return {
-        "name": "StoreLens",
+        "name": "ManySight",
         "version": app.version,
         "agent_instructions": endpoints["agent_guide_url"],
         "agent_workspace": endpoints["rest_url"] + "/agent/workspace",

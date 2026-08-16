@@ -1,4 +1,4 @@
-"""Seed StoreLens with a complete, realistic demo using the current observation
+"""Seed ManySight with a complete, realistic demo using the current observation
 contract: store plan, zones, cameras (with a real computed homography), jobs,
 ~3 hours of synthetic history as `detection`/`measurement`/`state` observations
 only (never zone_enter/zone_exit/state_change/count — the platform derives
@@ -11,7 +11,7 @@ Run once (server may be running or not — writes the same SQLite DB):
 Then open http://localhost:8000 — every tab is populated.
 
 Warning: this development utility replaces the workspace map, zones, sources,
-alert rules, historical alerts, and non-migrated saved analyses in STORELENS_DATA.
+alert rules, historical alerts, and non-migrated saved analyses in MANYSIGHT_DATA.
 Use a disposable database.
 """
 import json
@@ -239,7 +239,7 @@ def simulate_history(zones: dict, source_ids: dict):
                    xm=jx, ym=jy, entity_type="person", label="customer", attrs=attrs)
 
     # Fridge door: a `state` sample every ~30s, including long runs of repeated
-    # identical labels -- StoreLens coalesces these into intervals itself.
+    # identical labels -- ManySight coalesces these into intervals itself.
     t, state = NOW - HISTORY_S, "closed"
     next_flip = t + random.uniform(300, 900)
     while t < NOW:

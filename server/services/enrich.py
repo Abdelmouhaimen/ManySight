@@ -2,7 +2,7 @@
 -> map projection -> zone-view matching -> canonical zone assignment -> geometry
 revision persistence.
 
-This is the ONE implementation of geometry enrichment in StoreLens. Both the legacy
+This is the ONE implementation of geometry enrichment in ManySight. Both the legacy
 `POST /events` endpoint and the `POST /observations/batch` endpoint (the current
 worker contract: detection | measurement | state) call `enrich_one` so a change to
 projection precedence, zone-view scoring, or revision bookkeeping only has to be
@@ -17,7 +17,7 @@ OBSERVATION_KINDS = {"detection", "measurement", "state"}
 # Legacy event_types still accepted by /events for backward compatibility and still
 # queryable for historical audit, but no longer part of the worker contract: workers
 # must not calculate zone entry/exit, dwell, occupancy, transitions, or state changes
-# -- StoreLens derives all of those from detection/state observations.
+# -- ManySight derives all of those from detection/state observations.
 LEGACY_DERIVED_KINDS = {"zone_enter", "zone_exit", "zone_dwell", "state_change", "count"}
 # Every event_type the `events` table has ever accepted (legacy + current), used by
 # the legacy /events endpoint's own validation.

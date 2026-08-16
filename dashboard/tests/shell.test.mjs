@@ -49,7 +49,7 @@ test("the review badge counts only alerts that are still open", () => {
 
 test("the top bar shows the workspace name and no operations tagline", () => {
   assert.match(shell, /className="workspace-name"/);
-  assert.ok(!shell.includes("SPACE_LABELS"), "the '{type} operations · StoreLens' line is gone");
+  assert.ok(!shell.includes("SPACE_LABELS"), "the '{type} operations · ManySight' line is gone");
   assert.ok(!/operations/i.test(shell));
 });
 

@@ -40,31 +40,31 @@ registry file path.
 
 | Variable | Purpose |
 |---|---|
-| `STORELENS_DATA` | Data directory; defaults to `./data` and contains `storelens.db`. |
-| `STORELENS_API_KEY` | Optional API key for `/api/*`; clients normally send `X-API-Key`. Browser SSE and protected media URLs use the compatibility query parameter. |
-| `STORELENS_PUBLIC_READS` | Allows unauthenticated read requests when true; credential resolution remains protected. |
-| `STORELENS_CREDENTIAL_KEY` | URL-safe base64 encoding of exactly 32 random bytes for managed credential encryption. |
-| `STORELENS_CREDENTIAL_ACCESS_KEY` | Header-only key for privileged source-connection resolution; falls back to the API key if omitted. |
-| `STORELENS_ALERT_POLL_INTERVAL_S` | Periodic alert evaluation interval; defaults to 15 seconds. |
-| `STORELENS_LIVE_TICK_INTERVAL_S` | Maximum live fusion cadence; defaults to 0.01 s (100 Hz). A tick only runs for groups with new source state. |
-| `STORELENS_LIVE_SCHEDULER` | `0` disables the background fusion scheduler; reads still drain pending ticks. |
-| `STORELENS_SQLITE_SYNCHRONOUS` | `NORMAL` (default) or `FULL`. See [the realtime pipeline](realtime-pipeline.md) for what each guarantees and what FULL costs. |
-| `STORELENS_INLINE_INGEST_MAX_OBSERVATIONS` | Batches at or below this size are processed on the event loop; larger ones go to the pipeline thread. Defaults to 64. |
-| `STORELENS_INLINE_INGEST_LOCK_WAIT_S` | How long an inline batch waits for the write lock before offloading itself; defaults to 0.25 s. |
-| `STORELENS_DEMO_ASSET_DIR` | Optional local path to extracted NVIDIA `datasets/mtmc_12cam` assets. The demo uses cameras 1-4. |
-| `STORELENS_DEMO_STREAM_PORT` | Loopback port for the post-promotion synchronized demo stream supervisor; defaults to 8765. |
-| `STORELENS_ENDPOINT_CONFIG` | Optional path to an endpoint registry JSON file. |
-| `STORELENS_ENDPOINT_PROFILE` | Endpoint profile name; defaults to the registry's active profile. |
-| `STORELENS_PUBLIC_URL` | Public platform URL advertised by discovery endpoints. |
-| `STORELENS_PUBLIC_MCP_URL` | Public Streamable HTTP MCP URL. |
-| `STORELENS_CORS_ORIGINS` | Comma-separated browser origins. |
-| `STORELENS_URL` | Platform base URL used by the MCP process. |
-| `STORELENS_REST_URL` | Optional REST-base override used by MCP. |
-| `STORELENS_SKILLS` | Optional MCP skill-directory override. |
-| `STORELENS_MCP_TRANSPORT` | `stdio` (default) or `streamable-http`. |
-| `STORELENS_MCP_HOST` / `STORELENS_MCP_PORT` | Streamable HTTP bind settings; defaults to `127.0.0.1:8001`. |
-| `STORELENS_MCP_ALLOWED_HOSTS` / `STORELENS_MCP_ALLOWED_ORIGINS` | Streamable HTTP host/origin allowlists. |
-| `STORELENS_MCP_LEGACY_TOOLS` | `1` also advertises the 59 deprecated low-level MCP tools alongside the 18 curated ones. Migration path only; see [the agent operating surface](agent-surface.md). |
+| `MANYSIGHT_DATA` | Data directory; defaults to `./data` and contains `manysight.db`. |
+| `MANYSIGHT_API_KEY` | Optional API key for `/api/*`; clients normally send `X-API-Key`. Browser SSE and protected media URLs use the compatibility query parameter. |
+| `MANYSIGHT_PUBLIC_READS` | Allows unauthenticated read requests when true; credential resolution remains protected. |
+| `MANYSIGHT_CREDENTIAL_KEY` | URL-safe base64 encoding of exactly 32 random bytes for managed credential encryption. |
+| `MANYSIGHT_CREDENTIAL_ACCESS_KEY` | Header-only key for privileged source-connection resolution; falls back to the API key if omitted. |
+| `MANYSIGHT_ALERT_POLL_INTERVAL_S` | Periodic alert evaluation interval; defaults to 15 seconds. |
+| `MANYSIGHT_LIVE_TICK_INTERVAL_S` | Maximum live fusion cadence; defaults to 0.01 s (100 Hz). A tick only runs for groups with new source state. |
+| `MANYSIGHT_LIVE_SCHEDULER` | `0` disables the background fusion scheduler; reads still drain pending ticks. |
+| `MANYSIGHT_SQLITE_SYNCHRONOUS` | `NORMAL` (default) or `FULL`. See [the realtime pipeline](realtime-pipeline.md) for what each guarantees and what FULL costs. |
+| `MANYSIGHT_INLINE_INGEST_MAX_OBSERVATIONS` | Batches at or below this size are processed on the event loop; larger ones go to the pipeline thread. Defaults to 64. |
+| `MANYSIGHT_INLINE_INGEST_LOCK_WAIT_S` | How long an inline batch waits for the write lock before offloading itself; defaults to 0.25 s. |
+| `MANYSIGHT_DEMO_ASSET_DIR` | Optional local path to extracted NVIDIA `datasets/mtmc_12cam` assets. The demo uses cameras 1-4. |
+| `MANYSIGHT_DEMO_STREAM_PORT` | Loopback port for the post-promotion synchronized demo stream supervisor; defaults to 8765. |
+| `MANYSIGHT_ENDPOINT_CONFIG` | Optional path to an endpoint registry JSON file. |
+| `MANYSIGHT_ENDPOINT_PROFILE` | Endpoint profile name; defaults to the registry's active profile. |
+| `MANYSIGHT_PUBLIC_URL` | Public platform URL advertised by discovery endpoints. |
+| `MANYSIGHT_PUBLIC_MCP_URL` | Public Streamable HTTP MCP URL. |
+| `MANYSIGHT_CORS_ORIGINS` | Comma-separated browser origins. |
+| `MANYSIGHT_URL` | Platform base URL used by the MCP process. |
+| `MANYSIGHT_REST_URL` | Optional REST-base override used by MCP. |
+| `MANYSIGHT_SKILLS` | Optional MCP skill-directory override. |
+| `MANYSIGHT_MCP_TRANSPORT` | `stdio` (default) or `streamable-http`. |
+| `MANYSIGHT_MCP_HOST` / `MANYSIGHT_MCP_PORT` | Streamable HTTP bind settings; defaults to `127.0.0.1:8001`. |
+| `MANYSIGHT_MCP_ALLOWED_HOSTS` / `MANYSIGHT_MCP_ALLOWED_ORIGINS` | Streamable HTTP host/origin allowlists. |
+| `MANYSIGHT_MCP_LEGACY_TOOLS` | `1` also advertises the 59 deprecated low-level MCP tools alongside the 18 curated ones. Migration path only; see [the agent operating surface](agent-surface.md). |
 
 Do not place secrets in tracked files or command-line query parameters. The dashboard
 uses a query-string API key only where browser APIs cannot attach a header; avoid this
@@ -78,9 +78,9 @@ Local clients normally launch `python mcp_server/server.py` over stdio. To run t
 separate Streamable HTTP service:
 
 ```powershell
-$env:STORELENS_MCP_TRANSPORT = "streamable-http"
-$env:STORELENS_MCP_HOST = "127.0.0.1"
-$env:STORELENS_MCP_PORT = "8001"
+$env:MANYSIGHT_MCP_TRANSPORT = "streamable-http"
+$env:MANYSIGHT_MCP_HOST = "127.0.0.1"
+$env:MANYSIGHT_MCP_PORT = "8001"
 python mcp_server/server.py
 ```
 
@@ -121,7 +121,7 @@ API smoke check for a running development server.
 
 `python scripts/seed_demo.py` replaces workspace, geometry, sources, alert rules,
 historical alerts, and non-migrated saved queries with synthetic data, then adds synthetic
-observation history and jobs. It is destructive to the selected `STORELENS_DATA`
+observation history and jobs. It is destructive to the selected `MANYSIGHT_DATA`
 database and must not be used against retained data.
 
 `demo/loop_video_stream.py` loops a local video as an MJPEG endpoint for development.

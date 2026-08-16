@@ -151,7 +151,7 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken, backgr
     sources: sources.map((source) => ({ id: source.id, placement: source.placement })),
     backgroundImageUrl,
   });
-  // Keep the StoreLens map axes intact in the 3D world: map X -> world X and
+  // Keep the ManySight map axes intact in the 3D world: map X -> world X and
   // map Y -> world Z. This lets an elevated view from +Z preserve the exact
   // left/right and top/bottom orientation of the 2D editor.
   const worldPoint = (point, y = 0) => new THREE.Vector3(point.x - width / 2, y, point.y - height / 2);
@@ -333,7 +333,7 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken, backgr
       group.add(lens);
       const point = worldPoint(source.placement, .55);
       group.position.copy(point);
-      // StoreLens heading is (cos theta, sin theta) in map X/Y. Map Y is +Z
+      // ManySight heading is (cos theta, sin theta) in map X/Y. Map Y is +Z
       // here and the model lens points down local -Z.
       group.rotation.y = -heading - Math.PI / 2;
       scene.add(group);
@@ -603,7 +603,7 @@ function OperationalLivePage({ liveTick = 0 }) {
   });
   const active = mode === "live" ? (identityMode === "fused" ? fusedTracks : latestTracks) : replayTracks;
   const staleFrames = data.latestFrames.filter((frame) => frameIsStale(frame, liveNow));
-  /* The confidence StoreLens itself reports. Combined mode takes the group's
+  /* The confidence ManySight itself reports. Combined mode takes the group's
    * own quality; per-camera mode has no cross-camera claim to make, so it is
    * only as good as the freshness of the cameras being shown. */
   const groupQuality = data.fused?.groups?.length

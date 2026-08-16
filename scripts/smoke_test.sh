@@ -2,11 +2,11 @@
 # Current-contract API smoke test for a running development server.
 set -euo pipefail
 
-BASE="${STORELENS_URL:-http://127.0.0.1:8000}/api/v1"
+BASE="${MANYSIGHT_URL:-http://127.0.0.1:8000}/api/v1"
 PY=python
 command -v python >/dev/null 2>&1 || PY=python3
 
-"$PY" - "$BASE" "${STORELENS_API_KEY:-}" <<'PY'
+"$PY" - "$BASE" "${MANYSIGHT_API_KEY:-}" <<'PY'
 import sys
 import time
 import uuid
@@ -33,7 +33,7 @@ marker = uuid.uuid4().hex[:10]
 now = time.time()
 try:
     health = request("GET", "/health")
-    assert health["ok"] and health["service"] == "storelens"
+    assert health["ok"] and health["service"] == "manysight"
     print("ok: health")
 
     config = request("GET", "/platform-config")
@@ -49,7 +49,7 @@ try:
             "name": f"Smoke webcam {marker}",
             "kind": "webcam",
             "connection_mode": "agent_local",
-            "connection_management": "storelens_managed",
+            "connection_management": "manysight_managed",
             "connection": {"device_index": 0},
         },
     )

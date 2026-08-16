@@ -3,7 +3,7 @@
 Compares a region of interest against a reference frame captured at startup
 (door must be CLOSED when the script starts) and submits a `state` observation
 on every sample period — including runs of identical samples. This worker never
-decides "did it change": StoreLens coalesces consecutive identical samples into
+decides "did it change": ManySight coalesces consecutive identical samples into
 intervals and derives transitions, durations, and duration alerts itself
 (services/derive.py:coalesce_state_intervals). A worker submitting a `state`
 sample every 2s must not try to emit only-on-flip state_change events.
@@ -15,7 +15,7 @@ import sys
 import time
 
 sys.path.insert(0, "sdk/python")
-from storelens import StoreLens, parse_args_base  # noqa: E402
+from manysight import ManySight, parse_args_base  # noqa: E402
 
 
 def main():
@@ -30,13 +30,13 @@ def main():
     args = ap.parse_args()
     x, y, w, h = (int(v) for v in args.roi.split(","))
 
-    sl = StoreLens(args.url, args.api_key)
+    sl = ManySight(args.url, args.api_key)
     src = sl.source(args.source)
     sl.register_job(f"Fridge monitor – {src['name']}", "door state via ROI diff",
                     source_ids=[src["id"]], event_types=["state"])
     sl.register_worker("fridge-state", version="1")
     print("Contract: this worker sends a 'state' observation every sample period, "
-          "including repeats — StoreLens derives transitions and durations from them.")
+          "including repeats — ManySight derives transitions and durations from them.")
     cap = sl.open_capture(src, args.connection)
     ok, ref = cap.read()
     if not ok:

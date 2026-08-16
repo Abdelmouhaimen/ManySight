@@ -20,7 +20,7 @@ def _assets(tmp_path: Path, monkeypatch) -> Path:
         (videos / f"{camera}.mp4").write_bytes(b"test-media")
     (root / "map.png").write_bytes(b"test-bird-view")
     (cam_info / "Warehouse_Synthetic_Cam012.yml").write_text("dataset sentinel", encoding="utf-8")
-    monkeypatch.setenv("STORELENS_DEMO_ASSET_DIR", str(root))
+    monkeypatch.setenv("MANYSIGHT_DEMO_ASSET_DIR", str(root))
     return root
 
 
@@ -59,7 +59,7 @@ def _apply_all_stages(client, session_id: str) -> dict:
 def test_guided_session_starts_with_camera_and_space_setup_only(client, tmp_path, monkeypatch):
     _assets(tmp_path, monkeypatch)
     session = client.post("/api/v1/demo/sessions", json={"mode": "guided"}).json()
-    headers = {"X-StoreLens-Demo-Session": session["id"]}
+    headers = {"X-ManySight-Demo-Session": session["id"]}
     # Prepared: the space, the four cameras, their calibrations, and the group.
     assert len(client.get("/api/v1/sources", headers=headers).json()) == 4
     assert len(client.get("/api/v1/calibrations", headers=headers).json()) == 4
@@ -78,7 +78,7 @@ def test_guided_session_starts_with_camera_and_space_setup_only(client, tmp_path
 
     # A learn-by-exploring session is configured up front, as before.
     learn = client.post("/api/v1/demo/sessions", json={"mode": "learn"}).json()
-    learn_headers = {"X-StoreLens-Demo-Session": learn["id"]}
+    learn_headers = {"X-ManySight-Demo-Session": learn["id"]}
     assert len(client.get("/api/v1/zones", headers=learn_headers).json()) == 1
     assert learn["result"]["query_id"] and learn["result"]["alert_rule_id"]
     assert learn["result"]["dashboard_id"]
@@ -91,7 +91,7 @@ def test_guided_session_starts_with_camera_and_space_setup_only(client, tmp_path
 def test_request_stages_are_ordered_and_idempotent(client, tmp_path, monkeypatch):
     _assets(tmp_path, monkeypatch)
     session = client.post("/api/v1/demo/sessions", json={"mode": "guided"}).json()
-    headers = {"X-StoreLens-Demo-Session": session["id"]}
+    headers = {"X-ManySight-Demo-Session": session["id"]}
     apply_url = f"/api/v1/demo/sessions/{session['id']}/apply-request"
     assert client.post(apply_url, json={"stage": "nonsense"}).status_code == 422
     assert client.post(apply_url, json={"stage": "query"}).status_code == 409, \
@@ -132,7 +132,7 @@ def test_demo_workspace_is_isolated_and_cached_replay_is_truthful(client, tmp_pa
     created = client.post("/api/v1/demo/sessions", json={"mode": "guided"})
     assert created.status_code == 201, created.text
     session = created.json()
-    headers = {"X-StoreLens-Demo-Session": session["id"]}
+    headers = {"X-ManySight-Demo-Session": session["id"]}
     assert len(client.get("/api/v1/sources", headers=headers).json()) == 4
     assert client.get("/api/v1/sources").json() == []
     assert client.get("/api/v1/jobs", headers=headers).json() == []
@@ -169,7 +169,7 @@ def test_demo_workspace_is_isolated_and_cached_replay_is_truthful(client, tmp_pa
     assert started.status_code == 200, started.text
     assert started.json()["master_clock"]["status"] == "running"
     cache = client.get(f"/api/v1/demo/sessions/{session['id']}/replay-cache").json()
-    assert cache["metadata"]["type"] == "storelens_derived_replay_cache"
+    assert cache["metadata"]["type"] == "manysight_derived_replay_cache"
     assert cache["metadata"]["source_fps"] == 30
     assert cache["metadata"]["sample_rate_hz"] == 10
     assert cache["metadata"]["sample_count"] == 201
@@ -321,7 +321,7 @@ def test_learn_calibration_uses_real_homography_then_restores_validated_matrix(
         client, tmp_path, monkeypatch):
     _assets(tmp_path, monkeypatch)
     session = client.post("/api/v1/demo/sessions", json={"mode": "learn"}).json()
-    headers = {"X-StoreLens-Demo-Session": session["id"]}
+    headers = {"X-ManySight-Demo-Session": session["id"]}
     source_id = next(iter(session["result"]["source_ids"].values()))
     pixels = [{"x": 300, "y": 300}, {"x": 1200, "y": 250},
               {"x": 1500, "y": 850}, {"x": 500, "y": 900}]
@@ -349,7 +349,7 @@ def test_learn_calibration_uses_real_homography_then_restores_validated_matrix(
 def test_practice_plan_trace_is_restored_to_the_prepared_demo_space(client, tmp_path, monkeypatch):
     _assets(tmp_path, monkeypatch)
     session = client.post("/api/v1/demo/sessions", json={"mode": "guided"}).json()
-    headers = {"X-StoreLens-Demo-Session": session["id"]}
+    headers = {"X-ManySight-Demo-Session": session["id"]}
     prepared_store = client.get("/api/v1/store", headers=headers).json()
     prepared_sources = client.get("/api/v1/sources", headers=headers).json()
     assert all(source["calibrated"] and source["placement"] for source in prepared_sources)

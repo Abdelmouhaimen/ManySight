@@ -85,10 +85,10 @@ function App() {
     };
     window.addEventListener("hashchange", onHash);
     const onDemo = () => { setDemoId(demoSessionId()); refreshShell(); };
-    window.addEventListener("storelens-demo-session", onDemo);
+    window.addEventListener("manysight-demo-session", onDemo);
     return () => {
       window.removeEventListener("hashchange", onHash);
-      window.removeEventListener("storelens-demo-session", onDemo);
+      window.removeEventListener("manysight-demo-session", onDemo);
     };
   }, []);
 

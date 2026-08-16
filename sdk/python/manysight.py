@@ -1,4 +1,4 @@
-"""StoreLens worker SDK — a small client for external analysis workers.
+"""ManySight worker SDK — a small client for external analysis workers.
 
 Observe locally, derive centrally: workers submit only three observation kinds —
 detection (an observed entity with spatial evidence), measurement (an observed
@@ -9,8 +9,8 @@ zone_id/zone, or calculate zone entry/exit, dwell, occupancy, state changes, or
 durations — see get_observation_contract()/GET /api/v1/observations/contract.
 
 Typical worker loop:
-    from storelens import StoreLens, CentroidTracker
-    sl = StoreLens("http://localhost:8000")
+    from manysight import ManySight, CentroidTracker
+    sl = ManySight("http://localhost:8000")
     src = sl.source(1)  # safe source metadata; managed credentials remain redacted
     job = sl.register_job("Checkout presence", event_types=["detection"])
     worker = sl.register_worker("checkout-worker", version="1")
@@ -68,7 +68,7 @@ class DetectionSample:
         )
 
 
-class StoreLens:
+class ManySight:
     def __init__(self, base_url: str = "http://localhost:8000", api_key: str = "",
                  batch_size: int = 200, credential_access_key: str | None = None):
         self.base = base_url.rstrip("/") + "/api/v1"
@@ -77,7 +77,7 @@ class StoreLens:
             self.session.headers["X-API-Key"] = api_key
         self.credential_access_key = (
             credential_access_key if credential_access_key is not None
-            else os.environ.get("STORELENS_CREDENTIAL_ACCESS_KEY", api_key)
+            else os.environ.get("MANYSIGHT_CREDENTIAL_ACCESS_KEY", api_key)
         )
         self.batch_size = batch_size
         self.job_id = None
@@ -108,11 +108,11 @@ class StoreLens:
         """
         if not self.credential_access_key:
             raise RuntimeError(
-                "STORELENS_CREDENTIAL_ACCESS_KEY is required to resolve a managed source"
+                "MANYSIGHT_CREDENTIAL_ACCESS_KEY is required to resolve a managed source"
             )
         response = self.session.get(
             self.base + f"/sources/{source_id}/connection",
-            headers={"X-StoreLens-Credential-Key": self.credential_access_key},
+            headers={"X-ManySight-Credential-Key": self.credential_access_key},
             timeout=30,
         )
         if not response.ok:
@@ -126,7 +126,7 @@ class StoreLens:
                       capabilities=None, metadata=None,
                       connection_management: str = "external_secret",
                       connection=None, credentials=None) -> dict:
-        """Register either a StoreLens-managed or external-secret source."""
+        """Register either a ManySight-managed or external-secret source."""
         return self._req("POST", "/sources", {
             "name": name,
             "kind": kind,
@@ -258,11 +258,11 @@ class StoreLens:
         """Buffer one observation; flushes automatically at batch_size. Prefer the
         typed submit_detection/submit_measurement/submit_state helpers below —
         this is their shared plumbing. Never pass zone_id/zone or a legacy kind
-        (zone_enter/zone_exit/zone_dwell/state_change/count); StoreLens rejects
+        (zone_enter/zone_exit/zone_dwell/state_change/count); ManySight rejects
         those with a legacy_derived_observation error."""
         if kind not in {"detection", "measurement", "state"}:
             raise ValueError("kind must be detection, measurement, or state — "
-                             "StoreLens derives zone/dwell/occupancy/state-change events itself")
+                             "ManySight derives zone/dwell/occupancy/state-change events itself")
         supplied_ts = fields.pop("ts", None)
         observation = {
             "schema_version": 2,
@@ -287,12 +287,12 @@ class StoreLens:
                          sample_id: str | None = None) -> None:
         """Buffer one observed entity with spatial evidence. `point_px` is [x,y];
         `bbox_px` is [x0,y0,x1,y1] (corner form, not [x,y,w,h]); `keypoints_px` is
-        {name: [x,y]} (e.g. {"left_ankle": [190,455]}) — StoreLens picks the
+        {name: [x,y]} (e.g. {"left_ankle": [190,455]}) — ManySight picks the
         representative point in that precedence: point_px, then foot/ankle
         keypoints, then bbox bottom-center. `point_map` ([x,y] or {x,y} in map
         metres) is only for a trusted non-camera producer that already knows the
         floor position (e.g. a simulator or a non-visual sensor); a camera worker
-        should send pixel evidence instead and let StoreLens project it.
+        should send pixel evidence instead and let ManySight project it.
         `entity_id` is an opaque per-track id (never a verified human identity);
         `identity_scope` documents how far it is safe to treat two entity_ids as
         "the same" (default: only within this worker run)."""
@@ -321,7 +321,7 @@ class StoreLens:
         """Buffer one observed numeric sample. `value_kind`: gauge (instantaneous,
         default — e.g. people currently waiting), delta (an increment observed
         this sample), or cumulative (a monotonically increasing producer
-        counter — StoreLens detects resets so a worker restart never produces a
+        counter — ManySight detects resets so a worker restart never produces a
         negative rate). Never post a time-aggregated or precomputed total.
         A measurement can only be zone-assigned if it carries geometry (e.g.
         `point_map`, for a count with no single associated entity) or shares an
@@ -423,7 +423,7 @@ class StoreLens:
                      info: dict | None = None, confidence: float | None = None,
                      ts: float | None = None, observation_id: str | None = None) -> None:
         """Buffer one observed current categorical state (e.g. name="door_state",
-        label="open"). Send this on every sample, not only on change — StoreLens
+        label="open"). Send this on every sample, not only on change — ManySight
         coalesces repeated identical samples into intervals and derives
         transitions/durations itself; never send a computed duration or a
         state_change event. Set `entity_id` when more than one independently
@@ -502,14 +502,14 @@ class StoreLens:
         """DEPRECATED for new work — prefer submit_detection/submit_measurement/
         submit_state. Buffers one legacy event; flushes automatically at
         batch_size. Still works against /events for backward compatibility, but
-        zone_enter/zone_exit/zone_dwell/state_change/count are events StoreLens
+        zone_enter/zone_exit/zone_dwell/state_change/count are events ManySight
         now derives itself — a new worker should never compute and send them."""
         if event.get("event_type") in self._LEGACY_DERIVED_TYPES:
             import warnings
             warnings.warn(
                 f"add_event(event_type='{event['event_type']}') sends a platform-derived event. "
                 "New workers should submit_detection/submit_measurement/submit_state instead and "
-                "let StoreLens derive dwell/occupancy/state changes itself.",
+                "let ManySight derive dwell/occupancy/state changes itself.",
                 DeprecationWarning, stacklevel=2,
             )
         event.setdefault("ts", time.time())
@@ -578,9 +578,9 @@ class StoreLens:
 
     # ---------- video ----------
     def open_capture(self, source: dict, local_connection=None):
-        """Open a camera in this worker process; StoreLens never proxies the feed.
+        """Open a camera in this worker process; ManySight never proxies the feed.
 
-        Resolution precedence is explicit local_connection, a StoreLens-managed
+        Resolution precedence is explicit local_connection, a ManySight-managed
         connection, then an external local_secret_ref environment variable.
         """
         import cv2
@@ -589,7 +589,7 @@ class StoreLens:
                 local_connection = int(local_connection)
             return cv2.VideoCapture(local_connection)
         management = source.get("connection_management", "external_secret")
-        if management == "storelens_managed":
+        if management == "manysight_managed":
             public_connection = source.get("connection") or {}
             if source.get("kind") == "webcam" and "device_index" in public_connection:
                 return cv2.VideoCapture(int(public_connection["device_index"]))
@@ -702,12 +702,12 @@ def parse_args_base(description: str):
     """Shared CLI args for worker scripts."""
     import argparse
     ap = argparse.ArgumentParser(description=description)
-    ap.add_argument("--url", default="http://localhost:8000", help="StoreLens base URL")
+    ap.add_argument("--url", default="http://localhost:8000", help="ManySight base URL")
     ap.add_argument("--api-key", default="", help="X-API-Key if the server requires one")
     ap.add_argument("--source", type=int, required=False, help="source id to analyse")
     ap.add_argument(
         "--connection",
-        default=os.environ.get("STORELENS_SOURCE_CONNECTION"),
-        help="Explicit worker-local URL/path/index override; external-secret deployments may use STORELENS_SOURCE_CONNECTION",
+        default=os.environ.get("MANYSIGHT_SOURCE_CONNECTION"),
+        help="Explicit worker-local URL/path/index override; external-secret deployments may use MANYSIGHT_SOURCE_CONNECTION",
     )
     return ap

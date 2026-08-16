@@ -5,14 +5,14 @@ description: Use for any deterministic data question, generated dashboard, or al
 
 # Queries, dashboards, and alerts
 
-Load [`storelens-core`](../storelens-core/SKILL.md) first.
+Load [`manysight-core`](../manysight-core/SKILL.md) first.
 
 ```text
 user intent
     ↓
 saved query          the question — subject, measures, filters, grouping
     ↓
-StoreLens result     deterministic, with quality and evidence window
+ManySight result     deterministic, with quality and evidence window
     ↓
 dashboard widget     presentation only
     ↓
@@ -67,7 +67,7 @@ the value and its quality. Deleting a dashboard preserves its queries and observ
 Prefer `configure_alert(kind="query_condition", query_id=..., operator=..., value=...)` so
 the alert evaluates exactly the saved query a dashboard shows.
 
-Map the user's own words. These are **not** interchangeable, and StoreLens never converts
+Map the user's own words. These are **not** interchangeable, and ManySight never converts
 one into the other:
 
 | the user says | operator |

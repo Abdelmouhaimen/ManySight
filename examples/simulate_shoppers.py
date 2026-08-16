@@ -4,7 +4,7 @@ Registers a job and submits realistic raw `detection` and `state` observations
 in real time, so Live, generated queries, and alerts can be exercised. This
 worker never resolves a zone, pairs an enter/exit, or computes
 a state change — it only reports what it "observed" (a simulated position, or
-a simulated fridge-door reading) every tick; StoreLens derives zones, visits,
+a simulated fridge-door reading) every tick; ManySight derives zones, visits,
 dwell, transitions, and state durations from those raw rows.
 
 Usage:
@@ -17,7 +17,7 @@ import sys
 import time
 
 sys.path.insert(0, "sdk/python")
-from storelens import StoreLens  # noqa: E402
+from manysight import ManySight  # noqa: E402
 
 
 def centroid(zone):
@@ -60,7 +60,7 @@ class Shopper:
         self.pos[1] += dy / d * speed * dt + random.uniform(-0.08, 0.08)
 
 
-def simulated_source(sl: StoreLens) -> dict:
+def simulated_source(sl: ManySight) -> dict:
     """This simulator has no camera — every observation still needs a
     source_id, so reuse or create one logical, credential-free 'sensor' source
     to attribute the synthetic observations to."""
@@ -79,7 +79,7 @@ def main():
     ap.add_argument("--minutes", type=float, default=10)
     args = ap.parse_args()
 
-    sl = StoreLens(args.url, args.api_key, batch_size=50)
+    sl = ManySight(args.url, args.api_key, batch_size=50)
     store = sl.store_map()
     zones = store["zones"]
     if not zones:
@@ -89,7 +89,7 @@ def main():
                     source_ids=[source["id"]], event_types=["detection", "state"])
     sl.register_worker("shopper-simulator", version="1")
     print("Contract: this worker sends only 'detection' and 'state' observations — "
-          "StoreLens derives zone visits, dwell, transitions, and door-state durations.")
+          "ManySight derives zone visits, dwell, transitions, and door-state durations.")
     fridge_state, fridge_next = "closed", time.time() + random.uniform(20, 60)
     shoppers = [Shopper(zones) for _ in range(args.shoppers)]
     t_end = time.time() + args.minutes * 60
@@ -120,7 +120,7 @@ def main():
             fridge_state = new
             fridge_next = now + (random.uniform(15, 90) if new == "open" else random.uniform(60, 240))
         else:
-            # Repeated identical samples are expected and required — StoreLens
+            # Repeated identical samples are expected and required — ManySight
             # coalesces them; a worker must not try to detect the change itself.
             sl.submit_state(source_id=source["id"], name="fridge_door", label=fridge_state)
         sl.flush()

@@ -5,10 +5,10 @@ description: Use for any worker that submits perception — tracked detections (
 
 # Perception workers
 
-Load [`storelens-core`](../storelens-core/SKILL.md) first.
+Load [`manysight-core`](../manysight-core/SKILL.md) first.
 
 A worker runs **on your machine**: it opens the source, runs the model, tracks anonymous
-entities, and posts raw evidence. StoreLens derives everything else.
+entities, and posts raw evidence. ManySight derives everything else.
 
 ## Before you start anything
 
@@ -81,7 +81,7 @@ entity or a categorical value: queue length, population counts, occupied desks.
   time-aggregated total.
 - `value_kind` = `gauge` (instantaneous, the default and usually right), `delta` (an
   increment observed this sample), or `cumulative` (a monotonically increasing producer
-  counter — StoreLens detects resets, so a worker restart never yields a negative rate).
+  counter — ManySight detects resets, so a worker restart never yields a negative rate).
   Aggregation depends on getting this right.
 - `label` optionally qualifies *which instance*, not *what is measured*.
 - A measurement is zone-assigned only if it carries geometry (e.g. a `point_map` hint) or
@@ -96,7 +96,7 @@ Use for equipment or scene states: doors, lights, shutters, machine on/off.
 - `name` = the state key (`"door_state"`), `label` = the observed value now
   (`"open"`/`"closed"`), `source_id` set.
 - `entity_id` when several independently stateful things share a source and name.
-- Send **every sample, including runs of identical values.** StoreLens coalesces identical
+- Send **every sample, including runs of identical values.** ManySight coalesces identical
   consecutive samples into intervals and derives every duration and transition.
 
 Do not detect the flip yourself and send only on change — `state_change` is the retired
@@ -108,7 +108,7 @@ forever.
 
 Register a job before posting, register the worker instance you actually started, and
 heartbeat every 5-15 s. The heartbeat response carries `should_stop` and
-`restart_requested` — obey them and exit cleanly. StoreLens never launches, kills, or
+`restart_requested` — obey them and exit cleanly. ManySight never launches, kills, or
 relaunches your process; `request_worker_state("restart")` does nothing without a
 supervisor. Never register a worker you did not start.
 
@@ -116,7 +116,7 @@ supervisor. Never register a worker you did not start.
 
 1. `inspect_perception(...)` — heartbeat, complete samples, freshness, submission rate.
 2. `GET /api/v1/observations/latest-frames` — the current complete sample per source, with
-   the projection and zone StoreLens assigned.
+   the projection and zone ManySight assigned.
 3. `GET /api/v1/multiview/current` — fused entities with member evidence, if fusing.
 4. `run_query(...)` — the actual question, with its quality.
 

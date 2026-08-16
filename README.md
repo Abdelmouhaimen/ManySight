@@ -1,23 +1,18 @@
 # ManySight
 
-ManySight is intended to be an open-source platform for turning observations from cameras and
+ManySight is an open-source platform for turning observations from cameras and
 sensors into spatial and temporal analytics for physical spaces. It stores source
 configuration and mapped geometry, accepts raw observations from local workers,
 projects spatial evidence into a floor plan, associates source-local tracks across
 explicit calibrated camera groups, and derives visits, dwell, occupancy,
 transitions, saved queries, dashboards, and alerts.
 
-**ManySight** is the product: the platform, the dashboard, the REST API, the SDK
-and the MCP integration. `StoreLens` survives inside the implementation as the
-original name — the `storelens` Python module and SDK class, `STORELENS_*`
-environment variables, the `X-StoreLens-*` headers and `data/storelens.db`.
-Those are compatibility identifiers, not a second product, and renaming them is
-a separate controlled migration.
+Released under the [Apache License 2.0](LICENSE).
 
-> **Release status:** this repository is under active development. It currently
-> uses SQLite, represents mapped surfaces with planar homographies, and relies on
-> external worker processes for inference. It does not yet contain an open-source
-> license; see [License](#license).
+> **Scope:** ManySight stores and derives; it does not run models. It uses SQLite,
+> represents mapped surfaces with planar homographies, and relies on external
+> worker processes for inference. Deployments are responsible for TLS, network
+> controls, key rotation, and backups.
 
 ## What ManySight does
 
@@ -95,7 +90,7 @@ Once running:
 | Agent guide | <http://127.0.0.1:8000/agent.md> |
 | Agent workspace snapshot | <http://127.0.0.1:8000/api/v1/agent/workspace> |
 
-The default SQLite database is `data/storelens.db`.
+The default SQLite database is `data/manysight.db`.
 
 ### Finding your way around ManySight
 
@@ -157,7 +152,7 @@ calibration controls; both paths continue from the same validated demo state.
 A source combines a logical device with non-secret connection configuration.
 Sensitive authentication material is stored or resolved separately:
 
-- `storelens_managed` stores validated connection fields on the source and encrypts
+- `manysight_managed` stores validated connection fields on the source and encrypts
   credentials in the database. An authorized worker resolves the connection through
   a dedicated, header-authenticated endpoint.
 - `external_secret` stores only `locator.local_secret_ref`; the worker resolves that
@@ -178,9 +173,9 @@ import time
 import sys
 
 sys.path.insert(0, "sdk/python")
-from storelens import StoreLens
+from manysight import ManySight
 
-client = StoreLens("http://127.0.0.1:8000", api_key="")
+client = ManySight("http://127.0.0.1:8000", api_key="")
 source = client.source(1)
 capture = client.open_capture(source)
 
@@ -210,7 +205,7 @@ if ok:
 
 Run a real worker as a long-lived process, heartbeat every 5–15 seconds, and obey
 cooperative stop/restart requests. The SDK lives at
-[`sdk/python/storelens.py`](sdk/python/storelens.py); examples are in
+[`sdk/python/manysight.py`](sdk/python/manysight.py); examples are in
 [`examples/`](examples/). See [Workers and observations](docs/workers.md) before
 writing a new integration.
 
@@ -250,7 +245,7 @@ the `/api/v1/agent/*` endpoints behind it, and the compatibility mode that re-ad
 For a local stdio MCP client:
 
 ```powershell
-$env:STORELENS_URL = "http://127.0.0.1:8000"
+$env:MANYSIGHT_URL = "http://127.0.0.1:8000"
 python mcp_server/server.py
 ```
 
@@ -300,7 +295,8 @@ commits.
 
 ## License
 
-**No explicit open-source license is currently present.** Until the maintainers add
-an approved license, copyright law reserves all rights and this repository should
-not be described or redistributed as legally open source. Selecting and adding a
-license is a release blocker.
+ManySight is released under the [Apache License 2.0](LICENSE).
+
+The bundled guided demo can download NVIDIA sample media on request. That media is
+covered by NVIDIA's own terms, is never committed to this repository, and is not
+redistributed under this license.

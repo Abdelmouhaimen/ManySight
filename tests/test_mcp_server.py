@@ -1,5 +1,5 @@
 """mcp_server/server.py against MCP Python SDK v2 (mcp>=2.0.0, MCPServer). This
-suite locks in that the StoreLens tool contract survived the v1->v2 SDK
+suite locks in that the ManySight tool contract survived the v1->v2 SDK
 migration (mcp_server/_transport.py is the compatibility boundary) and that the
 transport dispatch (stdio vs streamable-http, host/port/security config) is
 correct without ever starting a real transport (which would block on stdin or
@@ -75,7 +75,7 @@ def test_legacy_compatibility_mode_re_advertises_the_low_level_tools(monkeypatch
     import importlib
     import mcp_server.server as m
 
-    monkeypatch.setenv("STORELENS_MCP_LEGACY_TOOLS", "1")
+    monkeypatch.setenv("MANYSIGHT_MCP_LEGACY_TOOLS", "1")
     legacy = importlib.reload(m)
     try:
         names = {t.name for t in asyncio.run(legacy.mcp.list_tools())}
@@ -83,7 +83,7 @@ def test_legacy_compatibility_mode_re_advertises_the_low_level_tools(monkeypatch
         assert "list_sources" in names and "query_data" in names
         assert len(names) == 19 + 59
     finally:
-        monkeypatch.delenv("STORELENS_MCP_LEGACY_TOOLS", raising=False)
+        monkeypatch.delenv("MANYSIGHT_MCP_LEGACY_TOOLS", raising=False)
         importlib.reload(m)
 
 
@@ -133,7 +133,7 @@ def test_read_only_tool_invocation(monkeypatch):
     monkeypatch.setattr(m, "get_platform_config", lambda: {
         key: f"http://test/{key}" for key in (
             "dashboard_url", "rest_url", "openapi_url", "docs_url", "mcp_url", "agent_guide_url")})
-    result = asyncio.run(m.mcp.call_tool("get_skill", {"name": "storelens-core"}))
+    result = asyncio.run(m.mcp.call_tool("get_skill", {"name": "manysight-core"}))
     assert result.is_error is False
     skill = result.structured_content["result"]
     assert "observe locally, derive centrally" in skill.lower()
@@ -144,8 +144,8 @@ def test_an_unknown_skill_names_the_available_ones():
     import mcp_server.server as m
 
     with pytest.raises(Exception) as excinfo:
-        m.get_skill("storelens-platform")   # the pre-consolidation name
-    assert "storelens-core" in str(excinfo.value), \
+        m.get_skill("manysight-platform")   # the pre-consolidation name
+    assert "manysight-core" in str(excinfo.value), \
         "a stale skill name must self-correct in one turn"
 
 

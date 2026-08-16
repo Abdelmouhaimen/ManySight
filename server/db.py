@@ -1,4 +1,4 @@
-"""SQLite storage layer for StoreLens. Plain sqlite3, WAL mode, dict rows."""
+"""SQLite storage layer for ManySight. Plain sqlite3, WAL mode, dict rows."""
 import contextlib
 import hashlib
 import json
@@ -11,11 +11,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.environ.get("STORELENS_DATA", os.path.join(ROOT, "data"))
-DB_PATH = os.path.join(DATA_DIR, "storelens.db")
-_DB_PATH_OVERRIDE: ContextVar[str | None] = ContextVar("storelens_db_path", default=None)
+DATA_DIR = os.environ.get("MANYSIGHT_DATA", os.path.join(ROOT, "data"))
+DB_PATH = os.path.join(DATA_DIR, "manysight.db")
+_DB_PATH_OVERRIDE: ContextVar[str | None] = ContextVar("manysight_db_path", default=None)
 _DB_CONNECTION_OVERRIDE: ContextVar[sqlite3.Connection | None] = ContextVar(
-    "storelens_db_connection", default=None,
+    "manysight_db_connection", default=None,
 )
 
 SCHEMA = """
@@ -45,14 +45,14 @@ CREATE TABLE IF NOT EXISTS sources (
   name TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'rtsp',            -- rtsp | webrtc | http | webcam | file
   connection_mode TEXT NOT NULL DEFAULT 'agent_local', -- agent_local | edge_gateway
-  connection_management TEXT NOT NULL DEFAULT 'external_secret', -- external_secret | storelens_managed
+  connection_management TEXT NOT NULL DEFAULT 'external_secret', -- external_secret | manysight_managed
   connection_config_json TEXT NOT NULL DEFAULT '{}',   -- safe, structured connection fields
   connection_revision INTEGER NOT NULL DEFAULT 0,
   locator_json TEXT NOT NULL DEFAULT '{}',      -- non-secret local device / secret reference
   capabilities_json TEXT NOT NULL DEFAULT '[]', -- video | audio | detections | custom
   metadata_json TEXT NOT NULL DEFAULT '{}',     -- non-secret agent/domain metadata
   last_observation_at REAL,                     -- timestamp reported by a worker
-  last_ingestion_at REAL,                       -- time StoreLens last received an observation
+  last_ingestion_at REAL,                       -- time ManySight last received an observation
   event_count INTEGER NOT NULL DEFAULT 0,
   map_x REAL, map_y REAL,
   rotation_deg REAL DEFAULT 0,
@@ -494,9 +494,9 @@ def using_database(path: str):
 #     ceiling near 200 commits/second for the whole workspace. A 4 x 60 FPS
 #     deployment submits 240 samples/second and cannot be served under it.
 #
-# Set STORELENS_SQLITE_SYNCHRONOUS=FULL where power-loss durability of the last
+# Set MANYSIGHT_SQLITE_SYNCHRONOUS=FULL where power-loss durability of the last
 # few frames matters more than keeping up with the cameras.
-SYNCHRONOUS = os.environ.get("STORELENS_SQLITE_SYNCHRONOUS", "NORMAL").upper()
+SYNCHRONOUS = os.environ.get("MANYSIGHT_SQLITE_SYNCHRONOUS", "NORMAL").upper()
 if SYNCHRONOUS not in {"OFF", "NORMAL", "FULL", "EXTRA"}:
     SYNCHRONOUS = "NORMAL"
 
@@ -649,10 +649,19 @@ def init_db(path: str | None = None):
                     "UPDATE sources SET locator_json=?, capabilities_json=? WHERE id=?",
                     (json.dumps(locator), json.dumps(capabilities), source["id"]),
                 )
+        # `connection_management` has exactly two values: a source either keeps
+        # its connection here or points at a secret the worker machine holds.
+        # A pre-release database may carry the managed value under its previous
+        # spelling, so normalize by the invariant rather than by that spelling:
+        # anything that is not external_secret is the managed mode.
+        con.execute(
+            "UPDATE sources SET connection_management='manysight_managed' "
+            "WHERE connection_management NOT IN ('external_secret', 'manysight_managed')"
+        )
         # Safe webcam indices were historically stored in locator_json. Promote
         # them to the managed connection model without touching external refs.
         con.execute(
-            "UPDATE sources SET connection_management='storelens_managed', "
+            "UPDATE sources SET connection_management='manysight_managed', "
             "connection_config_json=locator_json, connection_revision=1 "
             "WHERE kind='webcam' AND connection_management='external_secret' "
             "AND json_extract(locator_json, '$.device_index') IS NOT NULL"

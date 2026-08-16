@@ -1,8 +1,8 @@
-# StoreLens agent operating manual
+# ManySight agent operating manual
 
-StoreLens follows one rule: **observe locally, derive centrally**.
+ManySight follows one rule: **observe locally, derive centrally**.
 
-## How to operate StoreLens
+## How to operate ManySight
 
 Four steps, in this order. Do not rediscover the architecture by trying tools.
 
@@ -11,7 +11,7 @@ Four steps, in this order. Do not rediscover the architecture by trying tools.
 2. **`list_workflows()` then `get_workflow(name)`** — route the job you were asked to do
    to its prerequisites, sequence, invariants, and tools.
 3. **`get_skill(name)`** — the full playbook behind a step, starting with
-   [`storelens-core`](skills/storelens-core/SKILL.md).
+   [`manysight-core`](skills/manysight-core/SKILL.md).
 4. **Verify with real reads** — `inspect_perception`, `run_query`, and the observation
    endpoints. Never claim a worker is healthy or observations are flowing without checking.
 
@@ -29,7 +29,7 @@ legacy/compatibility strategy.
 ## Platform boundary
 
 Local workers open sources, run models, track anonymous entities, and submit only
-schema-v2 `detection`, `measurement`, or `state`. StoreLens owns projection, canonical
+schema-v2 `detection`, `measurement`, or `state`. ManySight owns projection, canonical
 zone assignment, visits, dwell, occupancy, transitions, state intervals, multiview
 association, saved queries, dashboards, and alerts.
 
@@ -38,7 +38,7 @@ Workers must never submit `zone_id`/`zone`, `zone_enter`, `zone_exit`, `zone_dwe
 tracker ID, not a verified person identity. Do not invent cross-camera identity by
 joining IDs or attributes.
 
-StoreLens does not proxy feeds, run models, or execute worker scripts. Camera access and
+ManySight does not proxy feeds, run models, or execute worker scripts. Camera access and
 inference are local to the agent or worker; `plan_frame_capture` returns a plan to run
 yourself, never image bytes.
 
@@ -47,13 +47,13 @@ yourself, never image bytes.
 `get_worker_recipe()`, `GET /api/v1/observations/contract`, `/openapi.json`, the current
 MCP tools, and `skills/` are authoritative.
 
-**Do not treat an arbitrary repository script as StoreLens protocol documentation.** An
+**Do not treat an arbitrary repository script as ManySight protocol documentation.** An
 example, a demo worker, or an older file on disk may predate the current API. If a file
 disagrees with the recipe, the recipe is right.
 
 ## Source access
 
-A source may use encrypted `storelens_managed` connection material or an
+A source may use encrypted `manysight_managed` connection material or an
 `external_secret` local reference. Ordinary discovery is redacted. Resolve credentials
 only in an explicitly authorized local worker, use them in memory, and never place them
 in observations, fused state, queries, dashboards, logs, code, or job metadata.
@@ -70,7 +70,7 @@ Common fields are `schema_version: 2`, idempotent `observation_id`, `kind`, `tim
 `identity_scope`, and attributes.
 
 - `detection`: `entity_type`, optional label, and pixel evidence (`point_px`, corner-form
-  `bbox_px`, keypoints, mask). StoreLens chooses explicit point, feet/ankles, then bbox
+  `bbox_px`, keypoints, mask). ManySight chooses explicit point, feet/ankles, then bbox
   bottom-center. Trusted non-camera producers may use `point_map`.
 - `measurement`: name, numeric value, `gauge|delta|cumulative`, optional unit and label.
 - `state`: name and observed label on every reading, including repeats.
@@ -126,7 +126,7 @@ infer zero because a required camera went stale.
 
 | Skill | Use |
 |---|---|
-| [`storelens-core`](skills/storelens-core/SKILL.md) | **load first** — invariants and where authority lives |
+| [`manysight-core`](skills/manysight-core/SKILL.md) | **load first** — invariants and where authority lives |
 | [`sources-and-cameras`](skills/sources-and-cameras/SKILL.md) | onboarding, credentials, inspecting a camera view |
 | [`geometry-and-zones`](skills/geometry-and-zones/SKILL.md) | zones, views, surfaces, preview→approve→commit |
 | [`perception-workers`](skills/perception-workers/SKILL.md) | detection, measurement, and state workers |

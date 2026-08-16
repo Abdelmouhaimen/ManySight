@@ -1,20 +1,20 @@
-# Add this to ~/.codex/config.toml to give Codex access to the StoreLens platform.
+# Add this to ~/.codex/config.toml to give Codex access to the ManySight platform.
 # Adjust the path to wherever this repo lives.
 
-[mcp_servers.storelens]
+[mcp_servers.manysight]
 command = "python"
 args = ["/workspace/mcp_server/server.py"]
 
-[mcp_servers.storelens.env]
-STORELENS_URL = "http://localhost:8000"
-# Only needed if you started the server with STORELENS_API_KEY set:
-# STORELENS_API_KEY = "..."
+[mcp_servers.manysight.env]
+MANYSIGHT_URL = "http://localhost:8000"
+# Only needed if you started the server with MANYSIGHT_API_KEY set:
+# MANYSIGHT_API_KEY = "..."
 # Only grant this to an MCP client authorized to resolve managed source connections:
-# STORELENS_CREDENTIAL_ACCESS_KEY = "..."
+# MANYSIGHT_CREDENTIAL_ACCESS_KEY = "..."
 
 # For a hosted deployment, Codex can connect directly to the separately running
 # Streamable HTTP MCP service. The bearer value stays in an environment variable:
-# [mcp_servers.storelens_remote]
-# url = "https://your-storelens-host.example/mcp"
-# bearer_token_env_var = "STORELENS_CLOUD_MCP_TOKEN"
+# [mcp_servers.manysight_remote]
+# url = "https://your-manysight-host.example/mcp"
+# bearer_token_env_var = "MANYSIGHT_CLOUD_MCP_TOKEN"
 

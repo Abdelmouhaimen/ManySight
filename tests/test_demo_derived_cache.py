@@ -49,7 +49,7 @@ def test_committed_cache_provenance_timeline_geometry_and_acceptance():
     assert alerts
 
 
-def test_builder_runs_raw_samples_through_real_storelens_pipeline_deterministically():
+def test_builder_runs_raw_samples_through_real_manysight_pipeline_deterministically():
     first = build_cache(DEFAULT_RAW, DEFAULT_RECIPE, None, validate_media=False, max_samples=2)
     second = build_cache(DEFAULT_RAW, DEFAULT_RECIPE, None, validate_media=False, max_samples=2)
     assert first["metadata"]["payload_sha256"] == second["metadata"]["payload_sha256"]

@@ -1,8 +1,8 @@
-"""Build the deterministic guided-demo derived replay cache through StoreLens.
+"""Build the deterministic guided-demo derived replay cache through ManySight.
 
 This developer command performs no model inference. It validates the prerecorded
 source-local DetectionSample fixture, configures the real mapped workspace, and
-runs selected 10 Hz samples through normal StoreLens enrichment, multiview,
+runs selected 10 Hz samples through normal ManySight enrichment, multiview,
 saved-query, and alert services. The resulting cache is playback data, not a
 replacement for the normal live worker pipeline.
 """
@@ -183,8 +183,8 @@ def build_cache(raw_path: Path = DEFAULT_RAW, recipe_path: Path = DEFAULT_RECIPE
     elif media_from is not None:
         media = carry_media(media_from, raw_path)
 
-    with tempfile.TemporaryDirectory(prefix="storelens-derived-cache-") as temp_dir:
-        workspace = Path(temp_dir) / "storelens.db"
+    with tempfile.TemporaryDirectory(prefix="manysight-derived-cache-") as temp_dir:
+        workspace = Path(temp_dir) / "manysight.db"
         db.init_db(str(workspace))
         # Derivation must not inherit live bookkeeping from an earlier build in
         # the same process (the tests build two caches back to back).
@@ -230,7 +230,7 @@ def build_cache(raw_path: Path = DEFAULT_RAW, recipe_path: Path = DEFAULT_RECIPE
                         observations.extend(batch.observations)
                     processed = _process_observations(ObservationBatch(observations=observations))
                     if processed[0]["rejected"] or processed[0]["completed_samples"] != len(frames):
-                        raise RuntimeError(f"frame {frame_index}: StoreLens did not complete all source samples")
+                        raise RuntimeError(f"frame {frame_index}: ManySight did not complete all source samples")
                     # Ingestion publishes completed samples to the live
                     # coordinator instead of fusing inline. Derivation runs the
                     # same group tick the running platform schedules, just
@@ -295,7 +295,7 @@ def build_cache(raw_path: Path = DEFAULT_RAW, recipe_path: Path = DEFAULT_RECIPE
     generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     cache = {
         "metadata": {
-            "type": "storelens_derived_replay_cache",
+            "type": "manysight_derived_replay_cache",
             "fixture_version": 3,
             "schema_version": 1,
             "recipe_version": recipe["recipe_version"],
@@ -304,7 +304,7 @@ def build_cache(raw_path: Path = DEFAULT_RAW, recipe_path: Path = DEFAULT_RECIPE
             "geometry_hash": canonical_hash(geometry),
             "fusion_config_hash": canonical_hash(recipe["multiview"]),
             "derivation_code_hash": derivation_hash(),
-            "storelens_observation_schema_version": 2,
+            "manysight_observation_schema_version": 2,
             "generated_at": generated_at,
             "sample_rate_hz": sample_hz,
             "source_fps": metadata["fps"],

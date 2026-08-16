@@ -5,9 +5,9 @@ description: Use when a user asks about the Try Demo walkthrough, or when demo s
 
 # Guided demo
 
-Load [`storelens-core`](../storelens-core/SKILL.md) first.
+Load [`manysight-core`](../manysight-core/SKILL.md) first.
 
-The **Try Demo** workflow is a deterministic, isolated StoreLens walkthrough over four
+The **Try Demo** workflow is a deterministic, isolated ManySight walkthrough over four
 cameras from NVIDIA's synthetic `mtmc_12cam` warehouse sample. It answers one fixed
 question: *alert when at least two anonymous fused person tracks are in Aisle 04.*
 
@@ -15,8 +15,8 @@ question: *alert when at least two anonymous fused person tracks are in Aisle 04
 
 ```text
 fixture generation   NVIDIA video → YOLO11n + ByteTrack → raw DetectionSample fixture
-cache generation     raw fixture → the REAL StoreLens pipeline → derived replay cache
-playable runtime     one master clock → video + boxes + cached StoreLens state
+cache generation     raw fixture → the REAL ManySight pipeline → derived replay cache
+playable runtime     one master clock → video + boxes + cached ManySight state
 ```
 
 Only the middle stage runs the platform's derivation. Stages one and two are offline
@@ -44,7 +44,7 @@ header. Normal requests continue to use the real workspace database. Sessions ex
 A guided session is deliberately incomplete when it starts: only the mapped space, the four
 sources with placements and imported calibrations, and the calibrated multiview group exist.
 The monitored zone, its two camera views, the saved query, the alert rule, and the dashboard
-are applied one stage at a time as the walkthrough explains them, through real StoreLens
+are applied one stage at a time as the walkthrough explains them, through real ManySight
 operations that are ordered and idempotent.
 
 ## Promotion

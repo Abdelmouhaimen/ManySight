@@ -5,7 +5,7 @@ description: Use for overlapping cameras, cross-camera anonymous track associati
 
 # Multiview fusion
 
-Load [`storelens-core`](../storelens-core/SKILL.md) first.
+Load [`manysight-core`](../manysight-core/SKILL.md) first.
 
 Multiview associates **active source-local tracks** into anonymous physical tracks. It does
 not identify people.

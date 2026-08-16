@@ -1,7 +1,7 @@
 # Agent-operability evaluation
 
 Regression scenarios for a question this repository cannot answer with unit tests
-alone: *can a coding agent operate StoreLens correctly without the user teaching
+alone: *can a coding agent operate ManySight correctly without the user teaching
 it the architecture?*
 
 Each scenario is derived from a real failure. The first one,

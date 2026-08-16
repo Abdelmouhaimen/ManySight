@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def load_heatmap_example():
     spec = importlib.util.spec_from_file_location(
-        "storelens_heatmap_example",
+        "manysight_heatmap_example",
         ROOT / "examples" / "heatmap_tracker.py",
     )
     module = importlib.util.module_from_spec(spec)
@@ -17,7 +17,7 @@ def load_heatmap_example():
     return module
 
 
-class FakeStoreLens:
+class FakeManySight:
     def __init__(self):
         self.rows = []
 
@@ -29,7 +29,7 @@ class FakeStoreLens:
 
 
 def test_example_submits_detections_then_nonzero_frame_marker_with_one_timestamp():
-    fake = FakeStoreLens()
+    fake = FakeManySight()
     load_heatmap_example().submit_tracked_frame(
         fake, 7, [("A", 10, 20), ("B", 30, 40)], 1234.25, "test",
     )
@@ -41,7 +41,7 @@ def test_example_submits_detections_then_nonzero_frame_marker_with_one_timestamp
 
 
 def test_example_submits_zero_frame_marker_when_no_tracks_exist():
-    fake = FakeStoreLens()
+    fake = FakeManySight()
     load_heatmap_example().submit_tracked_frame(fake, 7, [], 1234.25, "test")
 
     assert len(fake.rows[0][1]["sample_id"]) > 0

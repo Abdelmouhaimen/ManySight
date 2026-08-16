@@ -57,7 +57,7 @@ sequence each group last consumed. No history lives in memory.
 
 ## The scheduler
 
-`STORELENS_LIVE_TICK_INTERVAL_S` (default 0.01 s) is a **maximum cadence**, not a
+`MANYSIGHT_LIVE_TICK_INTERVAL_S` (default 0.01 s) is a **maximum cadence**, not a
 rate. Four rules define it:
 
 **Dirty-only.** A group whose sources have produced nothing new since its last
@@ -184,7 +184,7 @@ and anything still dirty is fused before the process exits.
 
 ## Durability
 
-`STORELENS_SQLITE_SYNCHRONOUS` defaults to `NORMAL`, the standard setting for
+`MANYSIGHT_SQLITE_SYNCHRONOUS` defaults to `NORMAL`, the standard setting for
 WAL:
 
 * **NORMAL** — the commit is written to the WAL before the request returns but

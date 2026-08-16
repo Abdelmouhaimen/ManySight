@@ -5,21 +5,21 @@
 Do not disclose a vulnerability, credential, private stream URL, camera address,
 recording, database, or sensitive site geometry in a public issue.
 
-**Maintainer action required:** this repository does not currently publish a verified
-private vulnerability-reporting channel. Before public release, enable the hosting
-provider's private vulnerability reporting feature or publish a monitored security
-contact. Until then, use an existing private channel to the maintainers if one is
-available; otherwise withhold sensitive details rather than filing them publicly.
+Report vulnerabilities privately through GitHub's private vulnerability reporting on this
+repository ("Security" → "Report a vulnerability"). Include reproduction steps, affected
+version or commit, and impact. If private reporting is unavailable to you, withhold the
+sensitive details rather than filing them publicly and ask the maintainers for a private
+channel first.
 
 General bugs that do not contain sensitive information may use the public issue tracker.
 
 ## Security scope and deployment responsibility
 
 ManySight can store managed source credentials encrypted with
-`STORELENS_CREDENTIAL_KEY`. Operators must:
+`MANYSIGHT_CREDENTIAL_KEY`. Operators must:
 
 - generate, store, rotate, and back up the encryption key separately from the database;
-- restrict `STORELENS_CREDENTIAL_ACCESS_KEY` to workers and agents authorized to open
+- restrict `MANYSIGHT_CREDENTIAL_ACCESS_KEY` to workers and agents authorized to open
   sources;
 - protect API and MCP endpoints with appropriate authentication, TLS, network policy,
   and host/origin restrictions;

@@ -2210,7 +2210,7 @@ body {
 
 /* Guided demo walkthrough ------------------------------------------------ */
 /* `position: fixed` always creates a stacking context, so the dimming layer and
-   the progress card are separate fixed layers: dimming sits below StoreLens
+   the progress card are separate fixed layers: dimming sits below ManySight
    dialogs (.modal-backdrop, 120) and the card sits above them and the toast. */
 .demo-tour-layer {
   position: fixed;

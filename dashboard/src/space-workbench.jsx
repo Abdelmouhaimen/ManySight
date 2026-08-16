@@ -436,7 +436,7 @@ export function SpaceEditor({ store, zones, sources, zoneViews = [], onRefresh, 
 }
 
 /** "Seen by Camera 3, Camera 4" — zone views surfaced as coverage, not as CRUD.
- *  A ZoneView is a real StoreLens object, but it is not a thing a person needs
+ *  A ZoneView is a real ManySight object, but it is not a thing a person needs
  *  to manage: what they want to know is which cameras can see the zone. */
 function zoneCoverage(zone, sources, zoneViews) {
   const names = zoneViews

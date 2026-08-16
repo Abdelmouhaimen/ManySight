@@ -56,7 +56,7 @@ export function SourcesPage({ liveTick = 0, notify }) {
     )) return;
     try {
       await api.del(`/sources/${source.id}`);
-      window.localStorage.removeItem(`storelens.local-preview.${source.id}`);
+      window.localStorage.removeItem(`manysight.local-preview.${source.id}`);
       setSelectedId(null);
       await load();
       notify?.("Source deleted", source.name);
@@ -274,7 +274,7 @@ function SourceDrawer({ source, onClose, onEdit, onDelete }) {
 
 /** The worker-local preview. One dialog, opened on demand, not a form per row. */
 function PreviewModal({ source, onClose }) {
-  const storageKey = `storelens.local-preview.${source.id}`;
+  const storageKey = `manysight.local-preview.${source.id}`;
   const [address, setAddress] = useState(() => window.localStorage.getItem(storageKey) || "");
   const [connected, setConnected] = useState(() => window.localStorage.getItem(storageKey) || "");
   const connect = () => {
@@ -326,7 +326,7 @@ export function SourceEditorModal({ source = null, onClose, onSaved }) {
   const [form, setForm] = useState({
     name: source?.name || "",
     kind: source?.kind || "http",
-    connection_management: source?.connection_management || "storelens_managed",
+    connection_management: source?.connection_management || "manysight_managed",
     local_secret_ref: source?.locator?.local_secret_ref || "",
     device_index: existing.device_index ?? 0,
     host: existing.host || "", port: existing.port ?? 554,
@@ -338,7 +338,7 @@ export function SourceEditorModal({ source = null, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const set = (patch) => setForm((current) => ({ ...current, ...patch }));
-  const managed = form.connection_management === "storelens_managed";
+  const managed = form.connection_management === "manysight_managed";
 
   const save = async () => {
     setSaving(true);
@@ -416,7 +416,7 @@ export function SourceEditorModal({ source = null, onClose, onSaved }) {
           <span>Sign-in details</span>
           <select value={form.connection_management}
                   onChange={(event) => set({ connection_management: event.target.value })}>
-            <option value="storelens_managed" disabled={form.kind === "webrtc"}>
+            <option value="manysight_managed" disabled={form.kind === "webrtc"}>
               Store them here, encrypted
             </option>
             <option value="external_secret">Keep them on the worker machine</option>

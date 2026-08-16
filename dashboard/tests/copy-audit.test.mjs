@@ -40,12 +40,12 @@ const BANNED_PHRASES = [
   "Agent analysis contract",
   "Worker control is cooperative",
   "Generated views",
-  "StoreLens never executes generated UI code",
+  "ManySight never executes generated UI code",
   "geometry-first",
   "world-to-pixel",
   "decision ROIs",
   "Rows are raw worker submissions",
-  "Ask a StoreLens-connected coding agent",
+  "Ask a ManySight-connected coding agent",
   "Add widgets through MCP",
   "Observation updates live",
   "Signals support human review",
@@ -58,7 +58,7 @@ const BANNED_PHRASES = [
   "Raw observation explorer",
   "epoch-namespaced",
   "anonymous fused",
-  "StoreLens-derived fused state",
+  "ManySight-derived fused state",
   "calibrated source-local tracks",
   "atomic DetectionSample",
 ];
@@ -114,32 +114,35 @@ test("no page stringifies a params object straight into a row", () => {
   assert.deepEqual(offenders, []);
 });
 
-/* The product has one visible name. `StoreLens` survives only as internal
- * machinery — the demo-session header, localStorage keys and a DOM event name —
- * which no user reads and which cannot be renamed without breaking existing
- * sessions and the API contract. Nothing a person sees may say it. */
-test("no page shows the StoreLens name to a user", () => {
-  const INTERNAL = [
-    'X-StoreLens-Demo-Session', // request header, part of the API contract
-    'storelens_api_key',        // localStorage keys, renaming logs users out
-    'storelens_demo_session',
-    'storelens-demo-session',   // window event name
-    'storelens-tour-event',
-    'storelens-setup-tab',
-    'storelens.demo-tour',
-    'storelens.setup.tab',
-    'storelens_managed',        // credential-management enum value in the API
-  ]
-  const offenders = []
+/* ManySight is the product's name and belongs in copy. Its *identifiers* do not:
+ * the demo-session header, localStorage keys, DOM event names, the API's
+ * connection-management enum and the environment variables are machinery, and a
+ * sentence that names one is leaking implementation into the interface. The
+ * distinction is the same one used above — a bare identifier is not prose, a run
+ * of words is. */
+const INTERNAL_IDENTIFIER = /(MANYSIGHT_[A-Z_]+|X-ManySight-[A-Za-z-]+|manysight[_.][a-z0-9_.-]+|manysight-[a-z0-9-]+)/;
+
+test("internal ManySight identifiers stay out of user-visible prose", () => {
+  const offenders = [];
   for (const [name, text] of Object.entries(SOURCES)) {
     for (const literal of stringLiterals(text)) {
-      if (!/storelens/i.test(literal)) continue
-      if (INTERNAL.some((allowed) => literal.includes(allowed))) continue
-      offenders.push(`${name}: "${literal}"`)
+      if (!INTERNAL_IDENTIFIER.test(literal)) continue;
+      // One token is a key or a header being used; a sentence is copy.
+      if (literal.trim().split(/\s+/).length <= 2) continue;
+      offenders.push(`${name}: "${literal}"`);
     }
   }
-  assert.deepEqual(offenders, [])
-})
+  assert.deepEqual(offenders, []);
+});
+
+test("the identifier matcher separates a storage key from a sentence", () => {
+  assert.ok(INTERNAL_IDENTIFIER.test("manysight_api_key"));
+  assert.ok(INTERNAL_IDENTIFIER.test("X-ManySight-Demo-Session"));
+  assert.ok(INTERNAL_IDENTIFIER.test("MANYSIGHT_CREDENTIAL_KEY"));
+  // The product name on its own is copy, not an identifier.
+  assert.ok(!INTERNAL_IDENTIFIER.test("Explore ManySight"));
+  assert.ok(!INTERNAL_IDENTIFIER.test("Watch ManySight track the space."));
+});
 
 test("the audit actually looked at the product files", () => {
   assert.ok(UI_FILES.includes("main.jsx"));

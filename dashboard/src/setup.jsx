@@ -50,8 +50,8 @@ export function SetupPage({ subview = "space", notify, refreshShell }) {
       const requested = event.detail?.tab;
       if (requested) window.location.hash = `setup/${requested}`;
     };
-    window.addEventListener("storelens-setup-tab", onRequestedTab);
-    return () => window.removeEventListener("storelens-setup-tab", onRequestedTab);
+    window.addEventListener("manysight-setup-tab", onRequestedTab);
+    return () => window.removeEventListener("manysight-setup-tab", onRequestedTab);
   }, []);
 
   const refresh = async () => { await load(); await refreshShell?.(); };
@@ -483,8 +483,8 @@ function DeveloperSection({ notify }) {
     api.get("/platform-config").then(setEndpoints).catch(() => setEndpoints(null));
   }, []);
   const saveKey = () => {
-    if (key) window.localStorage.setItem("storelens_api_key", key);
-    else window.localStorage.removeItem("storelens_api_key");
+    if (key) window.localStorage.setItem("manysight_api_key", key);
+    else window.localStorage.removeItem("manysight_api_key");
     notify("API key saved", "Reloading to apply it.");
     window.location.reload();
   };
@@ -533,8 +533,8 @@ function ResetCamerasBlock({ onReset, notify }) {
   const [inDemo, setInDemo] = useState(Boolean(demoSessionId()));
   useEffect(() => {
     const sync = () => setInDemo(Boolean(demoSessionId()));
-    window.addEventListener("storelens-demo-session", sync);
-    return () => window.removeEventListener("storelens-demo-session", sync);
+    window.addEventListener("manysight-demo-session", sync);
+    return () => window.removeEventListener("manysight-demo-session", sync);
   }, []);
 
   const openPreview = async () => {

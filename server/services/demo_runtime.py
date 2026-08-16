@@ -33,9 +33,9 @@ UPSTREAM_ARCHIVE = (
     "https://github.com/NVIDIA/DeepStream/raw/refs/heads/main/"
     "src/apps/reference_apps/deepstream-tracker-3d-multi-view/assets/datasets.zip"
 )
-SESSION_ROOT = Path(tempfile.gettempdir()) / "storelens-demo-sessions"
+SESSION_ROOT = Path(tempfile.gettempdir()) / "manysight-demo-sessions"
 ACTIVE_STATES = {"ready", "running", "paused"}
-logger = logging.getLogger("storelens.demo")
+logger = logging.getLogger("manysight.demo")
 
 
 def _normal_rows(sql: str, args=()) -> list[dict]:
@@ -87,14 +87,14 @@ def derivation_hash() -> str:
 
 @lru_cache(maxsize=1)
 def load_derived_cache() -> dict:
-    """Load and verify the committed StoreLens-derived playback artifact."""
+    """Load and verify the committed ManySight-derived playback artifact."""
     if not DERIVED_CACHE.is_file():
         raise HTTPException(503, "the derived guided-demo replay cache is not available")
     cache = json.loads(DERIVED_CACHE.read_text(encoding="utf-8"))
     metadata = cache.get("metadata", {})
     recipe = load_recipe()
     expected = {
-        "type": "storelens_derived_replay_cache",
+        "type": "manysight_derived_replay_cache",
         "recipe_version": recipe["recipe_version"],
         "raw_fixture_sha256": _sha256(FIXTURE),
         "recipe_sha256": _sha256(RECIPE),
@@ -122,9 +122,9 @@ def load_derived_cache() -> dict:
 def resolve_asset_root(explicit: str | None = None) -> Path | None:
     candidates = [
         explicit,
-        os.environ.get("STORELENS_DEMO_ASSET_DIR"),
+        os.environ.get("MANYSIGHT_DEMO_ASSET_DIR"),
         str(ROOT / "data" / "demo-assets" / "datasets" / "mtmc_12cam"),
-        str(Path(tempfile.gettempdir()) / "storelens-demo-assets" / "datasets" / "mtmc_12cam"),
+        str(Path(tempfile.gettempdir()) / "manysight-demo-assets" / "datasets" / "mtmc_12cam"),
     ]
     for value in candidates:
         if not value:
@@ -155,8 +155,8 @@ def asset_status() -> dict:
         "dataset": "NVIDIA DeepStream MV3DT mtmc_12cam synthetic warehouse sample (cameras 1-4)",
         "download_url": UPSTREAM_ARCHIVE,
         "install_command": "python demo/fetch_nvidia_mv3dt.py",
-        "environment_variable": "STORELENS_DEMO_ASSET_DIR",
-        "redistributed_by_storelens": False,
+        "environment_variable": "MANYSIGHT_DEMO_ASSET_DIR",
+        "redistributed_by_manysight": False,
         "bird_view_available": root is not None,
         "derived_cache_available": cache_ready,
         "derived_cache": cache_metadata,
@@ -296,7 +296,7 @@ def _setup_space(path: Path, session_id: str, base_url: str) -> tuple[list, dict
     recipe = load_recipe()
     log: list[dict] = []
     _action(log, "Inspect workspace", {"workspace": "isolated demo"},
-            "Confirmed that guided-demo changes are isolated from the normal StoreLens workspace.")
+            "Confirmed that guided-demo changes are isolated from the normal ManySight workspace.")
     with db.using_database(str(path)):
         configured = store.update_store(store.StorePatch(
             name=recipe["store"]["name"], space_type=recipe["store"]["space_type"],
@@ -309,7 +309,7 @@ def _setup_space(path: Path, session_id: str, base_url: str) -> tuple[list, dict
         for camera in recipe["cameras"]:
             media_url = f"{base_url}/api/v1/demo/media/{camera['key']}.mp4?demo_session={session_id}"
             source = sources.create_source(sources.SourceIn(
-                name=camera["name"], kind="http", connection_management="storelens_managed",
+                name=camera["name"], kind="http", connection_management="manysight_managed",
                 connection={"url": media_url, "auth_type": "none"}, capabilities=["video"],
                 metadata={"demo_fixture_source_key": camera["key"], "producer_kind": "replay"},
             ))
@@ -337,7 +337,7 @@ def _setup_space(path: Path, session_id: str, base_url: str) -> tuple[list, dict
             configuration={"producer": "fixture_replay", "appearance_reid": False},
         ))
         _action(log, "Create calibrated multiview group", {"group_id": group["id"]},
-                "Enabled StoreLens-owned geometry/time association for anonymous source-local tracks.")
+                "Enabled ManySight-owned geometry/time association for anonymous source-local tracks.")
     return log, {"source_ids": source_ids, "group_id": group["id"]}
 
 
@@ -503,7 +503,7 @@ def create_session(base_url: str, mode: str = "guided") -> dict:
     session_id = uuid.uuid4().hex
     workspace_dir = (SESSION_ROOT / session_id).resolve()
     workspace_dir.mkdir(parents=True, exist_ok=False)
-    workspace_path = workspace_dir / "storelens.db"
+    workspace_path = workspace_dir / "manysight.db"
     db.init_db(str(workspace_path))
     try:
         # A guided session starts with camera and space setup only, so the
@@ -533,7 +533,7 @@ def create_session(base_url: str, mode: str = "guided") -> dict:
 def apply_request_stage(session_id: str, stage: str) -> dict:
     """Apply one prepared request stage to an active guided session.
 
-    Each stage runs the same real StoreLens operations the prepared workspace
+    Each stage runs the same real ManySight operations the prepared workspace
     uses, so a walkthrough step reports work that actually happened. Applying a
     stage that already exists is a no-op, which keeps refreshes and retries safe.
     """
@@ -587,9 +587,9 @@ def media_path(session_id: str, camera_key: str) -> Path:
 def camera_evidence(session_id: str, camera_key: str) -> dict:
     """Return allowlisted worker-local fixture output for the native video overlay.
 
-    This data is camera-pixel evidence only. It contains no StoreLens zone,
+    This data is camera-pixel evidence only. It contains no ManySight zone,
     projection, multiview, query, or alert result. Those live in the separately
-    versioned StoreLens-derived replay cache.
+    versioned ManySight-derived replay cache.
     """
     row = _session_row(session_id)
     recipe = load_recipe()
@@ -797,7 +797,7 @@ def start(session_id: str) -> dict:
                  "derived_sample_rate_hz": metadata["sample_rate_hz"],
                  "runtime_gpu_required": False,
                  "payload_sha256": metadata["payload_sha256"]},
-                "One lightweight master clock now drives native video, exact source evidence, and the offline StoreLens-derived cache.")
+                "One lightweight master clock now drives native video, exact source evidence, and the offline ManySight-derived cache.")
         _normal_ex("UPDATE demo_sessions SET action_log_json=?,updated_at=? WHERE id=?",
                    (json.dumps(actions), db.now(), session_id))
     logger.info("demo cached replay started", extra={"demo_session_id": session_id})
@@ -936,7 +936,7 @@ async def promote(session_id: str, base_url: str, include_observations: bool = F
                 "INSERT INTO sources (name,kind,connection_mode,connection_management,connection_config_json,"
                 "connection_revision,locator_json,capabilities_json,metadata_json,map_x,map_y,rotation_deg,fov_deg,"
                 "calibration_json,calibration_revision,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (source["name"], "http", "agent_local", "storelens_managed",
+                (source["name"], "http", "agent_local", "manysight_managed",
                  json.dumps({"url": url, "auth_type": "none"}), 1, "{}", source["capabilities_json"],
                  json.dumps({"promoted_from_demo": session_id, "demo_fixture_source_key": key}),
                  source["map_x"], source["map_y"], source["rotation_deg"], source["fov_deg"],

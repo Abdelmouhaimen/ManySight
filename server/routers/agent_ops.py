@@ -53,7 +53,7 @@ def _source_rows() -> list[dict]:
 def _configured(row: dict) -> bool:
     """Whether a worker could resolve access at all, without revealing how."""
     management = row.get("connection_management") or "external_secret"
-    if management == "storelens_managed":
+    if management == "manysight_managed":
         return bool(db.jload(row.get("connection_config_json"), {}))
     return bool(db.jload(row.get("locator_json"), {}))
 
@@ -419,7 +419,7 @@ def inspect_source(source_id: int, entity_type: str = "person"):
 def frame_capture_plan(source_id: int):
     """A runnable local plan, never image bytes.
 
-    StoreLens does not proxy media and the MCP adapter does not process video, so
+    ManySight does not proxy media and the MCP adapter does not process video, so
     a frame is captured by the caller's own process. This endpoint supplies the
     exact, current way to do that, including the geometry context needed to turn
     the resulting image into zone polygons.
@@ -432,24 +432,24 @@ def frame_capture_plan(source_id: int):
     return {
         "source_id": source_id, "name": row["name"], "kind": row["kind"],
         "executed_by": "caller",
-        "why": ("StoreLens never opens or proxies a source feed, so no API returns live camera "
+        "why": ("ManySight never opens or proxies a source feed, so no API returns live camera "
                 "pixels. Run this plan in your own shell and open the saved image."),
         "prerequisites": [
             "The camera must be reachable from the machine running the plan.",
-            "STORELENS_CREDENTIAL_ACCESS_KEY must be set for a storelens_managed source."
-            if management == "storelens_managed"
+            "MANYSIGHT_CREDENTIAL_ACCESS_KEY must be set for a manysight_managed source."
+            if management == "manysight_managed"
             else "Resolve locator.local_secret_ref from your own environment or keychain.",
         ],
         "plan": [
             "import sys; sys.path.insert(0, 'sdk/python')",
-            "import storelens as sl",
-            f"client = sl.StoreLens('<rest base>', api_key='<key or empty>')",
+            "import manysight as sl",
+            f"client = sl.ManySight('<rest base>', api_key='<key or empty>')",
             f"source = client.source({source_id})",
             "cap = client.open_capture(source)   # resolves access in memory only",
             "ok, frame = cap.read(); cap.release()",
             "import cv2; cv2.imwrite('frame.jpg', frame)   # then look at frame.jpg",
         ],
-        "sdk": {"module": "sdk/python/storelens.py", "helper": "StoreLens.open_capture(source)"},
+        "sdk": {"module": "sdk/python/manysight.py", "helper": "ManySight.open_capture(source)"},
         "geometry_context": {
             "calibrated": _calibrated(row),
             "frame_size": frame_size,
@@ -478,7 +478,7 @@ def inspect_perception(
     require_tracking: bool = True,
     require_spatial: bool = True,
 ):
-    """Answer 'can StoreLens already answer this?' before starting any worker.
+    """Answer 'can ManySight already answer this?' before starting any worker.
 
     Derived entirely from existing job/worker/observation records — there is no
     separate capability registry to drift out of sync with reality.
@@ -514,7 +514,7 @@ def inspect_perception(
             "age_s": freshness["age_s"],
             "last_detection_count": freshness["last_detection_count"],
             "submission_hz": _submission_hz(source_id, entity_type, now),
-            # Local decode/inference rate is the worker's own business; StoreLens
+            # Local decode/inference rate is the worker's own business; ManySight
             # only knows it if the worker reports it in heartbeat metrics.
             "local_fps": metrics.get("local_fps") or metrics.get("fps"),
             "tracking": evidence["tracking"],
@@ -617,7 +617,7 @@ def inspect_perception(
 @router.get("/agent/worker-recipe", summary="The current worker integration contract")
 def worker_recipe(entity_type: str = "person", tracking: bool = True,
                   source_ids: str | None = None):
-    """The authoritative answer to 'how do I submit perception to StoreLens now?'.
+    """The authoritative answer to 'how do I submit perception to ManySight now?'.
 
     Generated from the running platform, so it cannot fall behind the way a demo
     or example script in a repository can.
@@ -657,12 +657,12 @@ def worker_recipe(entity_type: str = "person", tracking: bool = True,
             "entity_id": "opaque source-local tracker ID, never a verified identity",
             "identity_scope": ["worker_run", "source", "workspace"],
             "cross_camera": ("Never join IDs across sources. Cross-camera association is "
-                             "StoreLens multiview fusion and stays anonymous."),
+                             "ManySight multiview fusion and stays anonymous."),
         },
         "spatial": {
             "preferred": "bbox_px corner form plus point_px",
             "floor_point": "feet or bbox bottom-centre for floor traffic",
-            "resolution": ("Pixels in the source's own frame size. StoreLens projects them; "
+            "resolution": ("Pixels in the source's own frame size. ManySight projects them; "
                            "workers never send map coordinates from a camera, zone_id, or zone."),
         },
         "forbidden_worker_output": sorted(
@@ -685,20 +685,20 @@ def worker_recipe(entity_type: str = "person", tracking: bool = True,
             "register_worker": "POST /api/v1/workers for the process you actually started",
             "heartbeat": "POST /api/v1/workers/{id}/heartbeat every 5-15s",
             "obey": ("The heartbeat response carries should_stop and restart_requested; exit "
-                     "cleanly when asked. StoreLens never launches or relaunches your process."),
-            "sdk": {"module": "sdk/python/storelens.py",
-                    "sample_builder": "StoreLens.begin_detection_sample(...) / submit_detection_sample(...)",
+                     "cleanly when asked. ManySight never launches or relaunches your process."),
+            "sdk": {"module": "sdk/python/manysight.py",
+                    "sample_builder": "ManySight.begin_detection_sample(...) / submit_detection_sample(...)",
                     "note": "Imported via sys.path; not an installed package."},
         },
         "source_access": {
             "owner": "the local worker",
-            "resolve": "GET /api/v1/sources/{id}/connection with X-StoreLens-Credential-Key",
+            "resolve": "GET /api/v1/sources/{id}/connection with X-ManySight-Credential-Key",
             "rules": ["in memory only", "never logged, persisted, or echoed into observations"],
         },
         "local_environment": [
             "Reuse an existing project virtualenv or conda environment before creating one.",
             "Verify CUDA/PyTorch and model weights in that environment rather than assuming.",
-            "This is guidance for your own shell; StoreLens executes nothing on your behalf.",
+            "This is guidance for your own shell; ManySight executes nothing on your behalf.",
         ],
         "multiview_prerequisites": [
             "Every fused source calibrated into the same metric world frame.",
@@ -924,7 +924,7 @@ def _create_view(zone_id: int, view: CameraPolygonIn) -> dict:
 # workflow discovery
 # ---------------------------------------------------------------------------
 
-@router.get("/agent/workflows", summary="Index of StoreLens agent workflows")
+@router.get("/agent/workflows", summary="Index of ManySight agent workflows")
 def list_workflows():
     return {"workflows": agent_workflows.index(),
             "skills_endpoint": "MCP get_skill(name) or skills/<name>/SKILL.md",

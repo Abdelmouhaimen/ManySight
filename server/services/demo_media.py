@@ -60,4 +60,4 @@ def stop() -> None:
 
 
 def _port() -> int:
-    return int(os.environ.get("STORELENS_DEMO_STREAM_PORT", "8765"))
+    return int(os.environ.get("MANYSIGHT_DEMO_STREAM_PORT", "8765"))

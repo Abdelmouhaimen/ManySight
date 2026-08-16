@@ -121,7 +121,7 @@ function placementRect(placement, card, viewport, inset) {
 
 /**
  * Keep the progress card off the things the step is about: the spotlighted
- * element and any open StoreLens dialog. Preference order starts at the
+ * element and any open ManySight dialog. Preference order starts at the
  * documented top-left position below the existing header area; the caller's
  * inset keeps it clear of persistent chrome such as the sidebar.
  *

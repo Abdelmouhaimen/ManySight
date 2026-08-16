@@ -7,8 +7,8 @@ import pytest
 
 @pytest.fixture
 def keyed_app(isolated_db, monkeypatch):
-    monkeypatch.setenv("STORELENS_API_KEY", "secret123")
-    monkeypatch.setenv("STORELENS_PUBLIC_READS", "false")
+    monkeypatch.setenv("MANYSIGHT_API_KEY", "secret123")
+    monkeypatch.setenv("MANYSIGHT_PUBLIC_READS", "false")
     if "server.app" in sys.modules:
         module = importlib.reload(sys.modules["server.app"])
     else:
@@ -50,8 +50,8 @@ def test_query_param_key_also_accepted(keyed_client):
 
 @pytest.fixture
 def public_read_app(isolated_db, monkeypatch):
-    monkeypatch.setenv("STORELENS_API_KEY", "secret123")
-    monkeypatch.setenv("STORELENS_PUBLIC_READS", "true")
+    monkeypatch.setenv("MANYSIGHT_API_KEY", "secret123")
+    monkeypatch.setenv("MANYSIGHT_PUBLIC_READS", "true")
     module = importlib.reload(sys.modules["server.app"]) if "server.app" in sys.modules \
         else __import__("server.app", fromlist=["app"])
     return module.app
@@ -71,7 +71,7 @@ def test_public_reads_still_blocks_unauthenticated_write(public_read_app):
 
 
 def test_public_reads_does_not_expose_source_connection(public_read_app, monkeypatch):
-    monkeypatch.setenv("STORELENS_CREDENTIAL_ACCESS_KEY", "resolve-only")
+    monkeypatch.setenv("MANYSIGHT_CREDENTIAL_ACCESS_KEY", "resolve-only")
     from fastapi.testclient import TestClient
     with TestClient(public_read_app) as client:
         source = client.post(
@@ -81,7 +81,7 @@ def test_public_reads_does_not_expose_source_connection(public_read_app, monkeyp
         ).json()
         path = f"/api/v1/sources/{source['id']}/connection"
         assert client.get(path).status_code == 401
-        assert client.get(path, headers={"X-StoreLens-Credential-Key": "resolve-only"}).status_code == 200
+        assert client.get(path, headers={"X-ManySight-Credential-Key": "resolve-only"}).status_code == 200
 
 
 def test_cors_preflight_gets_headers_when_key_required(keyed_client):

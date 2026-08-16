@@ -27,7 +27,7 @@ python demo/fetch_nvidia_mv3dt.py
 
 The fetcher downloads NVIDIA's archive, prints its SHA-256, rejects unsafe archive
 paths, and installs the dataset below ignored `data/demo-assets/`. Use
-`STORELENS_DEMO_ASSET_DIR` for another extracted `datasets/mtmc_12cam` path. Review the
+`MANYSIGHT_DEMO_ASSET_DIR` for another extracted `datasets/mtmc_12cam` path. Review the
 applicable NVIDIA terms; ManySight's repository license does not grant rights to that
 media.
 
@@ -237,7 +237,7 @@ playback timing.
 ## Isolation, learning, and promotion
 
 Every session uses a temporary SQLite workspace selected by an opaque browser session
-header. Normal requests continue to use `data/storelens.db`. Running sessions recover
+header. Normal requests continue to use `data/manysight.db`. Running sessions recover
 their persisted clock after a server restart; paused sessions remain paused; sessions
 expire after 24 hours.
 

@@ -1,7 +1,7 @@
 """Precompute the optional NVIDIA replay fixture from cameras 1-4 of mtmc_12cam.
 
 This command is intentionally offline tooling. It needs Ultralytics, YOLO11n,
-OpenCV, and PyTorch; CUDA is used when available, while the StoreLens demo runtime
+OpenCV, and PyTorch; CUDA is used when available, while the ManySight demo runtime
 does not import any model dependency.
 No source frames or weights are written to the repository fixture.
 """

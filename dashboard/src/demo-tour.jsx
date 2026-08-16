@@ -14,13 +14,13 @@ import {
   spotlightGeometry, targetAttemptDelay, targetAttemptsExhausted,
 } from "./demo-tour-spotlight.js";
 
-const TOUR_EVENT = "storelens-tour-event";
-const STORAGE_KEY = "storelens.demo-tour";
+const TOUR_EVENT = "manysight-tour-event";
+const STORAGE_KEY = "manysight.demo-tour";
 const TICK_MS = 120;
 const NARROW_CARD_WIDTH = 236;
 const CARD_GUTTER = 16;
 
-/** Report a real StoreLens UI completion to the guided tour. */
+/** Report a real ManySight UI completion to the guided tour. */
 export function reportTourEvent(detail) {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent(TOUR_EVENT, { detail }));
@@ -34,8 +34,8 @@ export function onTourEvent(handler) {
 
 export function requestSetupTab(tab) {
   if (typeof window === "undefined") return;
-  localStorage.setItem("storelens.setup.tab", tab);
-  window.dispatchEvent(new CustomEvent("storelens-setup-tab", { detail: { tab } }));
+  localStorage.setItem("manysight.setup.tab", tab);
+  window.dispatchEvent(new CustomEvent("manysight-setup-tab", { detail: { tab } }));
 }
 
 function reduceEvents(current, detail) {
@@ -402,7 +402,7 @@ export function TourCard({ tour }) {
 
 /**
  * Dimming mask, spotlight ring, optional click blockers, and the progress card,
- * in one portal layer that sits below StoreLens modals and toasts so real
+ * in one portal layer that sits below ManySight modals and toasts so real
  * dialogs keep working without per-page z-index juggling.
  */
 export function DemoTourLayer({ tour }) {
@@ -411,7 +411,7 @@ export function DemoTourLayer({ tour }) {
   const [cardSize, setCardSize] = useState({ width: 328, height: 300 });
   const [chrome, setChrome] = useState({ dialog: null, sidebarRight: 0 });
 
-  // A real StoreLens dialog is an obstacle for the card, never something the
+  // A real ManySight dialog is an obstacle for the card, never something the
   // tour covers or replaces, and the app's own navigation must stay clickable.
   // Watching the DOM keeps the card from sitting on either for a frame.
   useEffect(() => {
@@ -484,7 +484,7 @@ export function DemoTourLayer({ tour }) {
     );
   }
   const { hole, viewport, dim, block } = tour;
-  // A wide StoreLens dialog leaves only a narrow gutter, so the card slims down
+  // A wide ManySight dialog leaves only a narrow gutter, so the card slims down
   // rather than sitting on top of the controls the step is talking about.
   const beside = Boolean(chrome.dialog) && !hole;
   // The card should feel parked, not restless: its last corner is tried first,
@@ -507,7 +507,7 @@ export function DemoTourLayer({ tour }) {
   });
   placementRef.current = placement?.placement || placementRef.current;
   // Two portals, because `position: fixed` always creates a stacking context:
-  // the dimming layer must stay *below* StoreLens dialogs (120) while the card
+  // the dimming layer must stay *below* ManySight dialogs (120) while the card
   // stays above them, and one shared parent could not do both.
   return <>{createPortal(
     <div className={`demo-tour-layer ${dim ? "is-dimming" : ""}`}>

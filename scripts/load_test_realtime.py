@@ -142,11 +142,11 @@ class Server:
         self.port = free_port()
         environment = {
             **os.environ,
-            "STORELENS_DATA": workspace,
-            "STORELENS_API_KEY": "",
-            "STORELENS_LIVE_TICK_INTERVAL_S": str(1.0 / tick_hz),
+            "MANYSIGHT_DATA": workspace,
+            "MANYSIGHT_API_KEY": "",
+            "MANYSIGHT_LIVE_TICK_INTERVAL_S": str(1.0 / tick_hz),
             # Keep the periodic ongoing-alert poller out of the measurement.
-            "STORELENS_ALERT_POLL_INTERVAL_S": str(max(duration * 4, 120)),
+            "MANYSIGHT_ALERT_POLL_INTERVAL_S": str(max(duration * 4, 120)),
             "PYTHONPATH": str(ROOT),
         }
         self.process = subprocess.Popen(
@@ -183,7 +183,7 @@ class Server:
 class Harness:
     def __init__(self, args) -> None:
         self.args = args
-        self.workspace = tempfile.mkdtemp(prefix="storelens-loadtest-")
+        self.workspace = tempfile.mkdtemp(prefix="manysight-loadtest-")
         self.latencies: dict[int, list[float]] = {}
         self.submitted: dict[int, int] = {}
         self.errors: list[str] = []
@@ -324,7 +324,7 @@ class Harness:
 
     def history_report(self, setup: dict) -> dict:
         """Count durable raw evidence by reading the workspace file directly."""
-        con = sqlite3.connect(os.path.join(self.workspace, "storelens.db"))
+        con = sqlite3.connect(os.path.join(self.workspace, "manysight.db"))
         con.row_factory = sqlite3.Row
         try:
             markers = {row["source_id"]: row["n"] for row in con.execute(

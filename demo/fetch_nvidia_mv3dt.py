@@ -22,7 +22,7 @@ def main() -> None:
     args = parser.parse_args()
     destination = args.destination.resolve()
     destination.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="storelens-mv3dt-download-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="manysight-mv3dt-download-") as temporary:
         archive = Path(temporary) / "datasets.zip"
         print("Downloading the NVIDIA-hosted sample archive. Review NVIDIA's terms before use.")
         with urllib.request.urlopen(URL, timeout=120) as response, archive.open("wb") as target:
@@ -37,7 +37,7 @@ def main() -> None:
             bundle.extractall(destination)
     dataset = destination / "datasets" / "mtmc_12cam"
     print(f"Installed locally at: {dataset}")
-    print(f"Set STORELENS_DEMO_ASSET_DIR={dataset} when using a different destination.")
+    print(f"Set MANYSIGHT_DEMO_ASSET_DIR={dataset} when using a different destination.")
 
 
 if __name__ == "__main__":

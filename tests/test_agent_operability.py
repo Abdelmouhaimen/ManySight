@@ -1,4 +1,4 @@
-"""Agent-operability regressions built from real StoreLens failures.
+"""Agent-operability regressions built from real ManySight failures.
 
 Three questions per scenario in evals/agent_operability/scenarios/:
 

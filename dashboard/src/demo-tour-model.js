@@ -649,7 +649,7 @@ function cameraName(index) {
 }
 
 /**
- * The occupancy StoreLens derived for the sample that produced a recorded alert.
+ * The occupancy ManySight derived for the sample that produced a recorded alert.
  * This is read from the committed cache, never recomputed and never assumed: the
  * live KPI has usually moved on by the time the card reports the event.
  */
@@ -668,7 +668,7 @@ function qualifyingCount(cache, videoTime) {
  *
  * `session` and `cache` are the real demo payloads, `workspace` holds real
  * demo-workspace reads (sources/zones/queries/alert rules/dashboards) and
- * `events` holds real UI completions reported by StoreLens controls.
+ * `events` holds real UI completions reported by ManySight controls.
  */
 export function observeDemoState({ session, cache, replay, workspace = {}, events = {} } = {}) {
   if (!session) return { ...EMPTY_OBSERVED };

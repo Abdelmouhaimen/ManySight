@@ -43,7 +43,7 @@ def validate(path: Path) -> dict:
             if len(detection["bbox_px"]) != 4 or len(detection["point_px"]) != 2:
                 raise ValueError(f"line {index}: malformed pixel geometry")
             if any(key in detection for key in ("zone_id", "zone", "fused_entity_id", "point_map")):
-                raise ValueError(f"line {index}: fixture contains StoreLens-derived fields")
+                raise ValueError(f"line {index}: fixture contains ManySight-derived fields")
     incomplete = [timestamp for timestamp, seen in by_time.items() if seen != set(cameras)]
     if incomplete:
         raise ValueError(f"incomplete synchronized timestamps: {incomplete[:5]}")

@@ -16,7 +16,7 @@ import re
 
 # English threshold phrasing is not interchangeable, and conflating it silently
 # produces an alert that is wrong by exactly one person. "More than 2" is `> 2`;
-# the demo's "at least 2" is `>= 2`. StoreLens never normalizes one into the
+# the demo's "at least 2" is `>= 2`. ManySight never normalizes one into the
 # other, so agents must map the user's own words through this table.
 COMPARISON_PHRASES = {
     "more than {n}": ">",
@@ -64,14 +64,14 @@ def parse_threshold(phrase: str) -> dict | None:
 WORKFLOWS: dict[str, dict] = {
     "onboard-camera": {
         "title": "Register a camera and make it usable",
-        "when": "The user wants to add a camera, stream, file, or sensor to StoreLens.",
+        "when": "The user wants to add a camera, stream, file, or sensor to ManySight.",
         "skills": ["sources-and-cameras"],
         "prerequisites": [
             "inspect_workspace — reuse an existing logical source instead of creating a duplicate.",
         ],
         "sequence": [
             "inspect_workspace to see whether the source already exists.",
-            "configure_source with storelens_managed (structured connection plus optional "
+            "configure_source with manysight_managed (structured connection plus optional "
             "credentials) or external_secret (locator.local_secret_ref only).",
             "Place the source on the map and calibrate it, or import a rich 3x4 world-to-pixel "
             "calibration, before any geometry or fusion work.",
@@ -80,7 +80,7 @@ WORKFLOWS: dict[str, dict] = {
         "invariants": [
             "Credentials never travel in locator metadata, observations, queries, dashboards, "
             "logs, or job metadata.",
-            "StoreLens never opens or proxies the feed; a local worker owns camera access.",
+            "ManySight never opens or proxies the feed; a local worker owns camera access.",
         ],
         "tools": ["inspect_workspace", "configure_source", "inspect_source"],
         "done_when": "inspect_source reports the source configured and calibrated.",
@@ -97,7 +97,7 @@ WORKFLOWS: dict[str, dict] = {
             "plan in your own shell and look at the saved image.",
         ],
         "invariants": [
-            "Frame capture is local to the agent or worker. StoreLens is not a media proxy, so "
+            "Frame capture is local to the agent or worker. ManySight is not a media proxy, so "
             "no MCP tool returns live camera pixels.",
             "get_source_connection is the only credential path and is separately authenticated.",
         ],
@@ -227,7 +227,7 @@ WORKFLOWS: dict[str, dict] = {
             "Current fused occupancy means fresh fused person entities inside the canonical "
             "zone — not camera bounding boxes, not DISTINCT raw local tracker IDs, not frontend "
             "polygon membership.",
-            "Operators are exact. 'More than 2' is > 2 and 'at least 2' is >= 2; StoreLens never "
+            "Operators are exact. 'More than 2' is > 2 and 'at least 2' is >= 2; ManySight never "
             "converts one into the other.",
             "Quality matters: known, partial, and unknown are not the same. By default only "
             "known evidence can fire or clear an edge, so a stale camera never implies zero. "
@@ -239,7 +239,7 @@ WORKFLOWS: dict[str, dict] = {
     },
     "create-generated-dashboard": {
         "title": "Show a saved question on a dashboard",
-        "when": "The user asks to display, pin, or build a view from StoreLens data.",
+        "when": "The user asks to display, pin, or build a view from ManySight data.",
         "skills": ["queries-dashboards-alerts"],
         "prerequisites": ["A saved query that already answers the question."],
         "sequence": [

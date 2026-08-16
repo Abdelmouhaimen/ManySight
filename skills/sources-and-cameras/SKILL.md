@@ -5,16 +5,16 @@ description: Use when adding or inspecting cameras, files, streams, and sensors 
 
 # Sources and cameras
 
-Load [`storelens-core`](../storelens-core/SKILL.md) first.
+Load [`manysight-core`](../manysight-core/SKILL.md) first.
 
-A **source** is a logical observation input. It is not a stream StoreLens holds open:
+A **source** is a logical observation input. It is not a stream ManySight holds open:
 camera access belongs to the local worker or to your own shell.
 
 ## Onboarding
 
 1. `inspect_workspace()` — reuse an existing logical source instead of creating a duplicate.
 2. `configure_source(...)` with one of two access models:
-   - `storelens_managed`: structured `connection` plus optional `credentials`, encrypted at
+   - `manysight_managed`: structured `connection` plus optional `credentials`, encrypted at
      rest and returned only by the privileged connection endpoint.
    - `external_secret`: `locator.local_secret_ref` naming a secret the worker resolves from
      its own environment or keychain.
@@ -29,7 +29,7 @@ guard working, not a bug: move it into a managed `connection` or a local secret 
 ## Credential rules
 
 - `get_source_connection(source_id)` is the only path to connection material. It is
-  separately authenticated with `STORELENS_CREDENTIAL_ACCESS_KEY`.
+  separately authenticated with `MANYSIGHT_CREDENTIAL_ACCESS_KEY`.
 - Call it **only inside the authorized local process that opens the feed**, and pass the
   result straight into capture code in memory.
 - Never log, print, display, persist, or echo it — not into observations, zone metadata,
@@ -47,7 +47,7 @@ at the cameras **before** asking the user for coordinates.
 2. Run that plan in your own shell and open the saved image.
 3. Propose polygons in those same pixel coordinates.
 
-No API returns live camera pixels. StoreLens does not proxy media, and the MCP adapter
+No API returns live camera pixels. ManySight does not proxy media, and the MCP adapter
 does not process video, so the capture runs in your process — that boundary is deliberate
 and must not be worked around.
 
@@ -59,7 +59,7 @@ observed submission rate, and the latest worker heartbeat.
 - A job marked active is not proof a process is alive; check the heartbeat.
 - A source that stopped producing goes **stale**. Its last complete sample stays as the
   current scene; staleness is reported separately and never turns into an observed zero.
-- Reachability is a property of the worker machine. StoreLens does not test operational
+- Reachability is a property of the worker machine. ManySight does not test operational
   feeds; its guided demo serves only bundled local sample media.
 
 ## Removing cameras
@@ -84,5 +84,5 @@ Rules for using it:
 - Always preview first (`confirmed=false`), show the impact counts, and pass the preview's
   `reset_token` when executing so a camera added in between makes the reset fail instead
   of disappearing unannounced.
-- StoreLens can ask a registered worker to stop through its heartbeat, but cannot
+- ManySight can ask a registered worker to stop through its heartbeat, but cannot
   terminate a process it never started. Report any the user has to stop themselves.

@@ -320,7 +320,7 @@ def export(output: Path, asset_root: Path | None, skip_media: bool) -> dict:
             raise ExportError(
                 "the source dataset is not installed, so the videos cannot be exported.\n"
                 "Install it with `python demo/fetch_nvidia_mv3dt.py`, point "
-                "STORELENS_DEMO_ASSET_DIR at it, or pass --assets PATH.\n"
+                "MANYSIGHT_DEMO_ASSET_DIR at it, or pass --assets PATH.\n"
                 "Use --skip-media to write only manifest.json and replay.json."
             )
         written.extend(copy_media(recipe, output, root))

@@ -1,4 +1,4 @@
-"""Deterministic rule checker for StoreLens agent-operability scenarios.
+"""Deterministic rule checker for ManySight agent-operability scenarios.
 
 A scenario is a specification, not a script: initial workspace, the user's turns,
 which semantic actions each turn must and must not contain, and what must exist
@@ -7,7 +7,7 @@ reference path in the test suite, or one recorded from a real Codex/Claude run â
 into a list of violations.
 
 Deliberately pure: no HTTP, no database, no model, no third-party imports. It can
-run in CI on a recorded transcript without a StoreLens deployment.
+run in CI on a recorded transcript without a ManySight deployment.
 
 Transcript shape:
 

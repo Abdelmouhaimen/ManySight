@@ -1,6 +1,6 @@
-# StoreLens skills
+# ManySight skills
 
-Job-shaped playbooks that teach a coding agent how to operate StoreLens correctly. Each
+Job-shaped playbooks that teach a coding agent how to operate ManySight correctly. Each
 folder has a `SKILL.md` stating when to use it, the invariants that decide whether an
 implementation is right, and the curated tools that implement it.
 
@@ -14,7 +14,7 @@ They are discoverable three ways:
 
 | skill | use |
 |---|---|
-| [storelens-core](storelens-core/SKILL.md) | **load first** — platform boundary, atomic samples, identity, geometry, quality, where authority lives |
+| [manysight-core](manysight-core/SKILL.md) | **load first** — platform boundary, atomic samples, identity, geometry, quality, where authority lives |
 | [sources-and-cameras](sources-and-cameras/SKILL.md) | onboarding cameras/streams/sensors, credential safety, inspecting a camera view, freshness |
 | [geometry-and-zones](geometry-and-zones/SKILL.md) | canonical zones, camera zone views, projection surfaces, calibration, preview→approve→commit |
 | [perception-workers](perception-workers/SKILL.md) | detection, measurement, and state workers — reuse first, current contract, sampling rate, verification |

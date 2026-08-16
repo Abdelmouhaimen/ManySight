@@ -1,4 +1,4 @@
-"""StoreLens MCP server — the curated semantic surface coding agents operate.
+"""ManySight MCP server — the curated semantic surface coding agents operate.
 
 Three interfaces, three jobs:
 
@@ -8,7 +8,7 @@ Three interfaces, three jobs:
 
 This module advertises a deliberately small public tool set. The low-level
 handlers are still implemented below as plain module functions — importable,
-testable, and re-registerable with STORELENS_MCP_LEGACY_TOOLS=1 — they are just
+testable, and re-registerable with MANYSIGHT_MCP_LEGACY_TOOLS=1 — they are just
 not part of the normal advertised surface, because an agent that has to choose
 between sixty tools rediscovers the architecture by trial and error instead of
 following it.
@@ -17,14 +17,14 @@ Run standalone:            python mcp_server/server.py
 Register with Codex CLI:   see codex.config.example.toml at the repo root.
 
 Env:
-  STORELENS_URL      base URL of the platform (default http://localhost:8000)
-  STORELENS_API_KEY  only if the server enforces one
-  STORELENS_CREDENTIAL_ACCESS_KEY  privileged managed-connection resolution key
-  STORELENS_SKILLS   path to the skills/ folder (default: sibling of this file's parent)
-  STORELENS_MCP_TRANSPORT  stdio (default) | streamable-http
-  STORELENS_MCP_HOST / STORELENS_MCP_PORT  remote transport bind settings
-  STORELENS_MCP_ALLOWED_HOSTS / STORELENS_MCP_ALLOWED_ORIGINS  comma-separated
-  STORELENS_MCP_LEGACY_TOOLS  1 to also advertise the deprecated low-level tools
+  MANYSIGHT_URL      base URL of the platform (default http://localhost:8000)
+  MANYSIGHT_API_KEY  only if the server enforces one
+  MANYSIGHT_CREDENTIAL_ACCESS_KEY  privileged managed-connection resolution key
+  MANYSIGHT_SKILLS   path to the skills/ folder (default: sibling of this file's parent)
+  MANYSIGHT_MCP_TRANSPORT  stdio (default) | streamable-http
+  MANYSIGHT_MCP_HOST / MANYSIGHT_MCP_PORT  remote transport bind settings
+  MANYSIGHT_MCP_ALLOWED_HOSTS / MANYSIGHT_MCP_ALLOWED_ORIGINS  comma-separated
+  MANYSIGHT_MCP_LEGACY_TOOLS  1 to also advertise the deprecated low-level tools
 """
 import json
 import os
@@ -40,40 +40,40 @@ from mcp_server._transport import build_server, run_server
 from server.platform_config import resolve as resolve_platform_config
 
 PLATFORM_ENDPOINTS = resolve_platform_config()
-BASE = os.environ.get("STORELENS_URL", PLATFORM_ENDPOINTS["public_url"]).rstrip("/")
+BASE = os.environ.get("MANYSIGHT_URL", PLATFORM_ENDPOINTS["public_url"]).rstrip("/")
 REST_BASE = os.environ.get(
-    "STORELENS_REST_URL",
+    "MANYSIGHT_REST_URL",
     BASE + PLATFORM_ENDPOINTS["paths"].get("rest", "/api/v1"),
 ).rstrip("/")
-API_KEY = os.environ.get("STORELENS_API_KEY", "")
-CREDENTIAL_ACCESS_KEY = os.environ.get("STORELENS_CREDENTIAL_ACCESS_KEY", API_KEY)
+API_KEY = os.environ.get("MANYSIGHT_API_KEY", "")
+CREDENTIAL_ACCESS_KEY = os.environ.get("MANYSIGHT_CREDENTIAL_ACCESS_KEY", API_KEY)
 SKILLS_DIR = os.environ.get(
-    "STORELENS_SKILLS",
+    "MANYSIGHT_SKILLS",
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills"),
 )
-MCP_HOST = os.environ.get("STORELENS_MCP_HOST", "127.0.0.1")
-MCP_PORT = int(os.environ.get("STORELENS_MCP_PORT", "8001"))
-LEGACY_TOOL_MODE = os.environ.get("STORELENS_MCP_LEGACY_TOOLS", "").lower() in {"1", "true", "yes"}
+MCP_HOST = os.environ.get("MANYSIGHT_MCP_HOST", "127.0.0.1")
+MCP_PORT = int(os.environ.get("MANYSIGHT_MCP_PORT", "8001"))
+LEGACY_TOOL_MODE = os.environ.get("MANYSIGHT_MCP_LEGACY_TOOLS", "").lower() in {"1", "true", "yes"}
 MCP_DNS_REBINDING_PROTECTION = os.environ.get(
-    "STORELENS_MCP_DNS_REBINDING_PROTECTION", "true"
+    "MANYSIGHT_MCP_DNS_REBINDING_PROTECTION", "true"
 ).lower() in {"1", "true", "yes"}
 MCP_ALLOWED_HOSTS = [
     value.strip() for value in os.environ.get(
-        "STORELENS_MCP_ALLOWED_HOSTS", "127.0.0.1:*,localhost:*,[::1]:*"
+        "MANYSIGHT_MCP_ALLOWED_HOSTS", "127.0.0.1:*,localhost:*,[::1]:*"
     ).split(",") if value.strip()
 ]
 MCP_ALLOWED_ORIGINS = [
     value.strip() for value in os.environ.get(
-        "STORELENS_MCP_ALLOWED_ORIGINS", "http://127.0.0.1:*,http://localhost:*"
+        "MANYSIGHT_MCP_ALLOWED_ORIGINS", "http://127.0.0.1:*,http://localhost:*"
     ).split(",") if value.strip()
 ]
 
 COMPARISON_OPERATORS = (">", ">=", "<", "<=", "==", "!=")
 
 mcp = build_server(
-    "storelens",
+    "manysight",
     instructions=(
-        "StoreLens turns observations produced by LOCAL workers into spatial and temporal state "
+        "ManySight turns observations produced by LOCAL workers into spatial and temporal state "
         "for a physical space: geometry, zones, cross-camera fusion, deterministic queries, "
         "dashboards, and alerts.\n"
         "\n"
@@ -85,7 +85,7 @@ mcp = build_server(
         "\n"
         "OBSERVE LOCALLY, DERIVE CENTRALLY. Workers submit only raw perception evidence: "
         "detection (an observed entity with pixel evidence), measurement (an observed number), "
-        "state (an observed categorical value). StoreLens derives projection, canonical zone "
+        "state (an observed categorical value). ManySight derives projection, canonical zone "
         "assignment, visits, dwell, occupancy, transitions, state durations, multiview fusion, "
         "queries, and alerts. Workers must never submit zone_id/zone, zone_enter, zone_exit, "
         "zone_dwell, state_change, count, occupancy, visits, transitions, or fused identity.\n"
@@ -109,11 +109,11 @@ mcp = build_server(
         "preview_zone, get approval, and commit_zone.\n"
         "\n"
         "ANALYTICS. The saved query computes; a dashboard only presents. Threshold words are "
-        "exact: 'more than 2' is > 2 and 'at least 2' is >= 2 — StoreLens never converts one into "
+        "exact: 'more than 2' is > 2 and 'at least 2' is >= 2 — ManySight never converts one into "
         "the other. Quality known/partial/unknown are different: a stale camera does not mean "
         "zero. Agents never receive raw SQL and never generate dashboard code.\n"
         "\n"
-        "BOUNDARIES. StoreLens never opens or proxies a camera feed, runs a model, or executes "
+        "BOUNDARIES. ManySight never opens or proxies a camera feed, runs a model, or executes "
         "your scripts; camera access and inference are yours, locally. Credentials come only from "
         "get_source_connection inside an authorized worker and never appear in observations, "
         "queries, dashboards, logs, or job metadata. Space and observation reinitialization are "
@@ -129,8 +129,8 @@ def _req(method: str, path: str, body: dict | None = None, raw: bool = False,
     headers = {"Content-Type": "application/json"}
     if privileged:
         if not CREDENTIAL_ACCESS_KEY:
-            raise RuntimeError("STORELENS_CREDENTIAL_ACCESS_KEY is required to resolve managed connections")
-        headers["X-StoreLens-Credential-Key"] = CREDENTIAL_ACCESS_KEY
+            raise RuntimeError("MANYSIGHT_CREDENTIAL_ACCESS_KEY is required to resolve managed connections")
+        headers["X-ManySight-Credential-Key"] = CREDENTIAL_ACCESS_KEY
     elif API_KEY:
         headers["X-API-Key"] = API_KEY
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
@@ -156,7 +156,7 @@ def _ids(source_ids: list[int] | None) -> str | None:
 
 @mcp.tool()
 def inspect_workspace(entity_type: str = "person") -> dict:
-    """FIRST CALL for almost every StoreLens task. One read-only snapshot of the
+    """FIRST CALL for almost every ManySight task. One read-only snapshot of the
     whole workspace: space and current space revision, map readiness, every source
     with configuration/placement/calibration/freshness, canonical zones and their
     per-camera view coverage, perception freshness for `entity_type`, multiview
@@ -171,11 +171,11 @@ def inspect_workspace(entity_type: str = "person") -> dict:
 
 @mcp.tool()
 def list_workflows() -> dict:
-    """The index of StoreLens jobs an agent can be asked to do (define a zone from
+    """The index of ManySight jobs an agent can be asked to do (define a zone from
     cameras, create a zone occupancy alert, run person tracking, configure
     multiview, generate a dashboard, onboard or inspect a camera).
 
-    Use it when you know the user's goal but not the StoreLens path to it. Cheap;
+    Use it when you know the user's goal but not the ManySight path to it. Cheap;
     returns names, when-to-use, and the skills behind each. Then call
     get_workflow(name)."""
     return _req("GET", "/agent/workflows")
@@ -194,11 +194,11 @@ def get_workflow(name: str) -> dict:
 
 @mcp.tool()
 def get_skill(name: str) -> str:
-    """Return one complete StoreLens playbook: storelens-core (load first),
+    """Return one complete ManySight playbook: manysight-core (load first),
     sources-and-cameras, geometry-and-zones, perception-workers, multiview-fusion,
     queries-dashboards-alerts, guided-demo.
 
-    Use it when a workflow step needs the reasoning behind it, or on any StoreLens
+    Use it when a workflow step needs the reasoning behind it, or on any ManySight
     task where you are unsure of an invariant. get_workflow() names the right
     skill. The response is prefixed with this deployment's resolved endpoints."""
     path = os.path.join(SKILLS_DIR, name, "SKILL.md")
@@ -249,7 +249,7 @@ def configure_source(name: str = "", source_id: int | None = None, kind: str | N
                      metadata: dict | None = None) -> dict:
     """Create a logical source, or update it when `source_id` is given.
 
-    Choose `storelens_managed` with a structured `connection` (plus optional
+    Choose `manysight_managed` with a structured `connection` (plus optional
     `credentials`, encrypted at rest) or `external_secret` with
     `locator.local_secret_ref` naming a worker-local secret. A camera URL,
     username, password, or token in `locator` is rejected — that is by design.
@@ -280,7 +280,7 @@ def configure_source(name: str = "", source_id: int | None = None, kind: str | N
 @mcp.tool()
 def get_source_connection(source_id: int) -> dict:
     """Explicitly resolve a source's connection material for a local worker that is
-    about to open it. Requires STORELENS_CREDENTIAL_ACCESS_KEY and may return
+    about to open it. Requires MANYSIGHT_CREDENTIAL_ACCESS_KEY and may return
     secrets.
 
     Use it ONLY inside the authorized local process that opens the feed, and pass
@@ -300,7 +300,7 @@ def plan_frame_capture(source_id: int) -> dict:
     Use it whenever a task needs to SEE a camera — above all before proposing zone
     geometry, so you inspect the real view instead of asking the user for polygon
     coordinates. It returns a plan and geometry context, never image bytes:
-    StoreLens does not proxy media and this adapter does not process video, so the
+    ManySight does not proxy media and this adapter does not process video, so the
     capture runs in your process. Run it, then open the saved image."""
     return _req("GET", f"/agent/sources/{source_id}/frame-capture-plan")
 
@@ -348,7 +348,7 @@ def commit_zone(views: list[dict], approved: bool = False, zone_name: str = "",
 @mcp.tool()
 def inspect_perception(entity_type: str = "person", source_ids: list[int] | None = None,
                        require_tracking: bool = True, require_spatial: bool = True) -> dict:
-    """Can StoreLens already answer a question about `entity_type` on these
+    """Can ManySight already answer a question about `entity_type` on these
     sources? Returns per-source availability, healthy/stale/unavailable state,
     observed central submission rate, worker heartbeat, tracking and spatial
     output, multiview readiness, any compatible existing job, and an `action` of
@@ -389,7 +389,7 @@ def request_worker_state(worker_id: int, desired_state: str) -> dict:
     """Ask a registered worker to move to running, stopped, or restart. The worker
     reads this from its next heartbeat and must obey it cooperatively.
 
-    Use it to stop or restart perception you or a supervisor started. StoreLens
+    Use it to stop or restart perception you or a supervisor started. ManySight
     never launches, kills, or relaunches a process, so `restart` does nothing
     without a supervisor. Registration and heartbeating are the worker's own job
     through the SDK — do not register a worker you did not start."""
@@ -612,14 +612,14 @@ def reset_cameras(confirmed: bool = False, reset_token: str = "") -> dict:
 # LEGACY / INTERNAL HANDLERS
 #
 # Still implemented, still importable, still exercised by tests, and still
-# re-registerable with STORELENS_MCP_LEGACY_TOOLS=1. Not advertised by default:
+# re-registerable with MANYSIGHT_MCP_LEGACY_TOOLS=1. Not advertised by default:
 # the curated tools above supersede them, and a sixty-tool list is the problem
 # this module exists to solve. REST/SDK remain the complete interface.
 # ===========================================================================
 
 def get_platform_config() -> dict:
     """Return the authoritative dashboard, REST, OpenAPI, agent-guide, discovery,
-    and MCP endpoints resolved for this StoreLens deployment."""
+    and MCP endpoints resolved for this ManySight deployment."""
     return _req("GET", "/platform-config")
 
 
@@ -1166,9 +1166,9 @@ if LEGACY_TOOL_MODE:
 
 
 if __name__ == "__main__":
-    transport = os.environ.get("STORELENS_MCP_TRANSPORT", "stdio")
+    transport = os.environ.get("MANYSIGHT_MCP_TRANSPORT", "stdio")
     if transport not in {"stdio", "streamable-http"}:
-        raise SystemExit("STORELENS_MCP_TRANSPORT must be stdio or streamable-http")
+        raise SystemExit("MANYSIGHT_MCP_TRANSPORT must be stdio or streamable-http")
     run_server(
         mcp, transport, host=MCP_HOST, port=MCP_PORT,
         dns_rebinding_protection=MCP_DNS_REBINDING_PROTECTION,

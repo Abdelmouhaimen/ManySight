@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Check a recorded agent transcript against a StoreLens operability scenario.
+"""Check a recorded agent transcript against a ManySight operability scenario.
 
     python evals/agent_operability/check_transcript.py <scenario> <transcript.json>
 
 Exits 0 when the transcript satisfies every rule, 1 otherwise. Needs no running
-StoreLens and no model: the rules are pure, so a session recorded from a real
+ManySight and no model: the rules are pure, so a session recorded from a real
 Codex or Claude run can be graded after the fact.
 """
 from __future__ import annotations

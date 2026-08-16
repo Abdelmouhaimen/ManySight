@@ -1,4 +1,4 @@
-"""Resolve StoreLens public endpoints from one editable JSON registry.
+"""Resolve ManySight public endpoints from one editable JSON registry.
 
 Deployment environment variables override the selected profile. Skills, discovery,
 the dashboard, and hosted processes all consume the same resolved values.
@@ -9,7 +9,7 @@ import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.environ.get(
-    "STORELENS_ENDPOINT_CONFIG",
+    "MANYSIGHT_ENDPOINT_CONFIG",
     os.path.join(ROOT, "config", "endpoints.json"),
 )
 
@@ -25,25 +25,25 @@ def _join(base: str, path: str) -> str:
 
 def resolve(request_base: str | None = None) -> dict:
     config = _load()
-    profile_name = os.environ.get("STORELENS_ENDPOINT_PROFILE", config.get("active_profile", "local"))
+    profile_name = os.environ.get("MANYSIGHT_ENDPOINT_PROFILE", config.get("active_profile", "local"))
     profiles = config.get("profiles", {})
     if profile_name not in profiles:
-        raise RuntimeError(f"unknown StoreLens endpoint profile '{profile_name}'")
+        raise RuntimeError(f"unknown ManySight endpoint profile '{profile_name}'")
     profile = profiles[profile_name]
     public_url = (
-        os.environ.get("STORELENS_PUBLIC_URL")
+        os.environ.get("MANYSIGHT_PUBLIC_URL")
         or profile.get("public_url")
         or request_base
         or "http://localhost:8000"
     ).rstrip("/")
     paths = config.get("paths", {})
     mcp_url = (
-        os.environ.get("STORELENS_PUBLIC_MCP_URL")
+        os.environ.get("MANYSIGHT_PUBLIC_MCP_URL")
         or profile.get("mcp_url")
         or _join(public_url, paths.get("mcp", "/mcp"))
     ).rstrip("/")
     configured_cors = profile.get("cors_origins", [])
-    cors_override = os.environ.get("STORELENS_CORS_ORIGINS")
+    cors_override = os.environ.get("MANYSIGHT_CORS_ORIGINS")
     cors_origins = (
         [value.strip() for value in cors_override.split(",") if value.strip()]
         if cors_override is not None

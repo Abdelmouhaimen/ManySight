@@ -2,7 +2,7 @@
 recipe, one safe zone workflow, one workflow index.
 
 These are the endpoints that exist so an agent does not have to reconstruct
-StoreLens architecture from low-level API trial and error, so the tests care
+ManySight architecture from low-level API trial and error, so the tests care
 about two things a normal router test would not: that the answers are *complete*
 enough to act on, and that they never leak connection material.
 """
@@ -110,7 +110,7 @@ def test_workspace_snapshot_never_contains_connection_material(client):
     """A snapshot is safe to paste into a conversation; connection details are not."""
     secret_host = "cam-secret-host.internal"
     source_id = client.post("/api/v1/sources", json={
-        "name": "Managed cam", "kind": "rtsp", "connection_management": "storelens_managed",
+        "name": "Managed cam", "kind": "rtsp", "connection_management": "manysight_managed",
         "connection": {"host": secret_host, "port": 554, "path": "/stream1"},
     }).json()["id"]
 
@@ -125,7 +125,7 @@ def test_workspace_snapshot_never_contains_connection_material(client):
 
     detail = client.get(f"/api/v1/agent/sources/{source_id}").json()
     assert detail["connection"] == {
-        "configured": True, "management": "storelens_managed", "mode": "agent_local",
+        "configured": True, "management": "manysight_managed", "mode": "agent_local",
         "revision": 1, "credential_status": "absent",
         "resolution": "Call get_source_connection only inside an authorized local worker.",
     }

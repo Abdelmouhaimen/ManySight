@@ -1,7 +1,7 @@
 """Observation ingestion and querying — the current worker contract.
 
 Workers submit only three observation kinds: `detection`, `measurement`, `state`.
-StoreLens derives everything else (zones, visits, dwell, occupancy, movement, state
+ManySight derives everything else (zones, visits, dwell, occupancy, movement, state
 transitions and durations, aggregations, analytics, alerts) from these raw rows —
 see services/derive.py. Workers must never resolve zones or send zone_id/zone,
 and must never submit the legacy derived kinds (zone_enter, zone_exit, zone_dwell,
@@ -236,7 +236,7 @@ def detection_sample_batch(sample: DetectionSampleIn) -> tuple[ObservationBatch,
         )
         observations.append(ObservationIn(
             schema_version=2,
-            observation_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"storelens:{namespace}:d:{index}")),
+            observation_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"manysight:{namespace}:d:{index}")),
             sample_id=sample.sample_id,
             kind="detection",
             timestamp=timestamp,
@@ -254,7 +254,7 @@ def detection_sample_batch(sample: DetectionSampleIn) -> tuple[ObservationBatch,
         ))
     observations.append(ObservationIn(
         schema_version=2,
-        observation_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"storelens:{namespace}:complete")),
+        observation_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"manysight:{namespace}:complete")),
         sample_id=sample.sample_id,
         kind="measurement",
         timestamp=timestamp,
@@ -275,7 +275,7 @@ def detection_sample_batch(sample: DetectionSampleIn) -> tuple[ObservationBatch,
 def observation_contract():
     """Machine-readable summary of the current worker contract: the three kinds,
     required fields per kind, and what workers must never send. Mirrors AGENTS.md
-    and the storelens-platform skill so an agent can self-check a payload."""
+    and the manysight-platform skill so an agent can self-check a payload."""
     return {
         "schema_version": 2,
         "kinds": sorted(enrich.OBSERVATION_KINDS),
@@ -460,7 +460,7 @@ def _persist_batch(batch: ObservationBatch, connection):
                 "error": "legacy_derived_observation",
                 "message": (
                     f"Workers must submit detection, measurement, or state observations. "
-                    f"'{ob.kind}' is derived by StoreLens, not submitted — see GET /observations/contract."
+                    f"'{ob.kind}' is derived by ManySight, not submitted — see GET /observations/contract."
                 ),
             })
             continue
@@ -473,7 +473,7 @@ def _persist_batch(batch: ObservationBatch, connection):
             rejected.append({
                 "index": index, "observation_id": ob.observation_id,
                 "error": "zone_resolution_forbidden",
-                "message": "Workers must not resolve zones or send zone_id/zone; StoreLens assigns "
+                "message": "Workers must not resolve zones or send zone_id/zone; ManySight assigns "
                            "zones from geometry at ingestion.",
             })
             continue
@@ -529,7 +529,7 @@ def _persist_batch(batch: ObservationBatch, connection):
     summary="Submit one complete processed detection frame",
     description=(
         "Preferred worker ingestion API. The envelope atomically represents one processed "
-        "camera frame; detections=[] records a trustworthy observed zero. StoreLens persists "
+        "camera frame; detections=[] records a trustworthy observed zero. ManySight persists "
         "entity-level detections and derives projection, zones, fusion, analytics, and alerts."
     ),
 )
@@ -613,8 +613,8 @@ def _process_with_followup(batch: ObservationBatch, after_process=None):
 # offload and every sample after it would find the pipeline thread busy and do
 # the same.
 INLINE_OBSERVATION_LIMIT = int(
-    os.environ.get("STORELENS_INLINE_INGEST_MAX_OBSERVATIONS", "64"))
-INLINE_LOCK_WAIT_S = float(os.environ.get("STORELENS_INLINE_INGEST_LOCK_WAIT_S", "0.25"))
+    os.environ.get("MANYSIGHT_INLINE_INGEST_MAX_OBSERVATIONS", "64"))
+INLINE_LOCK_WAIT_S = float(os.environ.get("MANYSIGHT_INLINE_INGEST_LOCK_WAIT_S", "0.25"))
 
 
 async def _run_pipeline(batch: ObservationBatch, after_process=None):
@@ -824,7 +824,7 @@ def latest_detection_frames(entity_type: str = "person", source_id: int | None =
 
     Preferred atomic DetectionSamples are normalized to the same completion model
     used by legacy ``detection_frame_count`` rows. Detections are returned with
-    their stored StoreLens geometry enrichment. Scene contents do not expire;
+    their stored ManySight geometry enrichment. Scene contents do not expire;
     ``stale`` reports source freshness independently.
     """
     where = ["entity_type=?"]

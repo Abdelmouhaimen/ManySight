@@ -140,7 +140,7 @@ def import_calibration(body: CalibrationImportIn):
     if body.provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(422, f"provider must be one of {sorted(SUPPORTED_PROVIDERS)}")
     if body.units not in {"m", "meter", "metre", "meters", "metres"}:
-        raise HTTPException(422, "world units must be metres for StoreLens shared geometry")
+        raise HTTPException(422, "world units must be metres for ManySight shared geometry")
     if not body.world_frame.get("name") or not body.world_frame.get("axes"):
         raise HTTPException(422, "world_frame requires a name and explicit axes metadata")
     if (body.frame_w is None) != (body.frame_h is None) or (body.frame_w is not None and

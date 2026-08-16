@@ -5,7 +5,7 @@ description: Use for canonical zones, camera zone views, projection surfaces, an
 
 # Geometry and zones
 
-Load [`storelens-core`](../storelens-core/SKILL.md) first.
+Load [`manysight-core`](../manysight-core/SKILL.md) first.
 
 ## The four objects
 

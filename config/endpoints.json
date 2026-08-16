@@ -15,7 +15,7 @@
     "agent_guide": "/agent.md",
     "agent_guide_alias": "/agend.md",
     "llms": "/llms.txt",
-    "discovery": "/.well-known/storelens.json",
+    "discovery": "/.well-known/manysight.json",
     "openapi": "/openapi.json",
     "docs": "/docs",
     "rest": "/api/v1",

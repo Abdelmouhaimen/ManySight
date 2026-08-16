@@ -1,11 +1,11 @@
 ---
-name: storelens-core
-description: Load first for every StoreLens task. The invariants that decide whether an implementation is correct — platform boundary, atomic samples, identity, geometry, quality, and where authority lives.
+name: manysight-core
+description: Load first for every ManySight task. The invariants that decide whether an implementation is correct — platform boundary, atomic samples, identity, geometry, quality, and where authority lives.
 ---
 
-# StoreLens core
+# ManySight core
 
-StoreLens turns observations produced by **local** workers into spatial and temporal state
+ManySight turns observations produced by **local** workers into spatial and temporal state
 for a physical space. One rule decides most design questions:
 
 > **Observe locally, derive centrally.**
@@ -25,7 +25,7 @@ perception evidence:
 | `measurement` | an observed number |
 | `state` | an observed current categorical value |
 
-StoreLens owns everything derived: projection, canonical zone assignment, visits, dwell,
+ManySight owns everything derived: projection, canonical zone assignment, visits, dwell,
 occupancy, transitions, state intervals, multiview fusion, saved queries, dashboards, and
 alerts.
 
@@ -68,18 +68,18 @@ A required camera going stale does not mean the zone is empty.
 The current MCP tools, `GET /api/v1/observations/contract`, `get_worker_recipe()`,
 `/openapi.json`, and these skills are authoritative.
 
-**Do not treat an arbitrary repository script as StoreLens protocol documentation.** An
+**Do not treat an arbitrary repository script as ManySight protocol documentation.** An
 example, a demo worker, or an older file on disk may predate the current API. This is the
-single most common way an otherwise capable agent gets StoreLens wrong.
+single most common way an otherwise capable agent gets ManySight wrong.
 
 Agents never receive raw SQL and never generate dashboard code.
 
 ## Safety
 
-Sources use `storelens_managed` encrypted connection material or an `external_secret`
+Sources use `manysight_managed` encrypted connection material or an `external_secret`
 local reference. Ordinary discovery is redacted. Resolve a connection only inside the
 authorized local worker, keep it in memory, and never place it in observations, fused
-state, queries, dashboards, logs, code, or job metadata. StoreLens does not proxy feeds
+state, queries, dashboards, logs, code, or job metadata. ManySight does not proxy feeds
 and does not execute worker scripts.
 
 Space and observation reinitialization are destructive, exact-confirmation operations.

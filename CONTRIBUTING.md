@@ -1,7 +1,7 @@
 # Contributing to ManySight
 
-Thank you for improving ManySight. The repository is under active development; discuss
-large contract or architecture changes in an issue before implementing them.
+Thank you for improving ManySight. Discuss large contract or architecture changes in an
+issue before implementing them.
 
 ## Set up the repository
 
@@ -31,11 +31,15 @@ Run before opening a pull request:
 
 ```powershell
 python -m pytest -q
+npm test --prefix dashboard
 npm run build --prefix dashboard
 ```
 
-No formatter, linter, or type-check command is configured currently. Keep changes
-consistent with surrounding Python and React code.
+The dashboard build is a hard prerequisite for the Python suite: `server/app.py` mounts
+`dashboard/dist` at import time.
+
+No formatter, linter, or type-check command is configured. Keep changes consistent with
+surrounding Python and React code.
 
 ## Bug reports and pull requests
 
@@ -48,8 +52,7 @@ validation performed, and any known limitations. Keep unrelated refactors separa
 
 Security vulnerabilities require private handling; see [SECURITY.md](SECURITY.md).
 
-## Licensing note
+## License
 
-The repository does not currently contain an approved open-source license. Maintainers
-must select one before public release and clarify the terms under which external
-contributions are accepted. Do not assume that public visibility grants reuse rights.
+ManySight is licensed under the [Apache License 2.0](LICENSE). Contributions are accepted
+under the same license.

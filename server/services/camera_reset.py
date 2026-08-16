@@ -237,7 +237,7 @@ def execute() -> dict:
     try:
         connection.execute("BEGIN IMMEDIATE")
         # Ask any live worker to stop through the lifecycle it already polls.
-        # StoreLens cannot terminate a process it never started, so the worker
+        # ManySight cannot terminate a process it never started, so the worker
         # rows stay readable until the process heartbeats and sees should_stop.
         for worker in removed["workers_to_stop"]:
             connection.execute(
@@ -321,7 +321,7 @@ def _result(removed: dict, disabled: list[dict], stale_queries: list[dict],
         "jobs_unbound": unbound,
         "workers_stop_requested": stop_requested,
         "workers_note": (
-            "StoreLens asked these workers to stop through their heartbeat. It cannot terminate "
+            "ManySight asked these workers to stop through their heartbeat. It cannot terminate "
             "a process it never started, so stop any that do not exit on their own."
             if stop_requested else None),
         "reset_token": reset_token([]),

@@ -43,16 +43,16 @@ worker heartbeat rows, and performs neither inference nor live fusion.
 ## Opening a source
 
 ```python
-from storelens import StoreLens
+from manysight import ManySight
 
-client = StoreLens("http://127.0.0.1:8000", api_key="")
+client = ManySight("http://127.0.0.1:8000", api_key="")
 source = client.source(1)
 capture = client.open_capture(source)
 ```
 
 For a managed webcam, the SDK can open the non-secret `device_index` directly. Other
 managed source kinds use the privileged connection endpoint and need
-`STORELENS_CREDENTIAL_ACCESS_KEY` (or the configured API key fallback). For an
+`MANYSIGHT_CREDENTIAL_ACCESS_KEY` (or the configured API key fallback). For an
 external-secret source, `open_capture` resolves `source.locator.local_secret_ref` from
 the worker environment. Passing `local_connection=` explicitly is a supported
 worker-local override and takes precedence over both modes.

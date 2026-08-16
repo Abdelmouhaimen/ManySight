@@ -5,7 +5,7 @@ For the isolated four-camera product walkthrough, use **Try Demo** in ManySight 
 single-video development helper.
 
 `loop_video_stream.py` is a development utility that exposes a local video as an MJPEG
-stream. It is not a StoreLens service, camera gateway, or production streaming server.
+stream. It is not a ManySight service, camera gateway, or production streaming server.
 
 ## Start the stream
 
@@ -26,13 +26,13 @@ serves frames without authentication; keep it on a trusted development interface
 
 ## Register it as a managed source
 
-In ManySight, open **Sources**, add an HTTP source, choose **StoreLens managed**, and
+In ManySight, open **Sources**, add an HTTP source, choose **ManySight managed**, and
 enter `http://127.0.0.1:8765/stream.mjpg`. A worker on the same machine can then use:
 
 ```python
-from storelens import StoreLens
+from manysight import ManySight
 
-client = StoreLens("http://127.0.0.1:8000", api_key="")
+client = ManySight("http://127.0.0.1:8000", api_key="")
 source = client.source(source_id)
 capture = client.open_capture(source)
 ```
@@ -43,15 +43,15 @@ managed credentials. This unauthenticated demo stream does not.
 ## External-secret alternative
 
 Choose **External secret** and set the source's local secret reference to a descriptive
-environment-variable name such as `STORELENS_DEMO_STREAM_0`. Set that variable only on
+environment-variable name such as `MANYSIGHT_DEMO_STREAM_0`. Set that variable only on
 the worker machine:
 
 ```powershell
-$env:STORELENS_DEMO_STREAM_0 = "http://127.0.0.1:8765/stream.mjpg"
+$env:MANYSIGHT_DEMO_STREAM_0 = "http://127.0.0.1:8765/stream.mjpg"
 ```
 
 `client.open_capture(source)` resolves the reference automatically. Use this mode when
-connection material should remain outside the StoreLens database.
+connection material should remain outside the ManySight database.
 
 Source reachability is always relative to the worker machine. Replace loopback with an
 address reachable by the worker when the stream and worker run on different hosts.

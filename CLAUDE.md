@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 1. [`AGENTS.md`](AGENTS.md) — canonical agent-facing operating manual (observation contract,
    source access, geometry, worker lifecycle, analytics, alerts).
-2. [`skills/storelens-core/SKILL.md`](skills/storelens-core/SKILL.md) — load first for
-   every StoreLens task, then the closest playbook from [`skills/`](skills/README.md).
+2. [`skills/manysight-core/SKILL.md`](skills/manysight-core/SKILL.md) — load first for
+   every ManySight task, then the closest playbook from [`skills/`](skills/README.md).
 3. [`docs/agent-surface.md`](docs/agent-surface.md) — the three-interface split (REST/SDK vs
    curated MCP vs skills), the exact 18-tool public surface, and the legacy strategy.
 4. `GET /api/v1/observations/contract`, `GET /api/v1/agent/worker-recipe`, and
@@ -35,7 +35,7 @@ instructions into public user documentation or expose source credentials.
   association — never verified identity, never appearance/biometric ReID.
 - **Credentials never travel with data.** Resolve them only in an authorized local worker, in
   memory; keep them out of observations, fused state, queries, dashboards, logs, code, and job
-  metadata. StoreLens does not proxy feeds or execute worker scripts.
+  metadata. ManySight does not proxy feeds or execute worker scripts.
 - **Space and observation reinitialization are destructive exact-confirmation operations.**
   Never invoke them without an explicit user request. Retained observations belong to their
   recorded `space_revision_id`; deleted-zone references stay unresolved and must not be
@@ -74,13 +74,13 @@ python scripts/load_test_realtime.py --cameras 4 --fps 60 --duration 30   # not 
 
 No formatter, linter, or type checker is configured. Match surrounding Python/React style.
 
-MCP server (stdio by default; `STORELENS_MCP_TRANSPORT=streamable-http` for HTTP):
+MCP server (stdio by default; `MANYSIGHT_MCP_TRANSPORT=streamable-http` for HTTP):
 
 ```bash
-STORELENS_URL=http://127.0.0.1:8000 python mcp_server/server.py
+MANYSIGHT_URL=http://127.0.0.1:8000 python mcp_server/server.py
 ```
 
-Demo tooling — `scripts/seed_demo.py` is **destructive** to the selected `STORELENS_DATA`
+Demo tooling — `scripts/seed_demo.py` is **destructive** to the selected `MANYSIGHT_DATA`
 database. The fixture builder uses a temporary workspace instead, and rewrites the committed
 cache under `demo/fixtures/`:
 
@@ -97,14 +97,14 @@ Environment variables are tabulated in [`docs/development.md`](docs/development.
 
 Four surfaces sit on one REST contract: the FastAPI platform (`server/`), the ManySight React
 dashboard (`dashboard/`), the MCP adapter (`mcp_server/`), and the worker SDK
-(`sdk/python/storelens.py`, imported via `sys.path`, not installed as a package). The MCP
+(`sdk/python/manysight.py`, imported via `sys.path`, not installed as a package). The MCP
 server is a thin REST client — it holds no business logic and never processes video.
 
 ### The curated agent surface
 
 `mcp_server/server.py` advertises **18** semantic tools and keeps the 59 superseded
 low-level handlers as plain undecorated module functions (`LEGACY_TOOLS`), re-advertised
-only with `STORELENS_MCP_LEGACY_TOOLS=1`. Because MCP must stay a thin client, every
+only with `MANYSIGHT_MCP_LEGACY_TOOLS=1`. Because MCP must stay a thin client, every
 semantic operation is a real endpoint in `server/routers/agent_ops.py` under
 `/api/v1/agent/*`: workspace snapshot, source detail, frame-capture plan, perception
 capability, worker recipe, zone preview/commit, and the workflow index from
@@ -140,7 +140,7 @@ run in **one** transaction and are complete before the HTTP response returns:
    the workspace has no subscriber.
 
 Cross-camera fusion is **not** in this path. `services/realtime.py` runs a monotonic
-scheduler at most every `STORELENS_LIVE_TICK_INTERVAL_S` (10 ms) over dirty groups only,
+scheduler at most every `MANYSIGHT_LIVE_TICK_INTERVAL_S` (10 ms) over dirty groups only,
 calling `services/multiview.py::run_group_tick` with each source's freshest sample. Missed
 deadlines are counted and dropped, never queued. Every read of fused state
 (`/multiview/current`, `/multiview/occupancy`, a `fused_entity` query, the alert poll loop)
@@ -171,7 +171,7 @@ never call them dropped observations.
   `dashboard/src/analytics.jsx` picks a renderer from the response `shape`, so a presentation
   change must not duplicate a saved query.
 - Alerts fire from two places: per-batch during ingestion, and the periodic
-  `_alert_poll_loop` in `server/app.py`'s lifespan (`STORELENS_ALERT_POLL_INTERVAL_S`, default
+  `_alert_poll_loop` in `server/app.py`'s lifespan (`MANYSIGHT_ALERT_POLL_INTERVAL_S`, default
   15s) for ongoing conditions. That loop also refreshes multiview freshness and expires demo
   sessions, and must never die on a transient error.
 
@@ -184,7 +184,7 @@ closing the last connection to a WAL database runs a checkpoint. `transaction()`
 between the pipeline thread and the event loop; `connect()` still hands out a dedicated
 connection that its caller owns. `ex`/`exmany` are also the invalidation hook for
 `services/config_cache.py` — a raw-connection write path must call `config_cache.invalidate()`
-itself. `STORELENS_SQLITE_SYNCHRONOUS` defaults to `NORMAL`; `FULL` is roughly 5 ms per commit.
+itself. `MANYSIGHT_SQLITE_SYNCHRONOUS` defaults to `NORMAL`; `FULL` is roughly 5 ms per commit.
 There is no ORM and no migration framework: extend the `SCHEMA` string and add an
 additive `PRAGMA table_info`-guarded `ALTER TABLE` inside `init_db()`. Raw observations are
 append-only; current/fused state are bounded read models rebuilt via
@@ -199,9 +199,9 @@ must stay outermost so key-protected deployments answer preflights. Both custom 
 **pure ASGI middleware classes**, not `@app.middleware("http")` — `BaseHTTPMiddleware` pipes
 request and response bodies through a child task and cost about a third of ingestion
 throughput at camera rate. `ApiKeyGuard` enforces
-the optional `STORELENS_API_KEY`, exempting `/health` and the header-only source-connection
-endpoint, which has its own stronger `STORELENS_CREDENTIAL_ACCESS_KEY` check.
-`DemoWorkspaceGuard` routes any request carrying `X-StoreLens-Demo-Session` into an isolated
+the optional `MANYSIGHT_API_KEY`, exempting `/health` and the header-only source-connection
+endpoint, which has its own stronger `MANYSIGHT_CREDENTIAL_ACCESS_KEY` check.
+`DemoWorkspaceGuard` routes any request carrying `X-ManySight-Demo-Session` into an isolated
 temporary SQLite database through `db.using_database()` (a `ContextVar`), so demo sessions never
 touch the real workspace. Temporary paths are never returned publicly; promotion copies a strict
 setup allowlist in one transaction.
@@ -210,7 +210,7 @@ setup allowlist in one transaction.
 
 Three separate stages, documented in [`docs/guided-demo.md`](docs/guided-demo.md): offline
 fixture generation (NVIDIA video → YOLO11n + ByteTrack → raw `DetectionSample` JSONL), offline
-cache generation (that fixture through the *real* StoreLens pipeline), and playable runtime
+cache generation (that fixture through the *real* ManySight pipeline), and playable runtime
 (`server/services/demo_runtime.py` + `dashboard/src/demo-replay*.js`) which advances one master
 clock over the committed provenance-hashed cache. Runtime needs no GPU or weights and performs
 no inference, projection, fusion, query recomputation, or alert evaluation.
@@ -220,7 +220,7 @@ no inference, projection, fusion, query recomputation, or alert evaluation.
 `tests/conftest.py` gives every test a fresh SQLite file by monkeypatching `db.DATA_DIR`/
 `db.DB_PATH` before `init_db()`. The `app` fixture reloads `server.app` because that module runs
 `init_db()`, `rebuild_from_history()`, and the static mount at import time and reads
-`STORELENS_API_KEY` at import time — tests needing auth set the env var before importing (see
+`MANYSIGHT_API_KEY` at import time — tests needing auth set the env var before importing (see
 `tests/test_api_auth.py`). `calibrated_source` provides a 1:1 100px = 1m mapping so projected
 coordinates are hand-checkable.
 

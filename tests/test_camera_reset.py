@@ -42,7 +42,7 @@ def execute(client, token=None, confirmation="RESET CAMERAS"):
 
 def make_camera(client, name, calibrated=True, placed=True):
     source_id = client.post("/api/v1/sources", json={
-        "name": name, "kind": "http", "connection_management": "storelens_managed",
+        "name": name, "kind": "http", "connection_management": "manysight_managed",
         "connection": {"url": f"http://{name.replace(' ', '-').lower()}.local/stream.mjpg"},
     }).json()["id"]
     if placed:
@@ -412,9 +412,9 @@ def test_reset_is_refused_inside_a_guided_demo_session(client, workspace, tmp_pa
 def test_sdk_previews_then_resets(client, workspace, monkeypatch):
     import sys
     sys.path.insert(0, "sdk/python")
-    from storelens import StoreLens
+    from manysight import ManySight
 
-    sdk = StoreLens("http://testserver")
+    sdk = ManySight("http://testserver")
     monkeypatch.setattr(sdk, "_req", lambda method, path, body=None, params=None:
                         client.request(method, "/api/v1" + path, json=body).json())
 
@@ -478,7 +478,7 @@ def test_the_mcp_tool_description_marks_it_destructive_and_gates_it_on_user_inte
 def test_neither_preview_nor_reset_echoes_connection_material(client):
     secret_host = "cam-secret-host.internal"
     client.post("/api/v1/sources", json={
-        "name": "Managed cam", "kind": "rtsp", "connection_management": "storelens_managed",
+        "name": "Managed cam", "kind": "rtsp", "connection_management": "manysight_managed",
         "connection": {"host": secret_host, "port": 554, "path": "/stream1"}})
 
     previewed = json.dumps(preview(client))

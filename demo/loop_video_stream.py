@@ -62,7 +62,7 @@ def serve(video_path: str, host: str, port: int, fps: float) -> None:
         def do_GET(self) -> None:
             if self.path in {"/", "/index.html"}:
                 body = (
-                    "<h1>StoreLens demo camera</h1>"
+                    "<h1>ManySight demo camera</h1>"
                     f"<p>{html.escape(os.path.basename(video_path))}</p>"
                     '<p><a href="/stream.mjpg">Live stream</a> · '
                     '<a href="/snapshot.jpg">Calibration snapshot</a></p>'
@@ -128,7 +128,7 @@ def serve(video_path: str, host: str, port: int, fps: float) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Loop a video as a local StoreLens demo camera.")
+    parser = argparse.ArgumentParser(description="Loop a video as a local ManySight demo camera.")
     parser.add_argument("--video", required=True, help="Path to a video file")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)

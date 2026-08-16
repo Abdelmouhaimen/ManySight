@@ -123,7 +123,7 @@ def test_legacy_webcam_locator_is_promoted_but_external_ref_is_preserved(uniniti
     uninitialized_db.init_db()
     webcam = uninitialized_db.q1("SELECT * FROM sources WHERE id=1")
     external = uninitialized_db.q1("SELECT * FROM sources WHERE id=2")
-    assert webcam["connection_management"] == "storelens_managed"
+    assert webcam["connection_management"] == "manysight_managed"
     assert json.loads(webcam["connection_config_json"]) == {"device_index": 0}
     assert external["connection_management"] == "external_secret"
     assert json.loads(external["locator_json"]) == {"local_secret_ref": "CAMERA_URL"}

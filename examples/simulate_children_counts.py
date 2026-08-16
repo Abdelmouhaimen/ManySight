@@ -1,7 +1,7 @@
 """Post a realistic children-in-main-hall count curve for UI testing.
 
 This is a dashboard/observation-contract simulator, not a vision model. It lets
-you verify the complete StoreLens measurement workflow before connecting a real
+you verify the complete ManySight measurement workflow before connecting a real
 camera. Each row is a `measurement` observation (name="children_present",
 value_kind="gauge") — an instantaneous population sample, never a precomputed
 average or a time-aggregated total.
@@ -19,7 +19,7 @@ import time
 import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sdk", "python"))
-from storelens import StoreLens  # noqa: E402
+from manysight import ManySight  # noqa: E402
 
 
 def _zone_centroid(zone):
@@ -38,7 +38,7 @@ def main():
     args = ap.parse_args()
 
     random.seed(7)
-    sl = StoreLens(args.url, args.api_key)
+    sl = ManySight(args.url, args.api_key)
     zone = sl.zone_by_name(args.zone)
     point_map = None
     if zone is None:

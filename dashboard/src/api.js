@@ -1,18 +1,18 @@
 const BASE = "/api/v1";
 
-export const apiKey = () => localStorage.getItem("storelens_api_key") || "";
-export const demoSessionId = () => localStorage.getItem("storelens_demo_session") || "";
+export const apiKey = () => localStorage.getItem("manysight_api_key") || "";
+export const demoSessionId = () => localStorage.getItem("manysight_demo_session") || "";
 export const setDemoSessionId = (value) => {
-  if (value) localStorage.setItem("storelens_demo_session", value);
-  else localStorage.removeItem("storelens_demo_session");
-  window.dispatchEvent(new Event("storelens-demo-session"));
+  if (value) localStorage.setItem("manysight_demo_session", value);
+  else localStorage.removeItem("manysight_demo_session");
+  window.dispatchEvent(new Event("manysight-demo-session"));
 };
 
 async function request(method, path, body) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (apiKey()) headers["X-API-Key"] = apiKey();
-  if (demoSessionId()) headers["X-StoreLens-Demo-Session"] = demoSessionId();
+  if (demoSessionId()) headers["X-ManySight-Demo-Session"] = demoSessionId();
   const response = await fetch(BASE + path, {
     method,
     headers,
@@ -27,8 +27,8 @@ async function request(method, path, body) {
     }
     if (response.status === 409 && demoSessionId()
         && /demo session is not active/i.test(String(detail))) {
-      localStorage.removeItem("storelens_demo_session");
-      window.dispatchEvent(new Event("storelens-demo-session"));
+      localStorage.removeItem("manysight_demo_session");
+      window.dispatchEvent(new Event("manysight-demo-session"));
       if (!path.startsWith("/demo/")) return request(method, path, body);
     }
     throw new Error(

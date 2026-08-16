@@ -75,7 +75,7 @@ def update_store(body: StorePatch):
 
 @router.post("/store/blueprint")
 def save_blueprint(body: BlueprintTrace):
-    """Convert a browser-side plan trace into StoreLens metric map geometry.
+    """Convert a browser-side plan trace into ManySight metric map geometry.
 
     The source image never reaches this endpoint; only pixel coordinates and a
     user-confirmed distance are persisted.

@@ -14,7 +14,7 @@ import time
 import uuid
 
 sys.path.insert(0, "sdk/python")
-from storelens import StoreLens, CentroidTracker, parse_args_base  # noqa: E402
+from manysight import ManySight, CentroidTracker, parse_args_base  # noqa: E402
 
 
 def yolo_detector():
@@ -68,7 +68,7 @@ def main():
     ap.add_argument("--fps", type=float, default=2.0,
                     help="inference publication rate (default: 2 samples/s)")
     args = ap.parse_args()
-    sl = StoreLens(args.url, args.api_key)
+    sl = ManySight(args.url, args.api_key)
     src = sl.source(args.source)
     if not src["calibrated"]:
         print("WARNING: source is not calibrated — events will keep pixel coords only "
@@ -83,7 +83,7 @@ def main():
     sl.register_job(f"Heatmap – {src['name']}", "person feet positions and processed-frame samples",
                     source_ids=[src["id"]], event_types=["detection", "measurement"])
     print("Contract: this worker sends detections plus an exact-timestamp frame count, "
-          "including zero — StoreLens derives zones, presence, heatmaps, and dwell.")
+          "including zero — ManySight derives zones, presence, heatmaps, and dwell.")
     sl.register_worker("heatmap-tracker", version="1")
     cap = sl.open_capture(src, args.connection)
     tracker = CentroidTracker(max_distance=90)

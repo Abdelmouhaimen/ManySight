@@ -31,7 +31,7 @@
   },
   "turns": [
     {
-      "user": "Using StoreLens MCP, create an alert when there are more than 2 people in Aisle 04.",
+      "user": "Using ManySight MCP, create an alert when there are more than 2 people in Aisle 04.",
       "expect": {
         "actions_required": ["inspect_workspace", "plan_frame_capture", "preview_zone", "ask_user"],
         "actions_forbidden": ["commit_zone", "configure_saved_query", "configure_alert"],

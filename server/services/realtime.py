@@ -9,7 +9,7 @@ skip, or defer a raw observation.
 *Live state favours freshness.* Fusion no longer runs once per arriving camera
 frame. Ingestion publishes the source's newest completed sample here and marks
 its groups dirty; an independent monotonic scheduler runs at most one group tick
-every `STORELENS_LIVE_TICK_INTERVAL_S` (10 ms by default) and consumes only the
+every `MANYSIGHT_LIVE_TICK_INTERVAL_S` (10 ms by default) and consumes only the
 newest state. If four frames arrive from one camera between two ticks, all four
 stay in `events`, and exactly one of them — the newest — takes part in the next
 fusion. That is *coalescing*, not loss: the counter is named accordingly.
@@ -43,11 +43,11 @@ from .. import db
 from . import config_cache
 from .metrics import registry
 
-logger = logging.getLogger("storelens.realtime")
+logger = logging.getLogger("manysight.realtime")
 
 # 100 Hz maximum live fusion cadence.
-TICK_INTERVAL_S = float(os.environ.get("STORELENS_LIVE_TICK_INTERVAL_S", "0.01"))
-ENABLED = os.environ.get("STORELENS_LIVE_SCHEDULER", "1").lower() not in {"0", "false", "no"}
+TICK_INTERVAL_S = float(os.environ.get("MANYSIGHT_LIVE_TICK_INTERVAL_S", "0.01"))
+ENABLED = os.environ.get("MANYSIGHT_LIVE_SCHEDULER", "1").lower() not in {"0", "false", "no"}
 
 # Ingestion and fusion both write, and SQLite serializes writers regardless, so
 # running them on many pool threads buys no parallelism — it only adds GIL
@@ -56,7 +56,7 @@ ENABLED = os.environ.get("STORELENS_LIVE_SCHEDULER", "1").lower() not in {"0", "
 # plain FIFO queue: the same total work, in arrival order, with far less
 # scheduling overhead and much tighter tail latency.
 pipeline_executor = concurrent.futures.ThreadPoolExecutor(
-    max_workers=1, thread_name_prefix="storelens-pipeline")
+    max_workers=1, thread_name_prefix="manysight-pipeline")
 
 
 async def run_in_pipeline(function, *args):

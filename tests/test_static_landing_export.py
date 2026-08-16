@@ -113,7 +113,7 @@ def demo_bundle(tmp_path, monkeypatch):
 
     # Build metadata the same way the platform verifies it.
     metadata = {
-        "type": "storelens_derived_replay_cache",
+        "type": "manysight_derived_replay_cache",
         "schema_version": 1,
         "fixture_version": 3,
         "generated_at": "2026-01-01T00:00:00+00:00",

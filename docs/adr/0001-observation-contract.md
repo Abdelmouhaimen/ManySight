@@ -24,7 +24,7 @@ every worker author, which meant:
 ## Decision
 
 **Workers submit only three direct observation kinds — `detection`, `measurement`,
-`state` — and StoreLens derives everything else**: zone assignment, visits, dwell,
+`state` — and ManySight derives everything else**: zone assignment, visits, dwell,
 occupancy, movement between zones, state transitions and durations, aggregations,
 every analysis, and every alert condition. A worker that tries to submit a
 zone-resolved or platform-derived kind is rejected outright
@@ -77,7 +77,7 @@ stored on the analysis.
 ## Why opaque entity IDs do not equal human identity
 
 `entity_id` is whatever a worker's tracker assigns — a greedy centroid tracker,
-a re-identification model, or nothing at all. StoreLens never joins two entity
+a re-identification model, or nothing at all. ManySight never joins two entity
 IDs across cameras or sessions by similarity, and never stores face embeddings,
 biometric templates, or raw re-identification vectors — only the opaque
 identifier a worker already chose to send. `identity_scope`

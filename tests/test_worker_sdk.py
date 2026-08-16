@@ -3,11 +3,11 @@
 import sys
 from types import SimpleNamespace
 
-from sdk.python.storelens import StoreLens
+from sdk.python.manysight import ManySight
 
 
 def test_detection_frame_count_has_no_analytics_window_metadata():
-    client = StoreLens(batch_size=100)
+    client = ManySight(batch_size=100)
     client.submit_detection_frame(
         source_id=7,
         entity_type="person",
@@ -27,7 +27,7 @@ def test_detection_frame_count_has_no_analytics_window_metadata():
 
 
 def test_preferred_sdk_posts_one_atomic_detection_sample(monkeypatch):
-    client = StoreLens(batch_size=100)
+    client = ManySight(batch_size=100)
     seen = {}
 
     def request(method, path, body=None, params=None):
@@ -51,7 +51,7 @@ def test_preferred_sdk_posts_one_atomic_detection_sample(monkeypatch):
 
 
 def test_empty_sdk_builder_posts_known_zero(monkeypatch):
-    client = StoreLens(batch_size=100)
+    client = ManySight(batch_size=100)
     seen = {}
     monkeypatch.setattr(client, "_req", lambda method, path, body=None, params=None:
                         seen.setdefault("body", body) or {"sample_status": "completed"})
@@ -63,7 +63,7 @@ def test_empty_sdk_builder_posts_known_zero(monkeypatch):
 
 
 def test_detection_frame_count_rejects_negative_values():
-    client = StoreLens(batch_size=100)
+    client = ManySight(batch_size=100)
 
     try:
         client.submit_detection_frame(source_id=7, entity_type="person", count=-1)
@@ -74,7 +74,7 @@ def test_detection_frame_count_rejects_negative_values():
 
 
 def test_three_track_frame_uses_one_exact_timestamp_and_marker_last():
-    client = StoreLens(batch_size=100)
+    client = ManySight(batch_size=100)
     sample_ts = 1786480000.125
     for entity_id in ("A", "B", "C"):
         client.submit_detection(
@@ -117,7 +117,7 @@ def test_three_track_frame_uses_one_exact_timestamp_and_marker_last():
 
 
 def test_explicit_zero_timestamp_is_preserved_for_empty_frame():
-    client = StoreLens(batch_size=100)
+    client = ManySight(batch_size=100)
     client.submit_detection_frame(
         source_id=7,
         entity_type="person",
@@ -132,7 +132,7 @@ def test_explicit_zero_timestamp_is_preserved_for_empty_frame():
 
 
 def test_frame_count_rejects_fractional_or_boolean_values():
-    client = StoreLens(batch_size=100)
+    client = ManySight(batch_size=100)
     for invalid in (1.5, True):
         try:
             client.submit_detection_frame(source_id=7, entity_type="person", count=invalid)
@@ -145,9 +145,9 @@ def test_frame_count_rejects_fractional_or_boolean_values():
 def test_open_capture_prefers_explicit_override(monkeypatch):
     opened = []
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=lambda target: opened.append(target) or target))
-    client = StoreLens(credential_access_key="resolve")
+    client = ManySight(credential_access_key="resolve")
     monkeypatch.setattr(client, "get_source_connection", lambda _sid: (_ for _ in ()).throw(AssertionError("must not resolve")))
-    client.open_capture({"id": 1, "kind": "rtsp", "connection_management": "storelens_managed"}, "override")
+    client.open_capture({"id": 1, "kind": "rtsp", "connection_management": "manysight_managed"}, "override")
     assert opened == ["override"]
 
 
@@ -160,13 +160,13 @@ def test_open_capture_resolves_managed_rtsp_without_logging_secret(monkeypatch, 
         options_during_open.append(__import__("os").environ.get("OPENCV_FFMPEG_CAPTURE_OPTIONS"))
         return target
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=open_capture))
-    client = StoreLens(credential_access_key="resolve")
+    client = ManySight(credential_access_key="resolve")
     monkeypatch.setattr(client, "get_source_connection", lambda _sid: {
-        "kind": "rtsp", "connection_management": "storelens_managed",
+        "kind": "rtsp", "connection_management": "manysight_managed",
         "connection": {"host": "camera.local", "port": 8554, "path": "/live", "scheme": "rtsp", "transport": "tcp",
                        "username": "a@b", "password": "do not print"},
     })
-    client.open_capture({"id": 5, "kind": "rtsp", "connection_management": "storelens_managed"})
+    client.open_capture({"id": 5, "kind": "rtsp", "connection_management": "manysight_managed"})
     assert opened == ["rtsp://a%40b:do%20not%20print@camera.local:8554/live"]
     assert options_during_open == ["rtsp_transport;tcp"]
     assert __import__("os").environ.get("OPENCV_FFMPEG_CAPTURE_OPTIONS") is None
@@ -177,7 +177,7 @@ def test_open_capture_resolves_external_reference(monkeypatch):
     opened = []
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=lambda target: opened.append(target) or target))
     monkeypatch.setenv("LOCAL_CAMERA", "http://127.0.0.1/video")
-    client = StoreLens()
+    client = ManySight()
     client.open_capture({
         "id": 3, "kind": "http", "connection_management": "external_secret",
         "locator": {"local_secret_ref": "LOCAL_CAMERA"},
@@ -186,7 +186,7 @@ def test_open_capture_resolves_external_reference(monkeypatch):
 
 
 def test_get_source_connection_uses_dedicated_header(monkeypatch):
-    client = StoreLens(api_key="normal", credential_access_key="privileged")
+    client = ManySight(api_key="normal", credential_access_key="privileged")
     seen = {}
 
     class Response:
@@ -202,49 +202,49 @@ def test_get_source_connection_uses_dedicated_header(monkeypatch):
 
     monkeypatch.setattr(client.session, "get", fake_get)
     client.get_source_connection(7)
-    assert seen["headers"] == {"X-StoreLens-Credential-Key": "privileged"}
+    assert seen["headers"] == {"X-ManySight-Credential-Key": "privileged"}
 
 
 def test_open_capture_resolves_managed_webcam(monkeypatch):
     opened = []
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=lambda target: opened.append(target) or target))
-    client = StoreLens()
+    client = ManySight()
     monkeypatch.setattr(client, "get_source_connection", lambda _sid: (_ for _ in ()).throw(AssertionError("webcam needs no secret lookup")))
-    client.open_capture({"id": 2, "kind": "webcam", "connection_management": "storelens_managed", "connection": {"device_index": 2}})
+    client.open_capture({"id": 2, "kind": "webcam", "connection_management": "manysight_managed", "connection": {"device_index": 2}})
     assert opened == [2]
 
 
 def test_open_capture_resolves_managed_http_basic(monkeypatch):
     opened = []
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=lambda target: opened.append(target) or target))
-    client = StoreLens(credential_access_key="resolve")
+    client = ManySight(credential_access_key="resolve")
     monkeypatch.setattr(client, "get_source_connection", lambda _sid: {
         "kind": "http", "connection": {"url": "http://camera.local/video?x=1", "auth_type": "basic",
                                         "username": "user name", "password": "p@ss"},
     })
-    client.open_capture({"id": 4, "kind": "http", "connection_management": "storelens_managed"})
+    client.open_capture({"id": 4, "kind": "http", "connection_management": "manysight_managed"})
     assert opened == ["http://user%20name:p%40ss@camera.local/video?x=1"]
 
 
 def test_open_capture_resolves_managed_file(monkeypatch):
     opened = []
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=lambda target: opened.append(target) or target))
-    client = StoreLens(credential_access_key="resolve")
+    client = ManySight(credential_access_key="resolve")
     monkeypatch.setattr(client, "get_source_connection", lambda _sid: {
         "kind": "file", "connection": {"path": r"C:\videos\demo.mp4"},
     })
-    client.open_capture({"id": 8, "kind": "file", "connection_management": "storelens_managed"})
+    client.open_capture({"id": 8, "kind": "file", "connection_management": "manysight_managed"})
     assert opened == [r"C:\videos\demo.mp4"]
 
 
 def test_open_capture_configuration_error_redacts_resolved_values(monkeypatch):
     monkeypatch.setitem(sys.modules, "cv2", SimpleNamespace(VideoCapture=lambda target: target))
-    client = StoreLens(credential_access_key="resolve")
+    client = ManySight(credential_access_key="resolve")
     monkeypatch.setattr(client, "get_source_connection", lambda _sid: {
         "kind": "rtsp", "connection": {"password": "must-not-leak"},
     })
     try:
-        client.open_capture({"id": 6, "kind": "rtsp", "connection_management": "storelens_managed"})
+        client.open_capture({"id": 6, "kind": "rtsp", "connection_management": "manysight_managed"})
     except RuntimeError as exc:
         assert "source 6 (rtsp)" in str(exc)
         assert "must-not-leak" not in str(exc)

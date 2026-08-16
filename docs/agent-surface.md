@@ -164,7 +164,7 @@ curated tool that supersedes it. They are simply not advertised.
 A deployment that still drives the old tool names can re-advertise all of them:
 
 ```bash
-STORELENS_MCP_LEGACY_TOOLS=1 python mcp_server/server.py
+MANYSIGHT_MCP_LEGACY_TOOLS=1 python mcp_server/server.py
 ```
 
 That yields 78 tools (19 curated + 59 legacy) and is a migration path, not a

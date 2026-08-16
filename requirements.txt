@@ -1,4 +1,4 @@
-# StoreLens — install with: pip install -r requirements.txt
+# ManySight — install with: pip install -r requirements.txt
 # Latest stable versions; no pins.
 fastapi
 uvicorn[standard]

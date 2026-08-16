@@ -1,6 +1,6 @@
 """Logical observation sources, managed connection metadata, and geometry.
 
-StoreLens never opens or proxies an operational source. The isolated guided demo serves
+ManySight never opens or proxies an operational source. The isolated guided demo serves
 only its allowlisted local sample media. Workers may explicitly resolve a managed
 connection through a separately authenticated endpoint; ordinary source reads remain
 safe to display and never contain credentials.
@@ -23,7 +23,7 @@ router = APIRouter(tags=["sources"])
 
 KINDS = {"rtsp", "webrtc", "http", "webcam", "file", "sensor", "custom"}
 CONNECTION_MODES = {"agent_local", "edge_gateway"}
-CONNECTION_MANAGEMENT = {"external_secret", "storelens_managed"}
+CONNECTION_MANAGEMENT = {"external_secret", "manysight_managed"}
 VIDEO_KINDS = {"rtsp", "webrtc", "http", "webcam", "file"}
 FORBIDDEN_LOCATOR_KEYS = {
     "url", "uri", "username", "password", "token", "api_key", "apikey",
@@ -101,7 +101,7 @@ def _validate_source(kind: str, connection_mode: str, management: str,
                     raise HTTPException(
                         422,
                         f"{path}.{key} may contain camera access or credentials; use a "
-                        "storelens_managed connection or an external_secret local_secret_ref instead",
+                        "manysight_managed connection or an external_secret local_secret_ref instead",
                     )
                 walk(item, f"{path}.{key}")
         elif isinstance(value, list):
@@ -110,7 +110,7 @@ def _validate_source(kind: str, connection_mode: str, management: str,
         elif isinstance(value, str) and re.match(r"^(rtsp|rtsps|https?)://", value, re.I):
             raise HTTPException(
                 422,
-                f"{path} must not contain a network camera URL; use a storelens_managed "
+                f"{path} must not contain a network camera URL; use a manysight_managed "
                 "connection or an external_secret local_secret_ref instead",
             )
 
@@ -124,7 +124,7 @@ def _validate_source(kind: str, connection_mode: str, management: str,
         return
 
     if locator:
-        raise HTTPException(422, "storelens_managed sources use connection, not locator")
+        raise HTTPException(422, "manysight_managed sources use connection, not locator")
     if kind not in {"webcam", "rtsp", "http", "file"}:
         raise HTTPException(422, f"managed connections are not supported for source kind {kind}")
     allowed = {
@@ -180,8 +180,8 @@ def _validate_source(kind: str, connection_mode: str, management: str,
 def _validate_credentials(kind: str, management: str, values: dict | None):
     if values is None:
         return
-    if management != "storelens_managed":
-        raise HTTPException(422, "credentials are only valid for storelens_managed sources")
+    if management != "manysight_managed":
+        raise HTTPException(422, "credentials are only valid for manysight_managed sources")
     if not values:
         raise HTTPException(422, "credentials must not be empty; use clear_credentials to remove them")
     allowed = {"rtsp": {"username", "password"}, "http": {"username", "password"}}.get(kind, set())
@@ -320,7 +320,7 @@ def update_source(source_id: int, body: SourcePatch):
     management = body.connection_management or row.get("connection_management") or "external_secret"
     connection = body.connection if body.connection is not None else db.jload(row.get("connection_config_json"), {})
     locator = body.locator if body.locator is not None else db.jload(row.get("locator_json"), {})
-    if body.connection_management == "storelens_managed" and body.locator is None:
+    if body.connection_management == "manysight_managed" and body.locator is None:
         locator = {}
     if body.connection_management == "external_secret" and body.connection is None:
         connection = {}
@@ -352,7 +352,7 @@ def update_source(source_id: int, body: SourcePatch):
     try:
         if sets:
             con.execute(f"UPDATE sources SET {', '.join(f'{k}=?' for k in sets)} WHERE id=?", (*sets.values(), source_id))
-        if body.clear_credentials or management != "storelens_managed":
+        if body.clear_credentials or management != "manysight_managed":
             con.execute("DELETE FROM source_credentials WHERE source_id=?", (source_id,))
         elif encrypted:
             now = db.now()
@@ -368,10 +368,10 @@ def update_source(source_id: int, body: SourcePatch):
 
 
 def _require_credential_access(request: Request):
-    expected = os.environ.get("STORELENS_CREDENTIAL_ACCESS_KEY") or os.environ.get("STORELENS_API_KEY")
+    expected = os.environ.get("MANYSIGHT_CREDENTIAL_ACCESS_KEY") or os.environ.get("MANYSIGHT_API_KEY")
     if not expected:
-        raise HTTPException(503, "credential resolution is disabled; configure STORELENS_CREDENTIAL_ACCESS_KEY")
-    supplied = request.headers.get("x-storelens-credential-key") or request.headers.get("x-api-key")
+        raise HTTPException(503, "credential resolution is disabled; configure MANYSIGHT_CREDENTIAL_ACCESS_KEY")
+    supplied = request.headers.get("x-manysight-credential-key") or request.headers.get("x-api-key")
     if not supplied or not hmac.compare_digest(supplied, expected):
         raise HTTPException(401, "invalid or missing credential access key")
 
@@ -392,7 +392,7 @@ def get_source_connection(source_id: int, request: Request):
         "connection": db.jload(row.get("connection_config_json"), {}),
         "connection_revision": int(row.get("connection_revision") or 0),
     }
-    if management == "storelens_managed":
+    if management == "manysight_managed":
         stored = db.q1("SELECT encrypted_payload FROM source_credentials WHERE source_id=?", (source_id,))
         if stored:
             try:

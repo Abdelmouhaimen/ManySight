@@ -16,7 +16,7 @@ import sys
 import time
 
 sys.path.insert(0, "sdk/python")
-from storelens import StoreLens, CentroidTracker, parse_args_base  # noqa: E402
+from manysight import ManySight, CentroidTracker, parse_args_base  # noqa: E402
 from heatmap_tracker import motion_detector, submit_tracked_frame  # noqa: E402
 
 
@@ -24,7 +24,7 @@ def main():
     ap = parse_args_base(__doc__)
     ap.add_argument("--zones", default="", help="comma-separated zone names, informational only")
     args = ap.parse_args()
-    sl = StoreLens(args.url, args.api_key)
+    sl = ManySight(args.url, args.api_key)
     src = sl.source(args.source)
     if not src["calibrated"]:
         raise SystemExit("Source must be calibrated (Store Map tab → ⌗) for dwell analysis.")
@@ -37,13 +37,13 @@ def main():
               "appear once zones are drawn in the Store Map tab.")
     else:
         print(f"zones on this floor plan: {[z['name'] for z in zones]} "
-              "(StoreLens assigns them from geometry — this worker never resolves one itself)")
+              "(ManySight assigns them from geometry — this worker never resolves one itself)")
 
     sl.register_job(f"Dwell – {src['name']}", "tracked detections for dwell/visit derivation",
                     source_ids=[src["id"]], event_types=["detection", "measurement"])
     sl.register_worker("dwell-zones", version="1")
     print("Contract: every processed frame sends detections followed by one exact-timestamp "
-          "frame count, including zero; StoreLens derives zone visits and dwell duration.")
+          "frame count, including zero; ManySight derives zone visits and dwell duration.")
     detect = motion_detector()
     cap = sl.open_capture(src, args.connection)
     tracker = CentroidTracker(max_distance=90)

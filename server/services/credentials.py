@@ -1,7 +1,7 @@
 """Authenticated encryption for source credentials.
 
 The key is deployment configuration, never database state.  A missing or malformed
-key fails closed: StoreLens will still serve safe metadata but cannot store or resolve
+key fails closed: ManySight will still serve safe metadata but cannot store or resolve
 managed credentials until the operator configures one.
 """
 import base64
@@ -10,9 +10,15 @@ import os
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-KEY_ENV = "STORELENS_CREDENTIAL_KEY"
-AAD = b"storelens-source-credentials-v1"
-PREFIX = "v1:"
+KEY_ENV = "MANYSIGHT_CREDENTIAL_KEY"
+# The associated data binds a ciphertext to this product's credential store, so
+# it is part of the envelope, not a label. It changed with the project name, and
+# AES-GCM authenticates it: ciphertext written under the previous associated
+# data cannot be decrypted. The prefix is bumped alongside it so that shows up as
+# an explicit unsupported-version error rather than an opaque decryption failure,
+# and the operator is told to save the credential again.
+AAD = b"manysight-source-credentials-v1"
+PREFIX = "v2:"
 
 
 class CredentialConfigurationError(RuntimeError):
@@ -61,7 +67,9 @@ def encrypt(payload: dict) -> str:
 
 def decrypt(value: str) -> dict:
     if not value.startswith(PREFIX):
-        raise CredentialDecryptionError("unsupported credential ciphertext version")
+        raise CredentialDecryptionError(
+            "this credential was stored by an earlier pre-release build and cannot be read; "
+            "save the source's credentials again")
     try:
         encoded = value[len(PREFIX):]
         raw = base64.urlsafe_b64decode((encoded + "=" * (-len(encoded) % 4)).encode())
