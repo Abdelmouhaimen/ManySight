@@ -22,6 +22,11 @@ def _sample_predicate(sample_id: str | None) -> tuple[str, list]:
     return "sample_id IS NULL AND ts=?", []
 
 
+def _affected_sort_key(value: tuple[int, str | None, float, str]) -> tuple[float, int, str, str]:
+    source_id, sample_id, timestamp, entity_type = value
+    return timestamp, source_id, entity_type, sample_id or ""
+
+
 def materialize_affected(enriched: list[dict]) -> list[dict]:
     """Attempt to commit every detection sample touched by an ingestion batch.
 
@@ -45,7 +50,7 @@ def materialize_affected(enriched: list[dict]) -> list[dict]:
     committed = []
     con = db.connect()
     try:
-        for source_id, sid, timestamp, entity_type in sorted(affected, key=lambda value: value[2]):
+        for source_id, sid, timestamp, entity_type in sorted(affected, key=_affected_sort_key):
             frame = materialize_sample(source_id, entity_type, sid, timestamp, connection=con)
             if frame:
                 committed.append(frame)

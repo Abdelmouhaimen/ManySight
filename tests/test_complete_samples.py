@@ -101,3 +101,18 @@ def test_current_scene_rebuilds_from_persisted_observations(client, calibrated_s
     frame = current(client, calibrated_source)[0]
     assert frame["sample_id"] == "restart"
     assert [row["entity_id"] for row in frame["detections"]] == ["survivor"]
+
+
+def test_synchronous_samples_have_a_total_materialization_order():
+    affected = [
+        (4, "camera-4-frame-0", 1000.0, "person"),
+        (1, "camera-1-frame-0", 1000.0, "person"),
+        (3, "camera-3-frame-0", 1000.0, "person"),
+        (2, "camera-2-frame-0", 1000.0, "person"),
+    ]
+    assert sorted(affected, key=current_state._affected_sort_key) == [
+        (1, "camera-1-frame-0", 1000.0, "person"),
+        (2, "camera-2-frame-0", 1000.0, "person"),
+        (3, "camera-3-frame-0", 1000.0, "person"),
+        (4, "camera-4-frame-0", 1000.0, "person"),
+    ]

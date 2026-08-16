@@ -129,11 +129,11 @@
     "zone_name": "Aisle 04"
   },
   "metadata": {
-    "derivation_code_hash": "c8b6112417d2e4594d7b564108c80c28c378bdc90c5c4ac1dd977d4d8ae9ced8",
+    "derivation_code_hash": "d4ffe7db57680b2729728e57c56194f9d3fdb3f19dfeb6a114005f841826fe02",
     "duration_s": 20.066666666666666,
     "fixture_version": 3,
     "fusion_config_hash": "9a65ff1c129d0712e8a8ffa22f61cb6c742227e0c45ddeb1ba7f4db7a3ea8ac1",
-    "generated_at": "2026-08-14T07:47:37+00:00",
+    "generated_at": "2026-08-16T00:32:49+00:00",
     "geometry_hash": "072ba23e23cf8e3a2a158cb778e2579b26ca75f3eddfe14678c497e9ffdac33a",
     "media": {
       "Warehouse_Synthetic_Cam001": {
@@ -157,9 +157,9 @@
         "sha256": "9425358ef38eca412cc9f8c805066a3f23688163fe5379a2eae86b412ee805b4"
       }
     },
-    "payload_sha256": "c09713f06b0b2da8fadcb43c010b66de46139dbbb5a9fce758ccc09adcc2eacf",
+    "payload_sha256": "6dce970084b330a446e77448901ca2335496ed4767274b391777154f1c5044dc",
     "raw_fixture_sha256": "416e322a44857e5103e9e96b6f45db7e98b8a822046f336bc773e5fc28abca2f",
-    "recipe_sha256": "aff4281f7692c977ac89074c4fedf6a05c615bcc02fa3044fe49c6ac5dad1e00",
+    "recipe_sha256": "e715e1817785d7810ae08543df25b9240bb321a15d5b23d8ef0f2c8e4de39ed1",
     "recipe_version": "nvidia-mv3dt-mtmc12-cam1-4-master-replay-v4",
     "sample_count": 201,
     "sample_rate_hz": 10.0,
@@ -211,53 +211,9 @@
       ],
       "fused_entities": [
         {
-          "confidence": 0.839355,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000001",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 20.904443,
-                "y": 22.967085
-              },
-              "source_event_id": 6,
-              "source_key": "Warehouse_Synthetic_Cam003"
-            }
-          ],
-          "point_map": {
-            "x": 20.904443,
-            "y": 22.967085
-          },
-          "quality": "known",
-          "zone_id": null
-        },
-        {
-          "confidence": 0.742188,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000002",
-          "members": [
-            {
-              "local_entity_id": "2",
-              "point_map": {
-                "x": 18.636836,
-                "y": 10.205853
-              },
-              "source_event_id": 7,
-              "source_key": "Warehouse_Synthetic_Cam003"
-            }
-          ],
-          "point_map": {
-            "x": 18.636836,
-            "y": 10.205853
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.825684,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -279,7 +235,7 @@
         {
           "confidence": 0.280518,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000004",
+          "fused_entity_id": "F0000000000000002",
           "members": [
             {
               "local_entity_id": "2",
@@ -299,31 +255,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.865723,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 18.719974,
-                "y": 9.947296
-              },
-              "source_event_id": 9,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 18.719974,
-            "y": 9.947296
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.778809,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -341,6 +275,72 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.839355,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000004",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 20.904443,
+                "y": 22.967085
+              },
+              "source_event_id": 6,
+              "source_key": "Warehouse_Synthetic_Cam003"
+            }
+          ],
+          "point_map": {
+            "x": 20.904443,
+            "y": 22.967085
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
+          "confidence": 0.742188,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000005",
+          "members": [
+            {
+              "local_entity_id": "2",
+              "point_map": {
+                "x": 18.636836,
+                "y": 10.205853
+              },
+              "source_event_id": 7,
+              "source_key": "Warehouse_Synthetic_Cam003"
+            }
+          ],
+          "point_map": {
+            "x": 18.636836,
+            "y": 10.205853
+          },
+          "quality": "known",
+          "zone_id": 1
+        },
+        {
+          "confidence": 0.865723,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 18.719974,
+                "y": 9.947296
+              },
+              "source_event_id": 9,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 18.719974,
+            "y": 9.947296
+          },
+          "quality": "known",
+          "zone_id": 1
         }
       ],
       "index": 0,
@@ -387,53 +387,9 @@
       "alert_events": [],
       "fused_entities": [
         {
-          "confidence": 0.854492,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000001",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 20.860051,
-                "y": 22.967088
-              },
-              "source_event_id": 16,
-              "source_key": "Warehouse_Synthetic_Cam003"
-            }
-          ],
-          "point_map": {
-            "x": 20.860051,
-            "y": 22.967088
-          },
-          "quality": "known",
-          "zone_id": null
-        },
-        {
-          "confidence": 0.637207,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000002",
-          "members": [
-            {
-              "local_entity_id": "2",
-              "point_map": {
-                "x": 18.669565,
-                "y": 10.302444
-              },
-              "source_event_id": 17,
-              "source_key": "Warehouse_Synthetic_Cam003"
-            }
-          ],
-          "point_map": {
-            "x": 18.669565,
-            "y": 10.302444
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.772461,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -455,7 +411,7 @@
         {
           "confidence": 0.319092,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000004",
+          "fused_entity_id": "F0000000000000002",
           "members": [
             {
               "local_entity_id": "2",
@@ -475,31 +431,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.835938,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 18.751591,
-                "y": 9.85724
-              },
-              "source_event_id": 19,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 18.751591,
-            "y": 9.85724
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.810547,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -517,6 +451,72 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.854492,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000004",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 20.860051,
+                "y": 22.967088
+              },
+              "source_event_id": 16,
+              "source_key": "Warehouse_Synthetic_Cam003"
+            }
+          ],
+          "point_map": {
+            "x": 20.860051,
+            "y": 22.967088
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
+          "confidence": 0.637207,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000005",
+          "members": [
+            {
+              "local_entity_id": "2",
+              "point_map": {
+                "x": 18.669565,
+                "y": 10.302444
+              },
+              "source_event_id": 17,
+              "source_key": "Warehouse_Synthetic_Cam003"
+            }
+          ],
+          "point_map": {
+            "x": 18.669565,
+            "y": 10.302444
+          },
+          "quality": "known",
+          "zone_id": 1
+        },
+        {
+          "confidence": 0.835938,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 18.751591,
+                "y": 9.85724
+              },
+              "source_event_id": 19,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 18.751591,
+            "y": 9.85724
+          },
+          "quality": "known",
+          "zone_id": 1
         }
       ],
       "index": 1,
@@ -563,31 +563,9 @@
       "alert_events": [],
       "fused_entities": [
         {
-          "confidence": 0.851562,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000001",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 20.786827,
-                "y": 22.967093
-              },
-              "source_event_id": 26,
-              "source_key": "Warehouse_Synthetic_Cam003"
-            }
-          ],
-          "point_map": {
-            "x": 20.786827,
-            "y": 22.967093
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.799316,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -609,7 +587,7 @@
         {
           "confidence": 0.342529,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000004",
+          "fused_entity_id": "F0000000000000002",
           "members": [
             {
               "local_entity_id": "2",
@@ -629,31 +607,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.813477,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 18.747934,
-                "y": 9.77726
-              },
-              "source_event_id": 28,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 18.747934,
-            "y": 9.77726
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.803223,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -671,6 +627,50 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.851562,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000004",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 20.786827,
+                "y": 22.967093
+              },
+              "source_event_id": 26,
+              "source_key": "Warehouse_Synthetic_Cam003"
+            }
+          ],
+          "point_map": {
+            "x": 20.786827,
+            "y": 22.967093
+          },
+          "quality": "known",
+          "zone_id": 1
+        },
+        {
+          "confidence": 0.813477,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 18.747934,
+                "y": 9.77726
+              },
+              "source_event_id": 28,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 18.747934,
+            "y": 9.77726
+          },
+          "quality": "known",
+          "zone_id": 1
         }
       ],
       "index": 2,
@@ -719,7 +719,7 @@
         {
           "confidence": 0.75,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -741,7 +741,7 @@
         {
           "confidence": 0.256836,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000004",
+          "fused_entity_id": "F0000000000000002",
           "members": [
             {
               "local_entity_id": "2",
@@ -761,9 +761,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.762207,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 30.259898,
+                "y": 12.344729
+              },
+              "source_event_id": 33,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 30.259898,
+            "y": 12.344729
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.608764,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "2",
@@ -790,28 +812,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.762207,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 30.259898,
-                "y": 12.344729
-              },
-              "source_event_id": 33,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 30.259898,
-            "y": 12.344729
-          },
-          "quality": "known",
-          "zone_id": null
         }
       ],
       "index": 3,
@@ -860,7 +860,7 @@
         {
           "confidence": 0.732422,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -880,9 +880,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.647949,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 30.242326,
+                "y": 12.413059
+              },
+              "source_event_id": 41,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 30.242326,
+            "y": 12.413059
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.606689,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "2",
@@ -909,28 +931,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.647949,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 30.242326,
-                "y": 12.413059
-              },
-              "source_event_id": 41,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 30.242326,
-            "y": 12.413059
-          },
-          "quality": "known",
-          "zone_id": null
         }
       ],
       "index": 4,
@@ -979,7 +979,7 @@
         {
           "confidence": 0.800293,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -999,9 +999,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.78125,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 30.240965,
+                "y": 12.459556
+              },
+              "source_event_id": 49,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 30.240965,
+            "y": 12.459556
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.613769,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "2",
@@ -1028,28 +1050,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.78125,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 30.240965,
-                "y": 12.459556
-              },
-              "source_event_id": 49,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 30.240965,
-            "y": 12.459556
-          },
-          "quality": "known",
-          "zone_id": null
         }
       ],
       "index": 5,
@@ -1098,7 +1098,7 @@
         {
           "confidence": 0.736328,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -1118,9 +1118,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.737793,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 30.21601,
+                "y": 12.491016
+              },
+              "source_event_id": 57,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 30.21601,
+            "y": 12.491016
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.753662,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "2",
@@ -1147,28 +1169,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.737793,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 30.21601,
-                "y": 12.491016
-              },
-              "source_event_id": 57,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 30.21601,
-            "y": 12.491016
-          },
-          "quality": "known",
-          "zone_id": null
         }
       ],
       "index": 6,
@@ -1217,7 +1217,7 @@
         {
           "confidence": 0.835938,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -1237,9 +1237,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.689453,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 30.154279,
+                "y": 12.79494
+              },
+              "source_event_id": 65,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 30.154279,
+            "y": 12.79494
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.825684,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "2",
@@ -1266,28 +1288,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.689453,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 30.154279,
-                "y": 12.79494
-              },
-              "source_event_id": 65,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 30.154279,
-            "y": 12.79494
-          },
-          "quality": "known",
-          "zone_id": null
         }
       ],
       "index": 7,
@@ -1336,7 +1336,7 @@
         {
           "confidence": 0.84082,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -1356,9 +1356,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.751465,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 30.141262,
+                "y": 12.944454
+              },
+              "source_event_id": 73,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 30.141262,
+            "y": 12.944454
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.818604,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "2",
@@ -1385,28 +1407,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.751465,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 30.141262,
-                "y": 12.944454
-              },
-              "source_event_id": 73,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 30.141262,
-            "y": 12.944454
-          },
-          "quality": "known",
-          "zone_id": null
         }
       ],
       "index": 8,
@@ -1455,7 +1455,7 @@
         {
           "confidence": 0.855469,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -1475,9 +1475,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.773926,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 30.112486,
+                "y": 13.178021
+              },
+              "source_event_id": 81,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 30.112486,
+            "y": 13.178021
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.771485,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "2",
@@ -1504,28 +1526,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.773926,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 30.112486,
-                "y": 13.178021
-              },
-              "source_event_id": 81,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 30.112486,
-            "y": 13.178021
-          },
-          "quality": "known",
-          "zone_id": null
         },
         {
           "confidence": 0.626953,
@@ -1596,7 +1596,7 @@
         {
           "confidence": 0.82373,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -1616,9 +1616,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.809082,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 30.100899,
+                "y": 13.277677
+              },
+              "source_event_id": 90,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 30.100899,
+            "y": 13.277677
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.787598,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "2",
@@ -1645,28 +1667,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.809082,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 30.100899,
-                "y": 13.277677
-              },
-              "source_event_id": 90,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 30.100899,
-            "y": 13.277677
-          },
-          "quality": "known",
-          "zone_id": null
         },
         {
           "confidence": 0.875977,
@@ -1737,7 +1737,7 @@
         {
           "confidence": 0.830566,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -1757,31 +1757,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.870117,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 19.269385,
-                "y": 8.938042
-              },
-              "source_event_id": 103,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 19.269385,
-            "y": 8.938042
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.777832,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -1799,6 +1777,28 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.870117,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 19.269385,
+                "y": 8.938042
+              },
+              "source_event_id": 103,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 19.269385,
+            "y": 8.938042
+          },
+          "quality": "known",
+          "zone_id": 1
         },
         {
           "confidence": 0.885254,
@@ -1869,7 +1869,7 @@
         {
           "confidence": 0.811523,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -1889,31 +1889,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.867676,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 19.266595,
-                "y": 8.662564
-              },
-              "source_event_id": 111,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 19.266595,
-            "y": 8.662564
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.749023,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -1931,6 +1909,28 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.867676,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 19.266595,
+                "y": 8.662564
+              },
+              "source_event_id": 111,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 19.266595,
+            "y": 8.662564
+          },
+          "quality": "known",
+          "zone_id": 1
         },
         {
           "confidence": 0.805176,
@@ -2001,7 +2001,7 @@
         {
           "confidence": 0.880371,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -2021,31 +2021,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.843262,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 19.287644,
-                "y": 8.527257
-              },
-              "source_event_id": 119,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 19.287644,
-            "y": 8.527257
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.802734,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -2063,6 +2041,28 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.843262,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 19.287644,
+                "y": 8.527257
+              },
+              "source_event_id": 119,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 19.287644,
+            "y": 8.527257
+          },
+          "quality": "known",
+          "zone_id": 1
         },
         {
           "confidence": 0.816895,
@@ -2133,7 +2133,7 @@
         {
           "confidence": 0.886719,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -2153,31 +2153,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.842773,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 19.277715,
-                "y": 8.417179
-              },
-              "source_event_id": 127,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 19.277715,
-            "y": 8.417179
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.823242,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -2195,6 +2173,28 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.842773,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 19.277715,
+                "y": 8.417179
+              },
+              "source_event_id": 127,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 19.277715,
+            "y": 8.417179
+          },
+          "quality": "known",
+          "zone_id": 1
         },
         {
           "confidence": 0.856934,
@@ -2265,7 +2265,7 @@
         {
           "confidence": 0.822266,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -2285,9 +2285,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.793945,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 29.878195,
+                "y": 13.847703
+              },
+              "source_event_id": 131,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 29.878195,
+            "y": 13.847703
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.499878,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "7",
@@ -2314,28 +2336,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.793945,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 29.878195,
-                "y": 13.847703
-              },
-              "source_event_id": 131,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 29.878195,
-            "y": 13.847703
-          },
-          "quality": "known",
-          "zone_id": null
         },
         {
           "confidence": 0.724121,
@@ -2406,7 +2406,7 @@
         {
           "confidence": 0.813477,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -2426,9 +2426,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.805664,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 29.817886,
+                "y": 13.874716
+              },
+              "source_event_id": 140,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 29.817886,
+            "y": 13.874716
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.5896,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "7",
@@ -2455,28 +2477,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.805664,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 29.817886,
-                "y": 13.874716
-              },
-              "source_event_id": 140,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 29.817886,
-            "y": 13.874716
-          },
-          "quality": "known",
-          "zone_id": null
         },
         {
           "confidence": 0.746094,
@@ -2547,7 +2547,7 @@
         {
           "confidence": 0.742188,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -2567,9 +2567,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.853516,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 29.777061,
+                "y": 13.918221
+              },
+              "source_event_id": 149,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 29.777061,
+            "y": 13.918221
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.571778,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "7",
@@ -2596,28 +2618,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.853516,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 29.777061,
-                "y": 13.918221
-              },
-              "source_event_id": 149,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 29.777061,
-            "y": 13.918221
-          },
-          "quality": "known",
-          "zone_id": null
         },
         {
           "confidence": 0.336426,
@@ -2688,7 +2688,7 @@
         {
           "confidence": 0.82666,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -2708,31 +2708,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.88623,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 19.409165,
-                "y": 8.012694
-              },
-              "source_event_id": 162,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 19.409165,
-            "y": 8.012694
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.86084,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -2750,6 +2728,28 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.88623,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 19.409165,
+                "y": 8.012694
+              },
+              "source_event_id": 162,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 19.409165,
+            "y": 8.012694
+          },
+          "quality": "known",
+          "zone_id": 1
         },
         {
           "confidence": 0.46582,
@@ -2820,7 +2820,7 @@
         {
           "confidence": 0.790039,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -2840,31 +2840,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.890137,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 19.395166,
-                "y": 7.805712
-              },
-              "source_event_id": 170,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 19.395166,
-            "y": 7.805712
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.86377,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -2882,6 +2860,28 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.890137,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 19.395166,
+                "y": 7.805712
+              },
+              "source_event_id": 170,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 19.395166,
+            "y": 7.805712
+          },
+          "quality": "known",
+          "zone_id": 1
         },
         {
           "confidence": 0.803711,
@@ -2952,7 +2952,7 @@
         {
           "confidence": 0.78125,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -2972,31 +2972,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.875977,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 19.433012,
-                "y": 7.71268
-              },
-              "source_event_id": 178,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 19.433012,
-            "y": 7.71268
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.859375,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -3014,6 +2992,28 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.875977,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 19.433012,
+                "y": 7.71268
+              },
+              "source_event_id": 178,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 19.433012,
+            "y": 7.71268
+          },
+          "quality": "known",
+          "zone_id": 1
         },
         {
           "confidence": 0.830078,
@@ -3084,7 +3084,7 @@
         {
           "confidence": 0.832031,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -3104,9 +3104,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.876953,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 29.614931,
+                "y": 14.568093
+              },
+              "source_event_id": 182,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 29.614931,
+            "y": 14.568093
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.711914,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "7",
@@ -3133,28 +3155,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.876953,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 29.614931,
-                "y": 14.568093
-              },
-              "source_event_id": 182,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 29.614931,
-            "y": 14.568093
-          },
-          "quality": "known",
-          "zone_id": null
         },
         {
           "confidence": 0.574707,
@@ -3225,7 +3225,7 @@
         {
           "confidence": 0.814453,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -3245,9 +3245,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.866699,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 29.612161,
+                "y": 14.604301
+              },
+              "source_event_id": 191,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 29.612161,
+            "y": 14.604301
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.519043,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "7",
@@ -3274,28 +3296,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.866699,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 29.612161,
-                "y": 14.604301
-              },
-              "source_event_id": 191,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 29.612161,
-            "y": 14.604301
-          },
-          "quality": "known",
-          "zone_id": null
         },
         {
           "confidence": 0.858887,
@@ -3366,7 +3366,7 @@
         {
           "confidence": 0.769043,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -3386,31 +3386,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.312256,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 19.715695,
-                "y": 7.530196
-              },
-              "source_event_id": 204,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 19.715695,
-            "y": 7.530196
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.84668,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -3428,6 +3406,28 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.312256,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 19.715695,
+                "y": 7.530196
+              },
+              "source_event_id": 204,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 19.715695,
+            "y": 7.530196
+          },
+          "quality": "known",
+          "zone_id": 1
         },
         {
           "confidence": 0.674805,
@@ -3498,7 +3498,7 @@
         {
           "confidence": 0.806152,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -3518,9 +3518,31 @@
           "zone_id": null
         },
         {
+          "confidence": 0.840332,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000003",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 29.5456,
+                "y": 14.703326
+              },
+              "source_event_id": 208,
+              "source_key": "Warehouse_Synthetic_Cam002"
+            }
+          ],
+          "point_map": {
+            "x": 29.5456,
+            "y": 14.703326
+          },
+          "quality": "known",
+          "zone_id": null
+        },
+        {
           "confidence": 0.678467,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
+          "fused_entity_id": "F0000000000000006",
           "members": [
             {
               "local_entity_id": "7",
@@ -3547,28 +3569,6 @@
           },
           "quality": "known",
           "zone_id": 1
-        },
-        {
-          "confidence": 0.840332,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 29.5456,
-                "y": 14.703326
-              },
-              "source_event_id": 208,
-              "source_key": "Warehouse_Synthetic_Cam002"
-            }
-          ],
-          "point_map": {
-            "x": 29.5456,
-            "y": 14.703326
-          },
-          "quality": "known",
-          "zone_id": null
         },
         {
           "confidence": 0.823242,
@@ -3639,7 +3639,7 @@
         {
           "confidence": 0.847656,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -3659,31 +3659,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.533203,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 19.689437,
-                "y": 7.127994
-              },
-              "source_event_id": 221,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 19.689437,
-            "y": 7.127994
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.82959,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -3701,6 +3679,28 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.533203,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 19.689437,
+                "y": 7.127994
+              },
+              "source_event_id": 221,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 19.689437,
+            "y": 7.127994
+          },
+          "quality": "known",
+          "zone_id": 1
         },
         {
           "confidence": 0.749023,
@@ -3771,7 +3771,7 @@
         {
           "confidence": 0.835449,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -3791,31 +3791,9 @@
           "zone_id": null
         },
         {
-          "confidence": 0.578613,
-          "entity_type": "person",
-          "fused_entity_id": "F0000000000000005",
-          "members": [
-            {
-              "local_entity_id": "1",
-              "point_map": {
-                "x": 19.722659,
-                "y": 7.045659
-              },
-              "source_event_id": 229,
-              "source_key": "Warehouse_Synthetic_Cam004"
-            }
-          ],
-          "point_map": {
-            "x": 19.722659,
-            "y": 7.045659
-          },
-          "quality": "known",
-          "zone_id": 1
-        },
-        {
           "confidence": 0.823242,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -3833,6 +3811,28 @@
           },
           "quality": "known",
           "zone_id": null
+        },
+        {
+          "confidence": 0.578613,
+          "entity_type": "person",
+          "fused_entity_id": "F0000000000000006",
+          "members": [
+            {
+              "local_entity_id": "1",
+              "point_map": {
+                "x": 19.722659,
+                "y": 7.045659
+              },
+              "source_event_id": 229,
+              "source_key": "Warehouse_Synthetic_Cam004"
+            }
+          ],
+          "point_map": {
+            "x": 19.722659,
+            "y": 7.045659
+          },
+          "quality": "known",
+          "zone_id": 1
         },
         {
           "confidence": 0.830078,
@@ -3903,7 +3903,7 @@
         {
           "confidence": 0.821777,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -3925,7 +3925,7 @@
         {
           "confidence": 0.81543,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -4013,7 +4013,7 @@
         {
           "confidence": 0.822754,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -4035,7 +4035,7 @@
         {
           "confidence": 0.850586,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -4145,7 +4145,7 @@
         {
           "confidence": 0.755859,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -4167,7 +4167,7 @@
         {
           "confidence": 0.84668,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -4277,7 +4277,7 @@
         {
           "confidence": 0.807617,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -4299,7 +4299,7 @@
         {
           "confidence": 0.851562,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -4409,7 +4409,7 @@
         {
           "confidence": 0.789062,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -4431,7 +4431,7 @@
         {
           "confidence": 0.831055,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -4541,7 +4541,7 @@
         {
           "confidence": 0.814453,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -4563,7 +4563,7 @@
         {
           "confidence": 0.855469,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -4651,7 +4651,7 @@
         {
           "confidence": 0.708008,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -4673,7 +4673,7 @@
         {
           "confidence": 0.844238,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -4783,7 +4783,7 @@
         {
           "confidence": 0.744629,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -4805,7 +4805,7 @@
         {
           "confidence": 0.870117,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -4915,7 +4915,7 @@
         {
           "confidence": 0.708984,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -4937,7 +4937,7 @@
         {
           "confidence": 0.859375,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -5047,7 +5047,7 @@
         {
           "confidence": 0.742188,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -5069,7 +5069,7 @@
         {
           "confidence": 0.884277,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -5157,7 +5157,7 @@
         {
           "confidence": 0.773926,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -5179,7 +5179,7 @@
         {
           "confidence": 0.86377,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -5267,7 +5267,7 @@
         {
           "confidence": 0.697754,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -5289,7 +5289,7 @@
         {
           "confidence": 0.876953,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -5377,7 +5377,7 @@
         {
           "confidence": 0.697754,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -5399,7 +5399,7 @@
         {
           "confidence": 0.854492,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -5496,7 +5496,7 @@
         {
           "confidence": 0.671387,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000003",
+          "fused_entity_id": "F0000000000000001",
           "members": [
             {
               "local_entity_id": "1",
@@ -5518,7 +5518,7 @@
         {
           "confidence": 0.842285,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -5615,7 +5615,7 @@
         {
           "confidence": 0.87207,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -5712,7 +5712,7 @@
         {
           "confidence": 0.878906,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -5809,7 +5809,7 @@
         {
           "confidence": 0.862793,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -5897,7 +5897,7 @@
         {
           "confidence": 0.868164,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -5985,7 +5985,7 @@
         {
           "confidence": 0.862793,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -6082,7 +6082,7 @@
         {
           "confidence": 0.875977,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -6179,7 +6179,7 @@
         {
           "confidence": 0.857422,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -6276,7 +6276,7 @@
         {
           "confidence": 0.873535,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -6373,7 +6373,7 @@
         {
           "confidence": 0.856445,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -6470,7 +6470,7 @@
         {
           "confidence": 0.835938,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -6567,7 +6567,7 @@
         {
           "confidence": 0.866699,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -6664,7 +6664,7 @@
         {
           "confidence": 0.855469,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -6761,7 +6761,7 @@
         {
           "confidence": 0.871094,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -6858,7 +6858,7 @@
         {
           "confidence": 0.885254,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -6955,7 +6955,7 @@
         {
           "confidence": 0.855469,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -7052,7 +7052,7 @@
         {
           "confidence": 0.89502,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -7149,7 +7149,7 @@
         {
           "confidence": 0.866699,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -7246,7 +7246,7 @@
         {
           "confidence": 0.835449,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -7365,7 +7365,7 @@
         {
           "confidence": 0.862793,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -7484,7 +7484,7 @@
         {
           "confidence": 0.887695,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -7603,7 +7603,7 @@
         {
           "confidence": 0.844238,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -7722,7 +7722,7 @@
         {
           "confidence": 0.844238,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -7819,7 +7819,7 @@
         {
           "confidence": 0.794434,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -7916,7 +7916,7 @@
         {
           "confidence": 0.86084,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -8013,7 +8013,7 @@
         {
           "confidence": 0.894531,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -8132,7 +8132,7 @@
         {
           "confidence": 0.875977,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -8273,7 +8273,7 @@
         {
           "confidence": 0.880371,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -8414,7 +8414,7 @@
         {
           "confidence": 0.895996,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -8533,7 +8533,7 @@
         {
           "confidence": 0.844238,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -8652,7 +8652,7 @@
         {
           "confidence": 0.881836,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -8793,7 +8793,7 @@
         {
           "confidence": 0.875977,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -8934,7 +8934,7 @@
         {
           "confidence": 0.879395,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -9075,7 +9075,7 @@
         {
           "confidence": 0.881836,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -9216,7 +9216,7 @@
         {
           "confidence": 0.872559,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -9357,7 +9357,7 @@
         {
           "confidence": 0.866699,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -9564,7 +9564,7 @@
         {
           "confidence": 0.875977,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -9771,7 +9771,7 @@
         {
           "confidence": 0.861816,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -9978,7 +9978,7 @@
         {
           "confidence": 0.876953,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -10163,7 +10163,7 @@
         {
           "confidence": 0.876953,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -10348,7 +10348,7 @@
         {
           "confidence": 0.848633,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -10533,7 +10533,7 @@
         {
           "confidence": 0.882812,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -10718,7 +10718,7 @@
         {
           "confidence": 0.823242,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -10903,7 +10903,7 @@
         {
           "confidence": 0.885254,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -11088,7 +11088,7 @@
         {
           "confidence": 0.833984,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -11273,7 +11273,7 @@
         {
           "confidence": 0.714844,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -11458,7 +11458,7 @@
         {
           "confidence": 0.72168,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -11643,7 +11643,7 @@
         {
           "confidence": 0.833496,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -11806,7 +11806,7 @@
         {
           "confidence": 0.577637,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -11991,7 +11991,7 @@
         {
           "confidence": 0.608398,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -12176,7 +12176,7 @@
         {
           "confidence": 0.665527,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -12339,7 +12339,7 @@
         {
           "confidence": 0.617676,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -12502,7 +12502,7 @@
         {
           "confidence": 0.662109,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -12665,7 +12665,7 @@
         {
           "confidence": 0.678223,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -12828,7 +12828,7 @@
         {
           "confidence": 0.733887,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -12969,7 +12969,7 @@
         {
           "confidence": 0.84082,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -13110,7 +13110,7 @@
         {
           "confidence": 0.782715,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -13273,7 +13273,7 @@
         {
           "confidence": 0.697754,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -13436,7 +13436,7 @@
         {
           "confidence": 0.844238,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -13599,7 +13599,7 @@
         {
           "confidence": 0.779297,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -13740,7 +13740,7 @@
         {
           "confidence": 0.779785,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -13881,7 +13881,7 @@
         {
           "confidence": 0.698242,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -14022,7 +14022,7 @@
         {
           "confidence": 0.731934,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -14163,7 +14163,7 @@
         {
           "confidence": 0.78125,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -14304,7 +14304,7 @@
         {
           "confidence": 0.765625,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -14454,7 +14454,7 @@
         {
           "confidence": 0.739258,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -14604,7 +14604,7 @@
         {
           "confidence": 0.794922,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -14745,7 +14745,7 @@
         {
           "confidence": 0.838867,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -14886,7 +14886,7 @@
         {
           "confidence": 0.839355,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -15027,7 +15027,7 @@
         {
           "confidence": 0.800293,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -15168,7 +15168,7 @@
         {
           "confidence": 0.599121,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -15318,7 +15318,7 @@
         {
           "confidence": 0.562988,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -15468,7 +15468,7 @@
         {
           "confidence": 0.434082,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -15618,7 +15618,7 @@
         {
           "confidence": 0.368408,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -15768,7 +15768,7 @@
         {
           "confidence": 0.780762,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -15918,7 +15918,7 @@
         {
           "confidence": 0.848633,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -16068,7 +16068,7 @@
         {
           "confidence": 0.783203,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -16218,7 +16218,7 @@
         {
           "confidence": 0.870117,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -16368,7 +16368,7 @@
         {
           "confidence": 0.904297,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -16518,7 +16518,7 @@
         {
           "confidence": 0.871582,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -16668,7 +16668,7 @@
         {
           "confidence": 0.885254,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -16818,7 +16818,7 @@
         {
           "confidence": 0.835449,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -16968,7 +16968,7 @@
         {
           "confidence": 0.770508,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -17118,7 +17118,7 @@
         {
           "confidence": 0.610352,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",
@@ -17268,7 +17268,7 @@
         {
           "confidence": 0.60498,
           "entity_type": "person",
-          "fused_entity_id": "F0000000000000006",
+          "fused_entity_id": "F0000000000000003",
           "members": [
             {
               "local_entity_id": "1",

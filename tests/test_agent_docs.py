@@ -184,7 +184,7 @@ def test_every_workflow_points_at_skills_that_exist():
 
 
 def test_every_workflow_tool_is_a_curated_public_tool():
-    from tests.test_mcp_server import CURATED_PUBLIC_TOOLS
+    from test_mcp_server import CURATED_PUBLIC_TOOLS
     for name, item in agent_workflows.WORKFLOWS.items():
         for tool in item["tools"]:
             assert tool in CURATED_PUBLIC_TOOLS, \
@@ -209,7 +209,7 @@ def test_the_agent_manual_routes_without_duplicating_the_skills():
 
 
 def test_the_agent_surface_document_lists_the_real_tool_set():
-    from tests.test_mcp_server import CURATED_PUBLIC_TOOLS
+    from test_mcp_server import CURATED_PUBLIC_TOOLS
     content = read(os.path.join(ROOT, "docs", "agent-surface.md"))
     for tool in CURATED_PUBLIC_TOOLS:
         assert f"`{tool}`" in content, f"docs/agent-surface.md omits {tool}"

@@ -8,7 +8,7 @@
   "world_to_map_transform": [[1, 0, 27], [0, -1, 31.50341287], [0, 0, 1]],
   "world_frame": {"name": "nvidia_mtmc_12cam_world", "axes": {"x": "right", "y": "forward", "z": "up"}},
   "store": {
-    "name": "StoreLens guided warehouse demo",
+    "name": "ManySight guided warehouse demo",
     "space_type": "warehouse",
     "width_m": 32.961904,
     "height_m": 31.503413,
