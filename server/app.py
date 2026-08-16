@@ -76,6 +76,10 @@ async def lifespan(_app: FastAPI):
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+        # Release the pooled connections held by the two threads that own them,
+        # so a clean shutdown checkpoints the WAL instead of leaving it behind.
+        await realtime.run_in_pipeline(db.close_pooled_connections)
+        db.close_pooled_connections()
 
 
 app = FastAPI(
