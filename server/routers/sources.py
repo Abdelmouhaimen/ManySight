@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from .. import db
-from ..services import homography
+from ..services import homography, zone_reprojection
 from ..services import credentials as credential_store
 from .jobs import serialize_worker
 
@@ -444,10 +444,15 @@ def set_calibration(source_id: int, body: CalibrationIn):
     revision = int(row.get("calibration_revision") or 0) + 1
     cal = {"points": body.points, "H": H, "error_m": err, "frame_w": body.frame_w,
            "frame_h": body.frame_h, "revision": revision, "plane": "floor"}
-    db.ex("UPDATE sources SET calibration_json=?, calibration_revision=? WHERE id=?",
-          (json.dumps(cal), revision, source_id))
+    try:
+        with db.transaction():
+            db.ex("UPDATE sources SET calibration_json=?, calibration_revision=? WHERE id=?",
+                  (json.dumps(cal), revision, source_id))
+            refreshed_zones = zone_reprojection.refresh_camera_derived_zones(source_id)
+    except ValueError as exc:
+        raise HTTPException(422, f"calibration cannot reproject stored zone geometry: {exc}")
     return {"H": H, "error_m": err, "points": len(body.points), "revision": revision,
-            "plane": "floor"}
+            "plane": "floor", "refreshed_zones": refreshed_zones}
 
 
 @router.delete("/sources/{source_id}/calibration")

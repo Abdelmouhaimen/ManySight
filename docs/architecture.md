@@ -103,9 +103,12 @@ do not manufacture a zero count.
 
 The map and zones use metres. A canonical zone is GeoJSON Polygon or MultiPolygon;
 disconnected components remain disconnected. A zone view stores how one camera sees a
-zone and never changes the canonical footprint implicitly. An explicit extension
-operation projects and unions a chosen view polygon while recording calibration,
-surface, view, source-pixel, projected-map, and resulting-zone revisions.
+zone. Creating or editing one does not change the canonical footprint implicitly. An
+explicit extension operation projects and unions a chosen view polygon while recording
+calibration, surface, view, source-pixel, projected-map, and resulting-zone revisions.
+Replacing a floor calibration automatically reprojects zones whose canonical footprint
+is still fully controlled by that stored camera evidence; map-authored and subsequently
+hand-edited zones remain untouched.
 
 A source may use a four-point floor homography or a rich 3x4 world-to-pixel calibration.
 The importer validates metric units, explicit world axes, matrix rank, optional

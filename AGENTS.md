@@ -115,8 +115,10 @@ the achieved rate against it.
 ## Geometry and multiview
 
 Canonical zones are metric GeoJSON Polygon/MultiPolygon. Zone views are camera-specific
-pixel polygons and never mutate canonical geometry implicitly. One physical region is ONE
-canonical zone, never one per camera.
+pixel polygons; creating or editing them never mutates canonical geometry implicitly.
+Replacing a floor calibration reprojects zones that remain fully derived from their stored
+camera evidence, but never overwrites map-authored or subsequently hand-edited geometry.
+One physical region is ONE canonical zone, never one per camera.
 
 When a named region has no geometry, inspect the calibrated cameras (`plan_frame_capture`)
 before asking the user for coordinates, `preview_zone` to project without persisting, get

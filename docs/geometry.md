@@ -32,13 +32,17 @@ in responses as a compatibility exterior, while `geometry` is authoritative.
 
 A zone view belongs to one source and one canonical zone. It stores visible and decision
 polygons in source pixels, an optional projection surface, and a point/bbox/keypoint
-membership rule. Creating or editing a view does not change the canonical zone.
+membership rule. Creating or editing a view does not change the canonical zone. When a
+floor calibration is replaced, ManySight automatically reprojects canonical zones that
+were created entirely from stored camera-pixel evidence. Map-authored zones and zones
+manually edited afterward are not overwritten.
 
 `POST /api/v1/zone-views/{view_id}/extend-zone` is the explicit extension operation. It
 projects the selected outer or detection polygon, unions it into canonical geometry, and
 records source calibration revision, zone-view revision, surface revision, original
 pixels, projected map points, and resulting zone revision. Review stale-provenance
-warnings after a calibration or view changes.
+warnings after a view or projection-surface change. A normal floor-calibration save
+refreshes eligible camera-derived geometry and records a new provenance revision.
 
 ## Calibration forms
 

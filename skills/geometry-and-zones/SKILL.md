@@ -76,8 +76,11 @@ model and must not be approximated with pixel offsets.
 
 Every projection records the source calibration revision, zone view id and revision,
 projection surface revision, original pixels, projected map polygon, operation, and
-resulting zone revision. After changing a calibration or a view, re-read the zone and
-review stale-provenance warnings.
+resulting zone revision. Replacing a floor calibration automatically reprojects zones
+that remain fully derived from stored camera-pixel evidence and records a new provenance
+revision. It does not overwrite map-authored or subsequently hand-edited zones. After
+changing a view or projection surface, re-read the zone and review stale-provenance
+warnings; those changes still require an explicit canonical extension.
 
 Retained observations belong to their recorded `space_revision_id`. A deleted zone's
 references stay unresolved and must never be re-matched by name.

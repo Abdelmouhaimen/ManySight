@@ -9,6 +9,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .. import db
+from ..services import zone_reprojection
+
 router = APIRouter(tags=["calibration"])
 SUPPORTED_PROVIDERS = {"generic", "nvidia_mv3dt", "nvidia_amc"}
 
@@ -159,39 +161,49 @@ def import_calibration(body: CalibrationImportIn):
                      (body.source_id,))
     revision = (existing["revision"] + 1) if existing else 1
     floor = {"world_to_pixel": world_to_pixel, "pixel_to_world": pixel_to_world}
-    if existing:
-        db.ex(
-            "UPDATE camera_calibrations SET provider=?,original_projection_matrix_json=?,"
-            "projection_matrix_json=?,world_to_map_transform_json=?,distortion_json=?,"
-            "intrinsics_json=?,extrinsics_json=?,world_frame_json=?,ground_plane_z=?,units=?,frame_w=?,"
-            "frame_h=?,derived_homography_json=?,verification_json=?,revision=?,updated_at=? WHERE id=?",
-            (body.provider, json.dumps(original_matrix.tolist()), json.dumps(matrix.tolist()),
-             json.dumps(world_to_map.tolist()), json.dumps(body.distortion),
-             json.dumps(body.intrinsics), json.dumps(body.extrinsics), json.dumps(body.world_frame),
-             body.ground_plane_z, "m", body.frame_w, body.frame_h, json.dumps(floor),
-             json.dumps(verification), revision, now, existing["id"]),
-        )
-        calibration_id = existing["id"]
-    else:
-        calibration_id = db.ex(
-            "INSERT INTO camera_calibrations (source_id,provider,original_projection_matrix_json,"
-            "projection_matrix_json,world_to_map_transform_json,distortion_json,"
-            "intrinsics_json,extrinsics_json,world_frame_json,ground_plane_z,units,frame_w,frame_h,"
-            "derived_homography_json,verification_json,revision,created_at,updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (body.source_id, body.provider, json.dumps(original_matrix.tolist()),
-             json.dumps(matrix.tolist()), json.dumps(world_to_map.tolist()), json.dumps(body.distortion),
-             json.dumps(body.intrinsics), json.dumps(body.extrinsics), json.dumps(body.world_frame),
-             body.ground_plane_z, "m", body.frame_w, body.frame_h, json.dumps(floor),
-             json.dumps(verification), revision, now, now),
-        )
-    # Preserve the existing planar interface for enrichment and Setup/Live.
-    calibration = {
-        "H": pixel_to_world, "H_map_to_pixel": world_to_pixel,
-        "frame_w": body.frame_w, "frame_h": body.frame_h,
-        "provider": body.provider, "rich_calibration_id": calibration_id,
-        "world_frame": body.world_frame, "units": "m", "ground_plane_z": body.ground_plane_z,
-    }
-    db.ex("UPDATE sources SET calibration_json=?,calibration_revision=? WHERE id=?",
-          (json.dumps(calibration), revision, body.source_id))
+    try:
+        with db.transaction():
+            if existing:
+                db.ex(
+                    "UPDATE camera_calibrations SET provider=?,original_projection_matrix_json=?,"
+                    "projection_matrix_json=?,world_to_map_transform_json=?,distortion_json=?,"
+                    "intrinsics_json=?,extrinsics_json=?,world_frame_json=?,ground_plane_z=?,"
+                    "units=?,frame_w=?,frame_h=?,derived_homography_json=?,verification_json=?,"
+                    "revision=?,updated_at=? WHERE id=?",
+                    (body.provider, json.dumps(original_matrix.tolist()), json.dumps(matrix.tolist()),
+                     json.dumps(world_to_map.tolist()), json.dumps(body.distortion),
+                     json.dumps(body.intrinsics), json.dumps(body.extrinsics),
+                     json.dumps(body.world_frame), body.ground_plane_z, "m", body.frame_w,
+                     body.frame_h, json.dumps(floor), json.dumps(verification), revision, now,
+                     existing["id"]),
+                )
+                calibration_id = existing["id"]
+            else:
+                calibration_id = db.ex(
+                    "INSERT INTO camera_calibrations "
+                    "(source_id,provider,original_projection_matrix_json,projection_matrix_json,"
+                    "world_to_map_transform_json,distortion_json,intrinsics_json,extrinsics_json,"
+                    "world_frame_json,ground_plane_z,units,frame_w,frame_h,derived_homography_json,"
+                    "verification_json,revision,created_at,updated_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (body.source_id, body.provider, json.dumps(original_matrix.tolist()),
+                     json.dumps(matrix.tolist()), json.dumps(world_to_map.tolist()),
+                     json.dumps(body.distortion), json.dumps(body.intrinsics),
+                     json.dumps(body.extrinsics), json.dumps(body.world_frame), body.ground_plane_z,
+                     "m", body.frame_w, body.frame_h, json.dumps(floor), json.dumps(verification),
+                     revision, now, now),
+                )
+            # Preserve the existing planar interface for enrichment and Setup/Live.
+            calibration = {
+                "H": pixel_to_world, "H_map_to_pixel": world_to_pixel,
+                "frame_w": body.frame_w, "frame_h": body.frame_h,
+                "provider": body.provider, "rich_calibration_id": calibration_id,
+                "world_frame": body.world_frame, "units": "m",
+                "ground_plane_z": body.ground_plane_z,
+            }
+            db.ex("UPDATE sources SET calibration_json=?,calibration_revision=? WHERE id=?",
+                  (json.dumps(calibration), revision, body.source_id))
+            zone_reprojection.refresh_camera_derived_zones(body.source_id)
+    except ValueError as exc:
+        raise HTTPException(422, f"calibration cannot reproject stored zone geometry: {exc}")
     return get_calibration(calibration_id)
