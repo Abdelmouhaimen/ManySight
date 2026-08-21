@@ -4,6 +4,7 @@ import sqlite3
 
 import pytest
 
+from server import db
 from server.services import credentials as credential_store
 
 KEY = base64.urlsafe_b64encode(b"k" * 32).decode()
@@ -114,6 +115,36 @@ def test_source_delete_removes_ciphertext(client, isolated_db, monkeypatch):
     source = client.post("/api/v1/sources", json=managed_rtsp()).json()
     assert client.delete(f"/api/v1/sources/{source['id']}").status_code == 200
     assert isolated_db.q("SELECT * FROM source_credentials") == []
+
+
+def test_source_delete_removes_current_state_but_retains_history(client, calibrated_source):
+    sample = {
+        "source_id": calibrated_source,
+        "entity_type": "person",
+        "timestamp": 1000,
+        "sample_id": "before-delete",
+        "detections": [{
+            "schema_version": 2,
+            "observation_id": "before-delete-person",
+            "kind": "detection",
+            "timestamp": 1000,
+            "source_id": calibrated_source,
+            "entity_type": "person",
+            "entity_id": "person-1",
+            "geometry": {"point_px": [100, 200]},
+        }],
+    }
+    response = client.post("/api/v1/detection-samples", json=sample)
+    assert response.status_code == 200, response.text
+    assert db.q("SELECT * FROM source_current_samples WHERE source_id=?", (calibrated_source,))
+
+    assert client.delete(f"/api/v1/sources/{calibrated_source}").status_code == 200
+    assert db.q("SELECT * FROM source_current_samples WHERE source_id=?", (calibrated_source,)) == []
+    assert db.q("SELECT * FROM source_current_entities WHERE source_id=?", (calibrated_source,)) == []
+    assert db.q("SELECT * FROM events WHERE source_id=?", (calibrated_source,))
+    latest = client.get("/api/v1/observations/latest-frames", params={"entity_type": "person"})
+    assert latest.status_code == 200
+    assert latest.json()["frames"] == []
 
 
 def test_wrong_encryption_key_cannot_decrypt_existing_credentials(client, monkeypatch):

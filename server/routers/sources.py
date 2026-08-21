@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from .. import db
-from ..services import homography, zone_reprojection
+from ..services import homography, realtime, zone_reprojection
 from ..services import credentials as credential_store
 from .jobs import serialize_worker
 
@@ -409,10 +409,16 @@ def get_source_connection(source_id: int):
 @router.delete("/sources/{source_id}", summary="Delete a source and its geometry configuration")
 def delete_source(source_id: int):
     _get(source_id)
-    db.ex("DELETE FROM zone_views WHERE source_id=?", (source_id,))
-    db.ex("DELETE FROM projection_surfaces WHERE source_id=?", (source_id,))
-    db.ex("DELETE FROM source_credentials WHERE source_id=?", (source_id,))
-    db.ex("DELETE FROM sources WHERE id=?", (source_id,))
+    with db.transaction():
+        # Historical observations remain append-only, but deleted cameras must
+        # disappear immediately from the bounded current-state read model.
+        db.ex("DELETE FROM source_current_entities WHERE source_id=?", (source_id,))
+        db.ex("DELETE FROM source_current_samples WHERE source_id=?", (source_id,))
+        db.ex("DELETE FROM zone_views WHERE source_id=?", (source_id,))
+        db.ex("DELETE FROM projection_surfaces WHERE source_id=?", (source_id,))
+        db.ex("DELETE FROM source_credentials WHERE source_id=?", (source_id,))
+        db.ex("DELETE FROM sources WHERE id=?", (source_id,))
+    realtime.coordinator.forget_source(source_id)
     return {"deleted": source_id}
 
 

@@ -183,6 +183,24 @@ CREATE TABLE IF NOT EXISTS source_current_entities (
 );
 CREATE INDEX IF NOT EXISTS idx_source_current_entities_sample
   ON source_current_entities(source_id, entity_type, sample_key);
+CREATE TRIGGER IF NOT EXISTS trg_source_delete_current_state
+AFTER DELETE ON sources
+BEGIN
+  DELETE FROM source_current_entities WHERE source_id=OLD.id;
+  DELETE FROM source_current_samples WHERE source_id=OLD.id;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_current_sample_requires_source
+BEFORE INSERT ON source_current_samples
+WHEN NOT EXISTS (SELECT 1 FROM sources WHERE id=NEW.source_id)
+BEGIN
+  SELECT RAISE(IGNORE);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_current_entity_requires_source
+BEFORE INSERT ON source_current_entities
+WHEN NOT EXISTS (SELECT 1 FROM sources WHERE id=NEW.source_id)
+BEGIN
+  SELECT RAISE(IGNORE);
+END;
 CREATE TABLE IF NOT EXISTS zone_geometry_provenance (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   zone_id INTEGER NOT NULL,
@@ -848,6 +866,15 @@ def init_db(path: str | None = None):
                 "VALUES (1,1,'current','initial','{}',?)",
                 (time.time(),),
             )
+        # Older source deletion left bounded current-state rows behind while
+        # correctly retaining append-only historical events. Repair those
+        # databases on startup; current state can only belong to a live source.
+        con.execute(
+            "DELETE FROM source_current_entities WHERE source_id NOT IN (SELECT id FROM sources)"
+        )
+        con.execute(
+            "DELETE FROM source_current_samples WHERE source_id NOT IN (SELECT id FROM sources)"
+        )
         _migrate_insights_to_analyses(con)
         con.commit()
     finally:

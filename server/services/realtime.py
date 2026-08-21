@@ -321,6 +321,18 @@ class RealtimeStateCoordinator:
             self._dirty.clear()
             self._consumed.clear()
 
+    def forget_source(self, source_id: int) -> None:
+        """Remove a deleted source from process-local live bookkeeping."""
+        db_path = db.current_db_path()
+        with self._lock:
+            keys = [key for key, snapshot in self._latest.items()
+                    if snapshot.db_path == db_path and snapshot.source_id == source_id]
+            for key in keys:
+                self._latest.pop(key, None)
+            for consumed in self._consumed.values():
+                for key in keys:
+                    consumed.pop(key, None)
+
     def status(self) -> dict:
         with self._lock:
             return {
