@@ -6,7 +6,7 @@ implementation is right, and the curated tools that implement it.
 
 They are discoverable three ways:
 
-- **In-repo**: compatible agents read [`AGENTS.md`](../AGENTS.md), which indexes this folder.
+- **In-repo**: compatible agents read the [agent operating manual](../docs/agents/AGENTS.md), which indexes this folder.
 - **Over MCP**: `get_skill(name)` serves these files, so an agent can follow them even when
   working outside this repository.
 - **By job**: `list_workflows()` / `get_workflow(name)` route a task ("create an occupancy

@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { api, assetUrl, formatPreciseDateTime } from "./api.js";
 import {
+  availableIdentityMode,
+  combinedModeAvailable,
   frameIsStale,
   highlightedZoneIds,
   latestFrameTracks,
@@ -359,6 +361,12 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken, backgr
     resize();
     let frame;
     const render = () => {
+      for (const child of trackLayer.children) {
+        const target = child.userData.targetPosition;
+        if (!target) continue;
+        if (child.position.distanceToSquared(target) < .000001) child.position.copy(target);
+        else child.position.lerp(target, .18);
+      }
       controls.update();
       renderer.render(scene, camera);
       frame = window.requestAnimationFrame(render);
@@ -386,6 +394,11 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken, backgr
   useEffect(() => {
     const layer = trackLayerRef.current;
     if (!layer) return;
+    const previousPositions = new Map(
+      layer.children
+        .filter((child) => child.userData.trackKey)
+        .map((child) => [child.userData.trackKey, child.position.clone()]),
+    );
     while (layer.children.length) {
       const child = layer.children.pop();
       disposeObject(child);
@@ -423,7 +436,10 @@ function LiveScene3D({ store, zones, sources, renderedTracks, resetToken, backgr
       ring.rotation.x = -Math.PI / 2;
       ring.position.y = .105;
       group.add(ring);
-      group.position.copy(worldPoint(track.position));
+      const targetPosition = worldPoint(track.position);
+      group.userData.trackKey = track.key;
+      group.userData.targetPosition = targetPosition;
+      group.position.copy(previousPositions.get(track.key) || targetPosition);
       layer.add(group);
     }
 
@@ -470,6 +486,9 @@ function OperationalLivePage({ liveTick = 0 }) {
   const modeRef = useRef("live");
   const animationRef = useRef(null);
   const lastFrameRef = useRef(null);
+  const pendingLiveTickRef = useRef(0);
+  const appliedLiveTickRef = useRef(0);
+  const liveRefreshBusyRef = useRef(false);
 
   const refresh = async ({ quiet = false } = {}) => {
     if (!quiet) setState((current) => ({ ...current, loading: !current.data, error: null }));
@@ -491,6 +510,7 @@ function OperationalLivePage({ liveTick = 0 }) {
         ...frame,
         stale_after_s: latest.stale_after_s,
       }));
+      setIdentityMode((current) => availableIdentityMode(current, fused));
       setState((current) => ({
         loading: false,
         error: null,
@@ -517,10 +537,26 @@ function OperationalLivePage({ liveTick = 0 }) {
 
   useEffect(() => { refresh(); }, [sourceId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!liveTick) return;
-    const timer = window.setTimeout(() => refresh({ quiet: true }), 250);
-    return () => window.clearTimeout(timer);
-  }, [liveTick]); // eslint-disable-line react-hooks/exhaustive-deps
+    pendingLiveTickRef.current = liveTick;
+  }, [liveTick]);
+  useEffect(() => {
+    const timer = window.setInterval(async () => {
+      const pendingTick = pendingLiveTickRef.current;
+      if (
+        !pendingTick ||
+        pendingTick === appliedLiveTickRef.current ||
+        liveRefreshBusyRef.current
+      ) return;
+      appliedLiveTickRef.current = pendingTick;
+      liveRefreshBusyRef.current = true;
+      try {
+        await refresh({ quiet: true });
+      } finally {
+        liveRefreshBusyRef.current = false;
+      }
+    }, 150);
+    return () => window.clearInterval(timer);
+  }, [sourceId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (mode !== "live") return undefined;
     const timer = window.setInterval(() => setLiveNow(Date.now() / 1000), 1000);
@@ -581,6 +617,7 @@ function OperationalLivePage({ liveTick = 0 }) {
   if (state.error && !state.data) return <ErrorState error={state.error} retry={refresh} />;
 
   const data = state.data;
+  const combinedAvailable = combinedModeAvailable(data.fused);
   const currentPlayhead = playhead ?? boundedMaxTs ?? Date.now() / 1000;
   const replayTracks = visibleTrackRows(tracks, currentPlayhead, mode, liveNow);
   const latestTracks = latestFrameTracks(data.latestFrames).map((track) => ({
@@ -628,7 +665,7 @@ function OperationalLivePage({ liveTick = 0 }) {
             <label className="select-control">
               <span className="sr-only">Identity view</span>
               <select value={identityMode} onChange={(event) => setIdentityMode(event.target.value)} disabled={mode === "replay"}>
-                <option value="fused">Combined</option>
+                <option value="fused" disabled={!combinedAvailable}>Combined</option>
                 <option value="source">Per camera</option>
               </select>
             </label>

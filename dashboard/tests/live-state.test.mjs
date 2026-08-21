@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  availableIdentityMode,
+  combinedModeAvailable,
   frameIsStale,
   highlightedZoneIds,
   latestFrameTracks,
@@ -72,6 +74,14 @@ test("staleness never removes latest-frame contents", () => {
   const staleFrame = frame(1, 10, ["A", "B"]);
   assert.equal(frameIsStale(staleFrame, 50), true);
   assert.equal(latestFrameTracks([staleFrame]).length, 2);
+});
+
+test("combined mode is unavailable until a multiview group exists", () => {
+  assert.equal(combinedModeAvailable({ groups: [] }), false);
+  assert.equal(availableIdentityMode("fused", { groups: [] }), "source");
+  assert.equal(combinedModeAvailable({ groups: [{ id: 4 }] }), true);
+  assert.equal(availableIdentityMode("fused", { groups: [{ id: 4 }] }), "fused");
+  assert.equal(availableIdentityMode("source", { groups: [] }), "source");
 });
 
 /* ---------------------------------------------- presentation-only highlight */

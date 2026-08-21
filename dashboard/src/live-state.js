@@ -48,6 +48,14 @@ export function frameIsStale(frame, nowSeconds) {
   return nowSeconds - frame.source_last_ingestion_at > (frame.stale_after_s || 30);
 }
 
+export function combinedModeAvailable(fused = {}) {
+  return Array.isArray(fused.groups) && fused.groups.length > 0;
+}
+
+export function availableIdentityMode(currentMode, fused = {}) {
+  return currentMode === "fused" && !combinedModeAvailable(fused) ? "source" : currentMode;
+}
+
 /* ------------------------------------------------- presentation-only geometry
  *
  * The 3D scene tints a zone red while a rendered track sits inside it. That test

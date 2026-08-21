@@ -12,5 +12,4 @@ fixture or validating the derived replay.
 
 The media originates from NVIDIA DeepStream's MV3DT synthetic warehouse sample:
 <https://github.com/NVIDIA/DeepStream/tree/main/src/apps/reference_apps/deepstream-tracker-3d-multi-view/assets>.
-It is redistributed here with the project maintainer's confirmed permission. The
-ManySight Apache-2.0 license does not relicense this third-party media.
+The ManySight Apache-2.0 license does not relicense this third-party media.

@@ -265,6 +265,7 @@ see [Development and deployment](docs/development.md).
 - [Alerts](docs/alerts.md)
 - [Development and deployment](docs/development.md)
 - [Agent playbooks](skills/README.md)
+- [Agent operating manuals](docs/agents/AGENTS.md)
 - [Agent-operability evaluation](evals/agent_operability/README.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
@@ -295,7 +296,7 @@ commits.
 
 ManySight is released under the [Apache License 2.0](LICENSE).
 
-The guided-demo runtime media is third-party NVIDIA sample media redistributed with
-maintainer-confirmed permission. Its source and scope are documented in
-[`demo/assets/guided_demo/README.md`](demo/assets/guided_demo/README.md); it is not
-relicensed under Apache-2.0.
+The guided-demo runtime footage comes from NVIDIA's DeepStream MV3DT synthetic
+warehouse sample. Its source and scope are documented in
+[`demo/assets/guided_demo/README.md`](demo/assets/guided_demo/README.md); the ManySight
+Apache-2.0 license does not relicense this third-party media.

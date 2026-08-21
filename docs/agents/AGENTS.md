@@ -11,7 +11,7 @@ Four steps, in this order. Do not rediscover the architecture by trying tools.
 2. **`list_workflows()` then `get_workflow(name)`** — route the job you were asked to do
    to its prerequisites, sequence, invariants, and tools.
 3. **`get_skill(name)`** — the full playbook behind a step, starting with
-   [`manysight-core`](skills/manysight-core/SKILL.md).
+   [`manysight-core`](../../skills/manysight-core/SKILL.md).
 4. **Verify with real reads** — `inspect_perception`, `run_query`, and the observation
    endpoints. Never claim a worker is healthy or observations are flowing without checking.
 
@@ -23,7 +23,7 @@ Three interfaces, three jobs:
 | MCP | a curated semantic surface for coding agents — 19 tools, not 60 |
 | skills | the workflow knowledge behind those tools |
 
-See [docs/agent-surface.md](docs/agent-surface.md) for the exact tool list and the
+See [the agent surface](../agent-surface.md) for the exact tool list and the
 legacy/compatibility strategy.
 
 ## Platform boundary
@@ -149,13 +149,13 @@ infer zero because a required camera went stale.
 
 | Skill | Use |
 |---|---|
-| [`manysight-core`](skills/manysight-core/SKILL.md) | **load first** — invariants and where authority lives |
-| [`sources-and-cameras`](skills/sources-and-cameras/SKILL.md) | onboarding, credentials, inspecting a camera view |
-| [`geometry-and-zones`](skills/geometry-and-zones/SKILL.md) | zones, views, surfaces, preview→approve→commit |
-| [`perception-workers`](skills/perception-workers/SKILL.md) | detection, measurement, and state workers |
-| [`multiview-fusion`](skills/multiview-fusion/SKILL.md) | calibrated groups and fused state |
-| [`queries-dashboards-alerts`](skills/queries-dashboards-alerts/SKILL.md) | questions, views, exact thresholds |
-| [`guided-demo`](skills/guided-demo/SKILL.md) | the isolated playable demo and its boundaries |
+| [`manysight-core`](../../skills/manysight-core/SKILL.md) | **load first** — invariants and where authority lives |
+| [`sources-and-cameras`](../../skills/sources-and-cameras/SKILL.md) | onboarding, credentials, inspecting a camera view |
+| [`geometry-and-zones`](../../skills/geometry-and-zones/SKILL.md) | zones, views, surfaces, preview→approve→commit |
+| [`perception-workers`](../../skills/perception-workers/SKILL.md) | detection, measurement, and state workers |
+| [`multiview-fusion`](../../skills/multiview-fusion/SKILL.md) | calibrated groups and fused state |
+| [`queries-dashboards-alerts`](../../skills/queries-dashboards-alerts/SKILL.md) | questions, views, exact thresholds |
+| [`guided-demo`](../../skills/guided-demo/SKILL.md) | the isolated playable demo and its boundaries |
 
 Space reinitialization, observation reinitialization, and camera reset are destructive,
 exact-confirmation operations. Never invoke them without an explicit user request.

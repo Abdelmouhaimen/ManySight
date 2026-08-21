@@ -1,6 +1,6 @@
 """Agent-facing documentation is part of the product surface, not decoration.
 
-An agent reads `skills/`, `AGENTS.md`, and the workflow registry instead of the
+An agent reads `skills/`, `docs/agents/AGENTS.md`, and the workflow registry instead of the
 source, so a stale sentence there causes exactly the failures this milestone
 exists to prevent. These tests assert the invariants are present, that retired
 guidance is gone, and that every relative link between agent docs resolves.
@@ -201,7 +201,7 @@ def test_every_workflow_tool_is_a_curated_public_tool():
 
 
 def test_the_agent_manual_routes_without_duplicating_the_skills():
-    content = read(os.path.join(ROOT, "AGENTS.md"))
+    content = read(os.path.join(ROOT, "docs", "agents", "AGENTS.md"))
     lowered = content.lower()
     assert "inspect_workspace()" in content
     assert "list_workflows()" in content and "get_workflow(name)" in content
@@ -229,7 +229,7 @@ def test_the_agent_surface_document_lists_the_real_tool_set():
 
 
 def test_claude_md_points_at_the_current_skill_names():
-    content = read(os.path.join(ROOT, "CLAUDE.md"))
+    content = read(os.path.join(ROOT, "docs", "agents", "CLAUDE.md"))
     assert "skills/manysight-core/SKILL.md" in content
     assert "manysight-platform" not in content
     assert "docs/agent-surface.md" in content

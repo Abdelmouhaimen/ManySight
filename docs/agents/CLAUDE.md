@@ -6,15 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 1. [`AGENTS.md`](AGENTS.md) — canonical agent-facing operating manual (observation contract,
    source access, geometry, worker lifecycle, analytics, alerts).
-2. [`skills/manysight-core/SKILL.md`](skills/manysight-core/SKILL.md) — load first for
-   every ManySight task, then the closest playbook from [`skills/`](skills/README.md).
-3. [`docs/agent-surface.md`](docs/agent-surface.md) — the three-interface split (REST/SDK vs
+2. [`skills/manysight-core/SKILL.md`](../../skills/manysight-core/SKILL.md) — load first for
+   every ManySight task, then the closest playbook from [`skills/`](../../skills/README.md).
+3. [`docs/agent-surface.md`](../agent-surface.md) — the three-interface split (REST/SDK vs
    curated MCP vs skills), the exact 18-tool public surface, and the legacy strategy.
 4. `GET /api/v1/observations/contract`, `GET /api/v1/agent/worker-recipe`, and
    `/openapi.json` are the authoritative runtime contracts; the docs describe them but never
    override them. An example or demo script on disk is never the contract.
 
-Human-facing documentation starts in [`README.md`](README.md). Do not copy agent
+Human-facing documentation starts in [`README.md`](../../README.md). Do not copy agent
 instructions into public user documentation or expose source credentials.
 
 ## Non-negotiable invariants
@@ -91,7 +91,7 @@ python demo/build_mv3dt_demo_fixture.py                             # rebuild de
 python scripts/seed_demo.py                                         # replaces workspace data
 ```
 
-Environment variables are tabulated in [`docs/development.md`](docs/development.md).
+Environment variables are tabulated in [`docs/development.md`](../development.md).
 
 ## Architecture
 
@@ -112,7 +112,7 @@ capability, worker recipe, zone preview/commit, and the workflow index from
 materialized models and calls the same routers the dashboard uses, and it never returns
 connection material. Perception capability is *derived* from existing source/job/worker/
 observation rows; there is no capability table and this surface needed no migration.
-Details and rationale in [`docs/agent-surface.md`](docs/agent-surface.md).
+Details and rationale in [`docs/agent-surface.md`](../agent-surface.md).
 
 ### The single ingestion pipeline
 
@@ -147,7 +147,7 @@ deadlines are counted and dropped, never queued. Every read of fused state
 drains pending ticks first via `multiview.refresh_freshness`, so no API consumer sees stale
 combined state — a test reading `fused_*` from SQLite directly must call
 `helpers.sync_live_state()`. Live latest-state is process-local: **one process owns a
-workspace database**. Full rules in [`docs/realtime-pipeline.md`](docs/realtime-pipeline.md).
+workspace database**. Full rules in [`docs/realtime-pipeline.md`](../realtime-pipeline.md).
 
 A camera-sized batch is processed on the event loop; a bulk batch goes to the single
 pipeline thread in `services/realtime.py`, which also runs fusion ticks.
@@ -209,7 +209,7 @@ setup allowlist in one transaction.
 
 ### Guided demo
 
-Three separate stages, documented in [`docs/guided-demo.md`](docs/guided-demo.md): offline
+Three separate stages, documented in [`docs/guided-demo.md`](../guided-demo.md): offline
 fixture generation (NVIDIA video → YOLO11n + ByteTrack → raw `DetectionSample` JSONL), offline
 cache generation (that fixture through the *real* ManySight pipeline), and playable runtime
 (`server/services/demo_runtime.py` + `dashboard/src/demo-replay*.js`) which advances one master
@@ -241,4 +241,4 @@ v3, update that file and its tests, then re-pin — do not import SDK server cla
 
 `data/`, `dashboard/dist/`, and `dashboard/node_modules/` are gitignored. Keep source URLs,
 credentials, recordings, and database files out of commits. Use concise conventional commit
-messages (`fix(api): ...`, `docs: ...`); see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+messages (`fix(api): ...`, `docs: ...`); see [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
