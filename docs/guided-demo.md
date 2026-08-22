@@ -83,14 +83,17 @@ python demo/build_mv3dt_demo_fixture.py `
 
 The explicit `--asset-root` remains the canonical maintainer path for rebuilding with
 the full source dataset. The bundled four-camera media is enough for normal playback;
-it does not weaken replay provenance validation. When a derivation input changes, the
-committed replay becomes stale until a maintainer rebuilds and commits it.
+it does not weaken replay provenance validation. Maintainers rebuild and commit the
+replay when its fixture, recipe, geometry, configuration or payload intentionally changes.
 
 The artifact records raw-fixture, recipe, media, geometry, fusion configuration,
-derivation-code, and canonical payload hashes. The builder uses a deterministic
-simulated evidence clock and deterministic anonymous fused IDs, so identical inputs
-produce identical geometry and timeline payloads. Runtime refuses a cache whose recipe,
-raw fixture, or payload hash does not match.
+and canonical payload hashes. The builder uses a deterministic simulated evidence clock
+and deterministic anonymous fused IDs, so identical inputs produce identical geometry
+and timeline payloads. Runtime refuses a cache whose recipe, raw fixture, geometry,
+configuration, or payload metadata does not match. Cache validity is based on those
+artifacts, not on platform source-file bytes. The fixture and recipe text hashes use
+canonical LF line endings so the same committed inputs validate on Windows, macOS, and
+Linux; media hashes remain byte-exact.
 
 Each of the 201 derived samples contains:
 

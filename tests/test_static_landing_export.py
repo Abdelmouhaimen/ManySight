@@ -120,11 +120,10 @@ def demo_bundle(tmp_path, monkeypatch):
         "duration_s": 2.0,
         "sample_count": len(TIMELINE),
         "recipe_version": RECIPE["recipe_version"],
-        "raw_fixture_sha256": demo_runtime._sha256(fixture_path),
-        "recipe_sha256": demo_runtime._sha256(recipe_path),
+        "raw_fixture_sha256": demo_runtime._text_sha256(fixture_path),
+        "recipe_sha256": demo_runtime._text_sha256(recipe_path),
         "geometry_hash": demo_runtime._canonical_hash(GEOMETRY),
         "fusion_config_hash": demo_runtime._canonical_hash(RECIPE["multiview"]),
-        "derivation_code_hash": demo_runtime.derivation_hash(),
         "sample_rate_hz": 10.0,
         "source_fps": 30,
         "payload_sha256": demo_runtime._canonical_hash(
@@ -272,17 +271,16 @@ def test_two_exports_of_the_same_demo_are_byte_identical(demo_bundle, tmp_path):
 
 # ------------------------------------------------------------------- refusals
 
-def test_a_stale_cache_is_refused_rather_than_published(demo_bundle, tmp_path):
-    """The whole point: ManySight will not publish what it considers invalid."""
+def test_legacy_derivation_code_hash_is_ignored_and_not_exported(demo_bundle, tmp_path):
+    """Old caches remain readable, but new public bundles do not repeat the field."""
     cache = read(demo_bundle["cache"])
     cache["metadata"]["derivation_code_hash"] = "0" * 64
     demo_bundle["cache"].write_text(json.dumps(cache), encoding="utf-8")
     demo_runtime.load_derived_cache.cache_clear()
 
-    with pytest.raises(exporter.ExportError) as error:
-        exporter.export(tmp_path / "bundle", asset_root=None, skip_media=True)
-    assert "derivation_code_hash" in str(error.value)
-    assert not (tmp_path / "bundle").exists(), "nothing may be written from an invalid cache"
+    output = tmp_path / "bundle"
+    exporter.export(output, asset_root=None, skip_media=True)
+    assert "derivation_code_hash" not in read(output / "manifest.json")["provenance"]
 
 
 def test_an_edited_recipe_is_refused_too(demo_bundle, tmp_path):

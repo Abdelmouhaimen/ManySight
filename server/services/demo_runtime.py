@@ -23,14 +23,6 @@ RECIPE = ROOT / "demo" / "fixtures" / "nvidia_mv3dt_recipe.json"
 DERIVED_CACHE = ROOT / "demo" / "fixtures" / "nvidia_mv3dt_derived_replay.json"
 BUNDLED_ASSET_ROOT = ROOT / "demo" / "assets" / "guided_demo"
 DEMO_CAMERA_KEYS = tuple(f"Warehouse_Synthetic_Cam{i:03d}" for i in range(1, 5))
-DERIVATION_FILES = [
-    ROOT / "server" / "routers" / "observations.py",
-    ROOT / "server" / "services" / "enrich.py",
-    ROOT / "server" / "services" / "current_state.py",
-    ROOT / "server" / "services" / "multiview.py",
-    ROOT / "server" / "routers" / "analytics_query.py",
-    ROOT / "server" / "services" / "alert_engine.py",
-]
 SESSION_ROOT = Path(tempfile.gettempdir()) / "manysight-demo-sessions"
 ACTIVE_STATES = {"ready", "running", "paused"}
 logger = logging.getLogger("manysight.demo")
@@ -66,21 +58,16 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _text_sha256(path: Path) -> str:
+    """Hash text with canonical LF endings so checkout policy cannot alter provenance."""
+    content = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(content).hexdigest()
+
+
 def _canonical_hash(value) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-
-
-def derivation_hash() -> str:
-    """Hash the platform code paths that produce the committed replay timeline."""
-    digest = hashlib.sha256()
-    for path in DERIVATION_FILES:
-        digest.update(path.relative_to(ROOT).as_posix().encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\0")
-    return digest.hexdigest()
 
 
 @lru_cache(maxsize=1)
@@ -94,11 +81,10 @@ def load_derived_cache() -> dict:
     expected = {
         "type": "manysight_derived_replay_cache",
         "recipe_version": recipe["recipe_version"],
-        "raw_fixture_sha256": _sha256(FIXTURE),
-        "recipe_sha256": _sha256(RECIPE),
+        "raw_fixture_sha256": _text_sha256(FIXTURE),
+        "recipe_sha256": _text_sha256(RECIPE),
         "geometry_hash": _canonical_hash(cache.get("geometry")),
         "fusion_config_hash": _canonical_hash(recipe["multiview"]),
-        "derivation_code_hash": derivation_hash(),
         "sample_rate_hz": float(recipe["replay"]["sample_rate_hz"]),
         "source_fps": recipe["frame"]["fps"],
         "payload_sha256": _canonical_hash({

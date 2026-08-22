@@ -38,7 +38,6 @@ from server.services import alert_engine, demo_runtime, realtime
 DEFAULT_RAW = ROOT / "demo" / "fixtures" / "nvidia_mv3dt_yolo11n_bytetrack.jsonl"
 DEFAULT_RECIPE = ROOT / "demo" / "fixtures" / "nvidia_mv3dt_recipe.json"
 DEFAULT_OUTPUT = ROOT / "demo" / "fixtures" / "nvidia_mv3dt_derived_replay.json"
-DERIVATION_FILES = demo_runtime.DERIVATION_FILES
 BASE_TIMESTAMP = 1_800_000_000.0
 
 
@@ -46,14 +45,14 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def sha256_text_file(path: Path) -> str:
+    return demo_runtime._text_sha256(path)
+
+
 def canonical_hash(value) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-
-
-def derivation_hash() -> str:
-    return demo_runtime.derivation_hash()
 
 
 def load_raw(path: Path) -> tuple[dict, list[dict]]:
@@ -141,15 +140,15 @@ def carry_media(previous: Path, raw_path: Path) -> dict:
     """Reuse a previous cache's validated media block for the same raw fixture.
 
     The media hashes describe the four source recordings. They are pinned to the
-    fixture through `raw_fixture_sha256`: if the fixture is byte-identical, the
-    videos it was derived from are the same files, and re-opening them adds no
-    information. This exists so a machine without the NVIDIA recordings can
-    rebuild the derived cache after a derivation-code change without silently
-    dropping media provenance. It refuses when the fixture differs.
+    fixture through `raw_fixture_sha256`: if its content is identical after newline
+    normalization, the videos it was derived from are the same files, and re-opening
+    them adds no information. This exists so a machine without the NVIDIA recordings
+    can rebuild the derived cache without reopening the recordings or silently dropping
+    media provenance. It refuses when the fixture content differs.
     """
     cache = json.loads(previous.read_text(encoding="utf-8"))
     metadata = cache.get("metadata", {})
-    if metadata.get("raw_fixture_sha256") != sha256_file(raw_path):
+    if metadata.get("raw_fixture_sha256") != sha256_text_file(raw_path):
         raise ValueError(
             f"{previous} was derived from a different raw fixture; revalidate the videos")
     media = metadata.get("media") or {}
@@ -298,11 +297,10 @@ def build_cache(raw_path: Path = DEFAULT_RAW, recipe_path: Path = DEFAULT_RECIPE
             "fixture_version": 3,
             "schema_version": 1,
             "recipe_version": recipe["recipe_version"],
-            "raw_fixture_sha256": sha256_file(raw_path),
-            "recipe_sha256": sha256_file(recipe_path),
+            "raw_fixture_sha256": sha256_text_file(raw_path),
+            "recipe_sha256": sha256_text_file(recipe_path),
             "geometry_hash": canonical_hash(geometry),
             "fusion_config_hash": canonical_hash(recipe["multiview"]),
-            "derivation_code_hash": derivation_hash(),
             "manysight_observation_schema_version": 2,
             "generated_at": generated_at,
             "sample_rate_hz": sample_hz,

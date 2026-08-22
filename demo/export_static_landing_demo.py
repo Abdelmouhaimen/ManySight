@@ -52,9 +52,9 @@ class ExportError(RuntimeError):
 def load_sources():
     """Load the recipe, the raw fixture and the validated derived cache.
 
-    Validation is the platform's own: `load_derived_cache` re-derives every
-    provenance hash and refuses a cache that no longer matches the code, the
-    recipe or the fixture that produced it.
+    Validation is the platform's own: `load_derived_cache` verifies the fixture,
+    recipe, geometry, fusion configuration and replay payload provenance before
+    anything is exported.
     """
     from fastapi import HTTPException
 
@@ -151,7 +151,6 @@ def build_manifest(recipe: dict, fixture_metadata: dict, cache: dict) -> dict:
             "recipe_version": metadata["recipe_version"],
             "fixture_version": metadata["fixture_version"],
             "payload_sha256": metadata["payload_sha256"],
-            "derivation_code_hash": metadata["derivation_code_hash"],
             "generated_at": metadata["generated_at"],
             "dataset": fixture_metadata["dataset"],
             "detector": fixture_metadata["producer"]["detector"],

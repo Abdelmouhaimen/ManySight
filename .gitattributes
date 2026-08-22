@@ -1,1 +1,6 @@
 *.pdf binary
+
+# These text files participate in guided-demo provenance hashes. Keep their bytes
+# stable across Windows, macOS and Linux checkouts.
+demo/fixtures/*.json text eol=lf
+demo/fixtures/*.jsonl text eol=lf
