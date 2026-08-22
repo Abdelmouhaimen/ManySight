@@ -169,3 +169,24 @@ def test_webhook_failure_does_not_block_ingestion(client, calibrated_source, mon
     ]})
     assert response.status_code == 200
     assert response.json()["accepted"] == 1
+
+
+def test_deleting_rule_keeps_its_fired_alerts(client, isolated_db):
+    rule = client.post("/api/v1/alert-rules", json={
+        "name": "Temporary rule", "kind": "event_match",
+        "params": {"event_type": "detection"}, "enabled": False,
+    }).json()
+    isolated_db.ex(
+        "INSERT INTO alerts (rule_id,ts,title,message,created_at) VALUES (?,?,?,?,?)",
+        (rule["id"], 123.0, "Recorded alert", "Historical evidence", 123.0),
+    )
+
+    response = client.delete(f"/api/v1/alert-rules/{rule['id']}")
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": rule["id"]}
+    assert client.get("/api/v1/alert-rules").json() == []
+    alerts = client.get("/api/v1/alerts").json()
+    assert len(alerts) == 1
+    assert alerts[0]["title"] == "Recorded alert"
+    assert alerts[0]["rule_name"] is None

@@ -221,6 +221,8 @@ function RulesView({ context, notify }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const load = async () => {
     try {
@@ -236,13 +238,20 @@ function RulesView({ context, notify }) {
       await load();
     } catch (err) { notify?.("Couldn't update the rule", err.message, "error"); }
   };
-  const remove = async (rule) => {
-    if (!window.confirm(`Delete "${rule.name}"? Alerts it already created stay in Review.`)) return;
+  const remove = async () => {
+    if (!deleting) return;
+    const rule = deleting;
+    setDeleteBusy(true);
     try {
       await api.del(`/alert-rules/${rule.id}`);
+      setDeleting(null);
       await load();
       notify?.("Rule deleted", rule.name);
-    } catch (err) { notify?.("Couldn't delete the rule", err.message, "error"); }
+    } catch (err) {
+      notify?.("Couldn't delete the rule", err.message, "error");
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   if (loading) return <LoadingState label="Loading rules…" />;
@@ -270,7 +279,7 @@ function RulesView({ context, notify }) {
                 label={`Actions for ${rule.name}`}
                 items={[
                   { label: rule.enabled ? "Pause" : "Enable", onSelect: () => toggle(rule) },
-                  { label: "Delete", destructive: true, onSelect: () => remove(rule) },
+                  { label: "Delete", destructive: true, onSelect: () => setDeleting(rule) },
                 ]}
               />
             </div>
@@ -299,6 +308,29 @@ function RulesView({ context, notify }) {
             notify?.("Rule created", "New alerts will appear in Review.");
           }}
         />
+      )}
+      {deleting && (
+        <Modal
+          title="Delete alert rule?"
+          description="Alerts already created by this rule stay in Review."
+          onClose={() => { if (!deleteBusy) setDeleting(null); }}
+          footer={
+            <>
+              <button
+                className="button button-secondary"
+                disabled={deleteBusy}
+                onClick={() => setDeleting(null)}
+              >
+                Cancel
+              </button>
+              <button className="button danger" disabled={deleteBusy} onClick={remove}>
+                {deleteBusy ? "Deleting…" : "Delete rule"}
+              </button>
+            </>
+          }
+        >
+          <p>Delete <strong>{deleting.name}</strong>?</p>
+        </Modal>
       )}
     </>
   );
